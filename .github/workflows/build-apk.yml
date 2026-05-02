@@ -18,9 +18,11 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Install all dependencies
+    - name: Install Flet 0.21.2 and dependencies
       run: |
-        pip install -r requirements.txt
+        pip install flet==0.21.2
+        pip install pillow opencv-python pyzbar numpy requests
+        # requests added above ☝️
     
     - name: Setup Java
       uses: actions/setup-java@v4
