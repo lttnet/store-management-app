@@ -1,86 +1,40 @@
-name: Build Store Management APK
+name: Build APK
 
 on:
+  push:
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Debug - Show all files
-      run: |
-        echo "=== Current directory ==="
-        pwd
-        echo ""
-        echo "=== All files in repository ==="
-        ls -la
-        echo ""
-        echo "=== Recursive file list ==="
-        find . -type f -name "*.py" | head -20
-        echo ""
-        echo "=== Content of main.py (first 20 lines) ==="
-        if [ -f "main.py" ]; then
-          head -20 main.py
-        else
-          echo "main.py not found in root!"
-          echo "Searching for main.py..."
-          find . -name "main.py" -exec head -20 {} \;
-        fi
-    
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-    
-    - name: Install dependencies
-      run: |
-        pip install flet==0.21.2
-        pip install requests pillow opencv-python pyzbar numpy stripe reportlab
-    
-    - name: Setup Java
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'zulu'
-        java-version: '17'
-    
-    - name: Setup Flutter
-      uses: subosito/flutter-action@v2
-      with:
-        flutter-version: '3.22.2'
-    
-    - name: Build APK with explicit path
-      run: |
-        # Make sure we're in the right directory
-        if [ -f "main.py" ]; then
-          echo "✅ main.py found in root"
-          BUILD_DIR="."
-        elif [ -f "Store_Management/main.py" ]; then
-          echo "✅ main.py found in Store_Management folder"
-          BUILD_DIR="Store_Management"
-        elif [ -f "store-management/main.py" ]; then
-          echo "✅ main.py found in store-management folder"
-          BUILD_DIR="store-management"
-        else
-          echo "❌ main.py not found!"
-          find . -name "main.py"
-          exit 1
-        fi
-        
-        cd $BUILD_DIR
-        echo "Building from: $(pwd)"
-        echo "First 5 lines of main.py:"
-        head -5 main.py
-        
-        # Build the APK
-        flet build apk
-    
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: StoreManagement-App
-        path: |
-          **/build/apk/*.apk
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Flet
+        run: pip install flet==0.21.2 requests pillow opencv-python pyzbar numpy
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.2'
+      
+      - name: Build APK
+        run: flet build apk
+      
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StoreApp
+          path: build/apk/*.apk
