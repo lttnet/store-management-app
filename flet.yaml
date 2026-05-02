@@ -1,0 +1,10 @@
+# flet.yaml
+name: StoreManagement
+description: Store Management System
+version: 1.0.0
+
+android:
+  package_name: com.store.management
+  minimum_version: 21
+  target_version: 31
+  orientation: landscape

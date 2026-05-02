@@ -1,0 +1,44 @@
+{
+  "720E4-A6504-7185E-BF753": {
+    "email": "newcustomer@test.com",
+    "plan_type": "lifetime",
+    "issue_date": "2026-04-19T18:41:06.054791",
+    "expiry_date": "2036-04-16T18:41:06.054791",
+    "active": true
+  },
+  "5BC3C-25691-A1FBC-4B452": {
+    "email": "test@customer.com",
+    "plan_type": "monthly",
+    "issue_date": "2026-04-19T18:56:50.169128",
+    "expiry_date": "2027-04-19T18:56:50.169128",
+    "active": true
+  },
+  "2CAF9-A5EA5-8D75D-BFD7E": {
+    "email": "test01@store.com",
+    "plan_type": "monthly",
+    "issue_date": "2026-04-19T19:02:29.846670",
+    "expiry_date": "2027-04-19T19:02:29.846670",
+    "active": true
+  },
+  "231EC-83A2A-4E3F4-C535F": {
+    "email": "test04@store.com",
+    "plan_type": "yearly",
+    "issue_date": "2026-04-19T19:06:20.611909",
+    "expiry_date": "2027-04-19T19:06:20.611909",
+    "active": true
+  },
+  "238C7-54234-A3701-8F0CE": {
+    "email": "test05@store.com",
+    "plan_type": "monthly",
+    "issue_date": "2026-04-19T19:20:58.938710",
+    "expiry_date": "2027-04-19T19:20:58.938710",
+    "active": true
+  },
+  "605DF-9470C-39D46-55325": {
+    "email": "test07@store.com",
+    "plan_type": "monthly",
+    "issue_date": "2026-04-19T19:36:22.059486",
+    "expiry_date": "2027-04-19T19:36:22.059486",
+    "active": true
+  }
+}

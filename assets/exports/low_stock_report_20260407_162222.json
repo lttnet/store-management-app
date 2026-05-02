@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-04-07T16:22:22.084471",
+  "threshold": 10,
+  "materials": [],
+  "accessories": [
+    {
+      "id": 3,
+      "item_code": "ACC003",
+      "name": "Electrical Connector",
+      "quantity": 3,
+      "quality": "New",
+      "location_ids": "Shelf 3",
+      "image_path": "",
+      "barcode_value": "CONN001",
+      "barcode_path": null,
+      "notes": "Brass wire connector",
+      "updated_at": "2026-03-30 19:06:24"
+    },
+    {
+      "id": 4,
+      "item_code": "ACC004",
+      "name": "Hammer",
+      "quantity": 5,
+      "quality": "Used",
+      "location_ids": "Shelf 1",
+      "image_path": "",
+      "barcode_value": "HAMMER001",
+      "barcode_path": null,
+      "notes": "Claw hammer 16oz",
+      "updated_at": "2026-03-30 19:06:24"
+    },
+    {
+      "id": 2,
+      "item_code": "ACC002",
+      "name": "Wrench",
+      "quantity": 7,
+      "quality": "New",
+      "location_ids": "Shelf 1",
+      "image_path": "",
+      "barcode_value": "WRENCH001",
+      "barcode_path": null,
+      "notes": "Adjustable wrench 10\"",
+      "updated_at": "2026-03-30 19:06:24"
+    },
+    {
+      "id": 1,
+      "item_code": "ACC001",
+      "name": "Drill Bit",
+      "quantity": 10,
+      "quality": "New",
+      "location_ids": "Shelf 2",
+      "image_path": "",
+      "barcode_value": "DRILL001",
+      "barcode_path": null,
+      "notes": "Rotary drill bit set",
+      "updated_at": "2026-03-30 19:06:24"
+    }
+  ],
+  "summary": {
+    "total_materials": 0,
+    "total_accessories": 4,
+    "total_low_stock": 4
+  }
+}

@@ -1,0 +1,7 @@
+﻿id,item_code,name,length,size,quantity,quality,location_ids,colors,notes,barcode_value,barcode_path,updated_at
+9,CR_SLAT,CR Slat,75.3125,75 5/16,54,Used,D3,Cream White,3 holes,CR_SLAT,,2026-04-03 20:19:48
+10,8908584320861,CR_5812,56.5,56 1/2,24,Used,A1,Cream White,Two Holes,8908584320861,,2026-04-12 20:24:47
+4,MT004,Copper Wire,50.0,50ft,45,New,Shelf 2,Copper,Electrical wire,COPPER001,,2026-03-30 19:06:24
+3,MT003,PVC Pipe,26.0,"26""",90,Used,Shelf 1,White,Plumbing pipe,PVC001,,2026-04-03T14:52:58.126810
+11,STL001,Steel Beam,96.0,2x4,50,New,Warehouse A,Silver,Heavy duty steel,8901234567890,,2026-04-14 00:00:30
+12,WOD001,Wood Plank,48.0,1x4,30,Used,Warehouse B,Brown,Construction wood,8901234567891,,2026-04-14 00:00:30

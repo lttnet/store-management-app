@@ -1,0 +1,10 @@
+﻿id,item_code,name,quantity,quality,location_ids,image_path,barcode_value,barcode_path,notes,updated_at
+1,ACC001,Drill Bit,10,New,Shelf 2,,DRILL001,,Rotary drill bit set,2026-03-30 19:06:24
+3,ACC003,Electrical Connector,3,New,Shelf 3,,CONN001,,Brass wire connector,2026-03-30 19:06:24
+4,ACC004,Hammer,5,Used,Shelf 1,,HAMMER001,,Claw hammer 16oz,2026-03-30 19:06:24
+10,8901533327171,Hard Disk,12,New,,D:\Project2026\icon_image\key.png,8901533327171,,TEST,2026-04-12 16:16:59
+7,SLAT_02,SLAT 02,12,Used,D1,D:\Project2026\icon_image\door.png,SLAT_02,,EW,2026-04-06 20:33:01
+5,ACC005,Screwdriver Set,12,New,Shelf 2,,SCREW001,,6-piece set,2026-03-30 19:06:24
+6,SLATE_BIEG,Slate Biege,32,New,c1,D:\Project2026\icon_image\document.png,SLATE_BIEG,,ew,2026-04-13 21:39:11
+9,8909363032753,Test01,34,New,,D:\Project2026\icon_image\door.png,8909363032753,,ds,2026-04-12 18:22:18
+2,ACC002,Wrench,7,New,Shelf 1,,WRENCH001,,"Adjustable wrench 10""",2026-03-30 19:06:24
