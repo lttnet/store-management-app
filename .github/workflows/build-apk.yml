@@ -20,14 +20,7 @@ jobs:
     
     - name: Install all dependencies
       run: |
-        pip install flet==0.21.2
-        pip install pillow
-        pip install opencv-python
-        pip install pyzbar
-        pip install numpy
-        pip install requests
-        pip install stripe
-        pip install reportlab
+        pip install -r requirements.txt
     
     - name: Setup Java
       uses: actions/setup-java@v4
