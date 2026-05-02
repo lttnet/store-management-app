@@ -1,8 +1,6 @@
 name: Build APK
 
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -11,13 +9,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Debug - Show main.py
+        run: |
+          echo "=== main.py content ==="
+          head -20 main.py
+      
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       
-      - name: Install Flet
-        run: pip install flet==0.21.2 requests pillow opencv-python pyzbar numpy
+      - name: Install dependencies
+        run: |
+          pip install flet==0.21.2
+          pip install requests pillow opencv-python pyzbar numpy stripe reportlab
       
       - name: Setup Java
         uses: actions/setup-java@v4
