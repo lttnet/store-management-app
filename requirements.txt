@@ -1,6 +1,0 @@
-flet==0.21.2
-pillow
-opencv-python
-pyzbar
-numpy
-requests
