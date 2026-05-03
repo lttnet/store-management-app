@@ -26,9 +26,12 @@ jobs:
     - name: Verify Flutter
       run: flutter doctor
 
+    - name: Upgrade pip tools
+      run: |
+        pip install --upgrade pip setuptools wheel packaging
+    
     - name: Install dependencies
       run: |
-        pip install --upgrade pip setuptools wheel
         pip install -r requirements.txt
         
     - name: Install system tools
