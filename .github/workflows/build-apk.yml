@@ -1,4 +1,4 @@
-name: Build APK
+name: Build Store Management APK
 
 on:
   workflow_dispatch:
@@ -6,40 +6,40 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Debug - Show main.py
-        run: |
-          echo "=== main.py content ==="
-          head -20 main.py
-      
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      
-      - name: Install dependencies
-        run: |
-          pip install flet==0.21.2
-          pip install requests pillow opencv-python pyzbar numpy stripe reportlab
-      
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-      
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.22.2'
-      
-      - name: Build APK
-        run: flet build apk
-      
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: StoreApp
-          path: build/apk/*.apk
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies from requirements.txt
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Verify requests is installed
+      run: python -c "import requests; print('✅ requests module found')"
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.22.2'
+    
+    - name: Build APK
+      run: flet build apk
+    
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: StoreManagement-App
+        path: build/apk/*.apk
