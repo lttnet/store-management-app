@@ -14,39 +14,20 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11.9'
+        python-version: '3.11'
     
-    - name: Install system dependencies
+    - name: Install system dependencies for pyzbar
       run: |
         sudo apt-get update
-        sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+        sudo apt-get install -y libzbar0 libgl1-mesa-glx
     
-    - name: Install Python dependencies (avoid native compilation)
+    - name: Install Python dependencies
       run: |
         pip install --upgrade pip
         pip install flet==0.21.2
-        pip install requests
-        pip install pillow
-        pip install numpy
-        pip install stripe
-        pip install reportlab
-        # Use headless version of opencv (no GUI dependencies)
+        pip install requests pillow numpy stripe reportlab
         pip install opencv-python-headless
-        # For barcode scanning, use a pure Python alternative if pyzbar fails
-        pip install python-barcode
-        pip install qrcode
-    
-    - name: Remove problematic packages if needed
-      run: |
-        # If pyzbar still fails, comment it out
-        pip uninstall -y pyzbar || true
-    
-    - name: Verify installations
-      run: |
-        python -c "import requests; print('✅ requests')"
-        python -c "import flet; print('✅ flet')"
-        python -c "import cv2; print('✅ opencv')"
-        python -c "import PIL; print('✅ PIL')"
+        pip install pyzbar
     
     - name: Setup Java
       uses: actions/setup-java@v4
