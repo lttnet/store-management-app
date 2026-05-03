@@ -1,8 +1,1 @@
 flet==0.21.2
-requests
-pillow
-opencv-python
-pyzbar
-numpy
-stripe
-reportlab
