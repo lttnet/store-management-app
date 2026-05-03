@@ -2,46 +2,45 @@ name: Build Flet APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
+  workflow_dispatch:
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+    # 1. Get code
+    - name: Checkout repository
       uses: actions/checkout@v4
 
+    # 2. Setup Python
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
 
-    # ✅ Install Flutter
+    # 3. Setup Flutter (required for Flet)
     - name: Setup Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.19.0'
+        flutter-version: "3.19.0"
 
-    - name: Verify Flutter
-      run: flutter doctor
-
-    - name: Upgrade pip tools
+    # 4. Fix dependency system (IMPORTANT)
+    - name: Upgrade build tools
       run: |
-        pip install --upgrade pip setuptools wheel packaging
-    
+        python -m pip install --upgrade pip setuptools wheel packaging
+
+    # 5. Install Python dependencies
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt
-        
-    - name: Install system tools
-      run: |
-        sudo apt update
-        sudo apt install -y build-essential python3-dev
-        
+        pip install --no-cache-dir -r requirements.txt
+
+    # 6. Build APK
     - name: Build APK
       run: flet build apk
 
+    # 7. Upload APK artifact
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
