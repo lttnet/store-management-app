@@ -28,8 +28,14 @@ jobs:
 
     - name: Install dependencies
       run: |
+        pip install --upgrade pip setuptools wheel
         pip install -r requirements.txt
-
+        
+    - name: Install system tools
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential python3-dev
+        
     - name: Build APK
       run: flet build apk
 
