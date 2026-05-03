@@ -16,18 +16,28 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Install system dependencies for pyzbar
+    - name: Install system dependencies (updated for Ubuntu 24.04)
       run: |
         sudo apt-get update
-        sudo apt-get install -y libzbar0 libgl1-mesa-glx
+        sudo apt-get install -y libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 libzbar0
     
     - name: Install Python dependencies
       run: |
         pip install --upgrade pip
         pip install flet==0.21.2
-        pip install requests pillow numpy stripe reportlab
+        pip install requests
+        pip install pillow
+        pip install numpy
+        pip install stripe
+        pip install reportlab
         pip install opencv-python-headless
         pip install pyzbar
+    
+    - name: Verify installations
+      run: |
+        python -c "import requests; print('✅ requests')"
+        python -c "import flet; print('✅ flet')"
+        python -c "import cv2; print('✅ opencv')"
     
     - name: Setup Java
       uses: actions/setup-java@v4
