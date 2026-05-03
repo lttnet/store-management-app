@@ -14,7 +14,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # 2. Setup Python
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
@@ -26,10 +25,18 @@ jobs:
       with:
         flutter-version: "3.19.0"
         
-    - name: Install dependencies (binary only)
+    - name: Fix pip (CRITICAL)
       run: |
+        python -m ensurepip --upgrade
         python -m pip install --upgrade pip setuptools wheel packaging
-        pip install --no-cache-dir --only-binary=:all: -r requirements.txt
+    
+    - name: Install NumPy (prebuilt only)
+      run: |
+        pip install --no-cache-dir --only-binary=:all: numpy==1.26.4
+   
+    - name: Install other dependencies
+      run: |
+        pip install --no-cache-dir --only-binary=:all: -r requirements.txt        
         
     # 6. Build APK
     - name: Build APK
