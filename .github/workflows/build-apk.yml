@@ -25,10 +25,10 @@ jobs:
       with:
         flutter-version: "3.19.0"
         
-    - name: Fix pip (CRITICAL)
+    - name: Fix Python build tools (IMPORTANT)
       run: |
-        python -m ensurepip --upgrade
-        python -m pip install --upgrade pip setuptools wheel packaging
+        python -m pip install --upgrade pip
+        pip install --upgrade "packaging>=24.0" setuptools wheel
     
     - name: Install NumPy (prebuilt only)
       run: |
