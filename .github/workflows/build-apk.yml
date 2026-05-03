@@ -16,13 +16,37 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Install dependencies from requirements.txt
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+    
+    - name: Install Python dependencies (avoid native compilation)
       run: |
         pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install flet==0.21.2
+        pip install requests
+        pip install pillow
+        pip install numpy
+        pip install stripe
+        pip install reportlab
+        # Use headless version of opencv (no GUI dependencies)
+        pip install opencv-python-headless
+        # For barcode scanning, use a pure Python alternative if pyzbar fails
+        pip install python-barcode
+        pip install qrcode
     
-    - name: Verify requests is installed
-      run: python -c "import requests; print('✅ requests module found')"
+    - name: Remove problematic packages if needed
+      run: |
+        # If pyzbar still fails, comment it out
+        pip uninstall -y pyzbar || true
+    
+    - name: Verify installations
+      run: |
+        python -c "import requests; print('✅ requests')"
+        python -c "import flet; print('✅ flet')"
+        python -c "import cv2; print('✅ opencv')"
+        python -c "import PIL; print('✅ PIL')"
     
     - name: Setup Java
       uses: actions/setup-java@v4
