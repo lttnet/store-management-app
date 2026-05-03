@@ -25,16 +25,6 @@ jobs:
       uses: subosito/flutter-action@v2
       with:
         flutter-version: "3.19.0"
-
-    # 4. Fix dependency system (IMPORTANT)
-    - name: Upgrade build tools
-      run: |
-        python -m pip install --upgrade pip setuptools wheel packaging
-
-    # 5. Install Python dependencies
-    - name: Install dependencies
-      run: |
-        pip install --no-cache-dir -r requirements.txt
         
     - name: Upgrade pip tools
       run: |
