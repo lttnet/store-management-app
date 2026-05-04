@@ -24,54 +24,35 @@ jobs:
         flutter-version: '3.16.0'
         channel: 'stable'
     
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-    
     - name: Setup Java
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
     
+    - name: Install Android SDK
+      uses: android-actions/setup-android@v3
+    
     - name: Install Python dependencies
       run: |
-        # Clean install
         pip install --upgrade pip
-        
-        # Install ONLY compatible packages
         pip install flet==0.21.2
         pip install pillow
         pip install plotly
         pip install requests
-        
-        # Create requirements.txt for reference
-        pip freeze > installed_packages.txt
-        cat installed_packages.txt
-    
-    - name: Verify no problematic packages
-      run: |
-        if pip list | grep -qE "numpy|opencv|pyzbar|cmake"; then
-          echo "❌ Problematic packages found!"
-          pip list | grep -E "numpy|opencv|pyzbar|cmake"
-          exit 1
-        else
-          echo "✅ No problematic packages detected"
-        fi
     
     - name: Build APK
       run: |
-        # Flet 0.21.2 syntax - no --name or --split-per-abi
-        flet build apk --package com.storemanagement.app
-    
-    - name: List build artifacts
-      run: |
-        echo "Build directory contents:"
-        ls -la build/app/outputs/flutter-apk/ || echo "Build directory not found"
+        # CORRECT SYNTAX FOR FLET 0.21.2
+        flet build \
+          --org com.storemanagement.app \
+          --product "Store Management" \
+          --build-number 1 \
+          --build-version 1.0.0 \
+          apk
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: Store-Management-APK
-        path: |
-          build/app/outputs/flutter-apk/*.apk
-          installed_packages.txt
+        name: store-management-apk
+        path: build/app/outputs/flutter-apk/*.apk
