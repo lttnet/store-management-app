@@ -1,4 +1,4 @@
-name: Build Store Management APK
+name: Build APK with NumPy
 
 on:
   workflow_dispatch:
@@ -8,22 +8,24 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
     
-    - name: Install dependencies
+    - name: Install build dependencies
       run: |
-        pip install flet==0.21.2
-        pip install pillow
+        sudo apt-get update
+        sudo apt-get install -y python3-dev build-essential
+    
+    - name: Install Python packages
+      run: |
+        pip install --upgrade pip
         pip install numpy
-        pip install requests
-        pip install pyzbar
-        # OpenCV removed - add back later if needed
+        pip install flet==0.21.2
+        pip install pillow requests pyzbar
     
     - name: Setup Java
       uses: actions/setup-java@v4
@@ -42,5 +44,5 @@ jobs:
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: StoreManagement-App
+        name: StoreApp
         path: build/apk/*.apk
