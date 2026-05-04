@@ -1,6 +1,8 @@
-name: Build Store Management APK
+name: Build APK
 
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -8,38 +10,44 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v3
     
     - name: Setup Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-    
-    - name: Install dependencies
-      run: |
-        pip install --upgrade pip
-        pip install flet==0.21.2
-        pip install pillow
-        pip install requests
-        # Removed numpy - add back if essential
-        # pip install numpy
-    
-    - name: Setup Java
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'zulu'
-        java-version: '17'
     
     - name: Setup Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.19.6'
+        flutter-version: '3.16.0'
+    
+    - name: Setup Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    
+    - name: Install Python dependencies (NO NUMPY)
+      run: |
+        # Install ONLY compatible packages
+        pip install flet==0.21.2
+        pip install pillow
+        pip install plotly
+        pip install requests
+        
+        # Verify no numpy installed
+        pip list | grep -i numpy && exit 1 || echo "✅ NumPy not installed"
     
     - name: Build APK
-      run: flet build apk
+      run: |
+        flet build apk \
+          --org com.yourcompany.storeapp \
+          --name "Store Management" \
+          --split-per-abi
     
     - name: Upload APK
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       with:
-        name: StoreManagement-App
-        path: build/apk/*.apk
+        name: store-management-apk
+        path: build/app/outputs/flutter-apk/*.apk
