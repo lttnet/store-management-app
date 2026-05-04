@@ -1,8 +1,8 @@
-name: Build APK
+name: Build Store Management APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -10,10 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
     
     - name: Setup Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
     
@@ -21,33 +22,56 @@ jobs:
       uses: subosito/flutter-action@v2
       with:
         flutter-version: '3.16.0'
+        channel: 'stable'
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
     
     - name: Setup Java
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
     
-    - name: Install Python dependencies (NO NUMPY)
+    - name: Install Python dependencies
       run: |
+        # Clean install
+        pip install --upgrade pip
+        
         # Install ONLY compatible packages
         pip install flet==0.21.2
         pip install pillow
         pip install plotly
         pip install requests
         
-        # Verify no numpy installed
-        pip list | grep -i numpy && exit 1 || echo "✅ NumPy not installed"
+        # Create requirements.txt for reference
+        pip freeze > installed_packages.txt
+        cat installed_packages.txt
+    
+    - name: Verify no problematic packages
+      run: |
+        if pip list | grep -qE "numpy|opencv|pyzbar|cmake"; then
+          echo "❌ Problematic packages found!"
+          pip list | grep -E "numpy|opencv|pyzbar|cmake"
+          exit 1
+        else
+          echo "✅ No problematic packages detected"
+        fi
     
     - name: Build APK
       run: |
-        flet build apk \
-          --org com.yourcompany.storeapp \
-          --name "Store Management" \
-          --split-per-abi
+        # Flet 0.21.2 syntax - no --name or --split-per-abi
+        flet build apk --package com.storemanagement.app
+    
+    - name: List build artifacts
+      run: |
+        echo "Build directory contents:"
+        ls -la build/app/outputs/flutter-apk/ || echo "Build directory not found"
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: store-management-apk
-        path: build/app/outputs/flutter-apk/*.apk
+        name: Store-Management-APK
+        path: |
+          build/app/outputs/flutter-apk/*.apk
+          installed_packages.txt
