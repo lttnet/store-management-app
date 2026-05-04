@@ -13,9 +13,9 @@ from database import init_database
 from managers.material_manager import MaterialManager
 from managers.accessory_manager import AccessoryManager
 from managers.user_manager import UserManager
-import cv2
-import numpy as np
-from pyzbar import pyzbar
+#import cv2
+#import numpy as np
+#from pyzbar import pyzbar
 from PIL import Image
 
 import hashlib
@@ -25,6 +25,13 @@ from datetime import datetime, timedelta
 
 import plotly.graph_objects as go
 from flet.plotly_chart import PlotlyChart
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    print("NumPy not available - using fallback")
 
 # ========== FLET VERSION COMPATIBILITY WRAPPER ==========
 # This makes newer Flet versions work with old code
@@ -2190,7 +2197,7 @@ body {{
         page.update()
     
     def show_barcode_scanner(self, page: ft.Page):
-        """Show barcode scanner with persistent recent scans table"""
+        """Show barcode scanner with manual entry (compatible with Android)"""
         page.controls.clear()
         
         sidebar = self.create_sidebar(page)
@@ -2209,12 +2216,12 @@ body {{
         
         # UI Components
         barcode_input = ft.TextField(
-            hint_text="Place cursor and scan barcode here...",
-            width=450,
+            hint_text="Enter barcode number",
+            width=400,
             bgcolor=self.card_color,
             border_color=self.accent_color,
             text_align=ft.TextAlign.CENTER,
-            text_size=14,
+            text_size=16,
         )
         
         scan_result_container = ft.Container(
@@ -2224,19 +2231,17 @@ body {{
             padding=15,
             bgcolor=self.card_color,
             border_radius=10,
-            height=350,
+            height=300,
         )
+        
+        history_list = ft.Column(spacing=3, scroll=ft.ScrollMode.AUTO, height=120)
         
         status_text = ft.Text("Ready", size=11, color="#888888")
         
         # Stats display
-        stats_today = ft.Text("0", size=28, weight=ft.FontWeight.BOLD, color=self.text_color)
-        stats_found = ft.Text("0", size=28, weight=ft.FontWeight.BOLD, color=self.success_color)
-        stats_not_found = ft.Text("0", size=28, weight=ft.FontWeight.BOLD, color=self.danger_color)
-        
-        # Current edit mode
-        is_edit_mode = False
-        current_edit_id = None
+        stats_today = ft.Text("0", size=24, weight=ft.FontWeight.BOLD, color=self.text_color)
+        stats_found = ft.Text("0", size=24, weight=ft.FontWeight.BOLD, color=self.success_color)
+        stats_not_found = ft.Text("0", size=24, weight=ft.FontWeight.BOLD, color=self.danger_color)
         
         def update_stats():
             stats_today.value = str(today_scans)
@@ -2244,168 +2249,47 @@ body {{
             stats_not_found.value = str(not_found_items)
             page.update()
         
-        def save_to_scan_history(barcode, item_name, item_sku, item_price, item_stock, item_type, found=True):
-            """Save scan to database history"""
-            import sqlite3
-            from database import DB_PATH
-            
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO scan_history (barcode, item_name, item_sku, item_price, item_stock, item_type, found, scanned_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                """, (barcode, item_name, item_sku, item_price, item_stock, item_type, 1 if found else 0))
-                conn.commit()
-                conn.close()
-            except Exception as e:
-                print(f"Error saving to scan history: {e}")
-        
-        def load_scan_history():
-            """Load recent scans from database"""
-            import sqlite3
-            from database import DB_PATH
-            
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                
-                # Check if table exists
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='scan_history'")
-                if cursor.fetchone():
-                    cursor.execute("""
-                        SELECT id, barcode, item_name, item_sku, item_price, item_stock, item_type, scanned_at, found
-                        FROM scan_history 
-                        ORDER BY scanned_at DESC 
-                        LIMIT 20
-                    """)
-                    rows = cursor.fetchall()
-                else:
-                    rows = []
-                conn.close()
-                
-                scans = []
-                for row in rows:
-                    scans.append({
-                        'id': row[0],
-                        'barcode': row[1],
-                        'name': row[2],
-                        'sku': row[3],
-                        'price': row[4],
-                        'stock': row[5],
-                        'type': row[6],
-                        'scanned_at': row[7],
-                        'found': row[8] == 1
-                    })
-                return scans
-            except Exception as e:
-                print(f"Error loading scan history: {e}")
-                return []
-        
-        def add_to_recent_scans(item, found=True, barcode_val=None):
-            """Add scanned item to database history"""
-            if found and item:
-                name = item.get('name', 'Unknown')
-                sku = item.get('item_code', item.get('barcode_value', 'N/A'))[:20]
-                barcode = item.get('barcode_value', barcode_val or 'N/A')
-                price = item.get('price', 0)
-                stock = item.get('quantity', 0)
-                item_type = "Accessory" if 'location' in item else "Material"
+        def add_to_history(barcode_val, item_name, found=True):
+            nonlocal today_scans, found_items, not_found_items
+            today_scans += 1
+            if found:
+                found_items += 1
             else:
-                name = "Not Found"
-                sku = "N/A"
-                barcode = barcode_val or 'N/A'
-                price = 0
-                stock = 0
-                item_type = "Unknown"
+                not_found_items += 1
+            update_stats()
             
-            save_to_scan_history(barcode, name, sku, price, stock, item_type, found)
-            refresh_recent_table()
-        
-        def refresh_recent_table():
-            """Refresh the recent scans table from database"""
-            scans = load_scan_history()
-            table_rows.controls.clear()
-            
-            for i, scan in enumerate(scans[:15], 1):
-                row_color = "#3C3C3C" if i % 2 == 0 else ft.Colors.TRANSPARENT
-                status_color = self.success_color if scan['found'] else self.danger_color
-                status_text_display = "✅ Found" if scan['found'] else "❌ Not Found"
-                
-                table_rows.controls.append(
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Text(str(i), size=11, width=40, color="#888888"),
-                            ft.Text(scan['name'][:25], size=11, width=180, color=self.text_color, tooltip=scan['name']),
-                            ft.Text(scan['sku'], size=10, width=100, color="#888888"),
-                            ft.Text(f"₹{scan['price']:.2f}" if scan['price'] else "-", size=11, width=80, color=self.success_color if scan['price'] else "#888888"),
-                            ft.Text(f"{scan['stock']} pcs" if scan['stock'] else "-", size=11, width=70, color=self.text_color),
-                            ft.Text(scan['scanned_at'][:16] if scan['scanned_at'] else "-", size=10, width=140, color="#888888"),
-                            ft.Text(status_text_display, size=10, width=80, color=status_color),
-                            ft.IconButton(
-                                icon=ft.icons.EDIT, 
-                                icon_size=18, 
-                                tooltip="Edit this item",
-                                on_click=lambda e, s=scan: edit_recent_item(s),
-                                disabled=not scan['found']
-                            ),
-                        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                        padding=ft.padding.symmetric(vertical=8, horizontal=12),
-                        bgcolor=row_color,
-                        border_radius=6,
-                    )
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            found_icon = "✅" if found else "❌"
+            history_list.controls.insert(0, 
+                ft.Container(
+                    content=ft.Row([
+                        ft.Text(f"🕐 {timestamp}", size=10, color="#888888", width=70),
+                        ft.Text(f"{item_name[:30]}", size=11, color=self.text_color, expand=True),
+                        ft.Text(f"{barcode_val[-12:]}", size=9, color="#888888", width=100),
+                        ft.Text(found_icon, size=10, width=30),
+                    ], spacing=8),
+                    padding=ft.padding.symmetric(vertical=6, horizontal=10),
+                    bgcolor="#3C3C3C" if len(history_list.controls) % 2 == 0 else ft.Colors.TRANSPARENT,
+                    border_radius=6,
                 )
+            )
+            if len(history_list.controls) > 20:
+                history_list.controls.pop()
             page.update()
         
-        def edit_recent_item(scan):
-            """Edit item from recent scans - load into scan result panel"""
-            nonlocal is_edit_mode, current_edit_id
-            
-            if not scan['found']:
-                return
-            
-            # Load the full item from database
-            item = None
-            if scan['type'] == "Accessory":
-                item = AccessoryManager.get_by_barcode(scan['barcode'])
-            else:
-                item = MaterialManager.get_by_barcode(scan['barcode'])
-            
-            if item:
-                current_edit_id = item.get('id')
-                is_edit_mode = True
-                display_item_details(dict(item), is_edit=True)
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✏️ Editing: {scan['name']}"),
-                    bgcolor=self.accent_color,
-                    duration=2000
-                )
-                page.snack_bar.open = True
-                page.update()
-        
-        def clear_recent_scans(e):
-            """Clear all recent scans from database"""
-            import sqlite3
-            from database import DB_PATH
-            
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM scan_history")
-                conn.commit()
-                conn.close()
-            except Exception as ex:
-                print(f"Error clearing scan history: {ex}")
-            
-            refresh_recent_table()
-            page.snack_bar = ft.SnackBar(ft.Text("✓ Recent scans cleared"), bgcolor=self.success_color, duration=2000)
+        def clear_history(e):
+            nonlocal today_scans, found_items, not_found_items
+            history_list.controls.clear()
+            today_scans = 0
+            found_items = 0
+            not_found_items = 0
+            update_stats()
+            page.snack_bar = ft.SnackBar(ft.Text("✓ History cleared"), bgcolor=self.success_color, duration=2000)
             page.snack_bar.open = True
             page.update()
         
-        # ========== FIXED: Add nonlocal declarations ==========
         def search_barcode(barcode_val):
-            nonlocal current_item, is_edit_mode, current_edit_id, today_scans, found_items, not_found_items
-            
+            nonlocal current_item
             if not barcode_val:
                 return
             
@@ -2413,45 +2297,32 @@ body {{
             status_text.color = self.warning_color
             page.update()
             
-            # Reset edit mode
-            is_edit_mode = False
-            current_edit_id = None
-            
             # Search in accessories first
             item = AccessoryManager.get_by_barcode(barcode_val)
             if item:
                 current_item = dict(item)
                 display_item_details(current_item)
-                add_to_recent_scans(current_item, True, barcode_val)
+                add_to_history(barcode_val, current_item.get('name', 'Unknown'), True)
                 status_text.value = "✅ Found!"
                 status_text.color = self.success_color
-                today_scans += 1
-                found_items += 1
-                update_stats()
             else:
                 # Search in materials
                 item = MaterialManager.get_by_barcode(barcode_val)
                 if item:
                     current_item = dict(item)
                     display_item_details(current_item)
-                    add_to_recent_scans(current_item, True, barcode_val)
+                    add_to_history(barcode_val, current_item.get('name', 'Unknown'), True)
                     status_text.value = "✅ Found!"
                     status_text.color = self.success_color
-                    today_scans += 1
-                    found_items += 1
-                    update_stats()
                 else:
                     display_not_found(barcode_val)
-                    add_to_recent_scans(None, False, barcode_val)
+                    add_to_history(barcode_val, "Not Found", False)
                     status_text.value = "⚠️ Not found"
                     status_text.color = self.warning_color
-                    today_scans += 1
-                    not_found_items += 1
-                    update_stats()
             
             page.update()
         
-        def display_item_details(item, is_edit=False):
+        def display_item_details(item):
             is_accessory = 'location' in item
             is_material = 'location_ids' in item
             
@@ -2466,15 +2337,15 @@ body {{
             
             quality_dropdown = ft.Dropdown(
                 label="New Quality",
-                width=160,
+                width=150,
                 options=[ft.dropdown.Option(q) for q in qualities],
                 value=current_quality,
                 bgcolor=self.card_color,
             )
             
             quantity_field = ft.TextField(
-                label="Quantity to Remove",
-                width=140,
+                label="Remove",
+                width=100,
                 value="0",
                 bgcolor=self.card_color,
                 keyboard_type=ft.KeyboardType.NUMBER,
@@ -2483,7 +2354,7 @@ body {{
             
             note_field = ft.TextField(
                 label="Note (optional)",
-                width=350,
+                width=300,
                 multiline=True,
                 min_lines=2,
                 max_lines=2,
@@ -2530,29 +2401,17 @@ body {{
                     page.snack_bar = ft.SnackBar(
                         ft.Text(f"✓ Updated: Qty: {new_total}, Quality: {new_quality}"),
                         bgcolor=self.success_color,
-                        duration=3000
+                        duration=2000
                     )
                     page.snack_bar.open = True
                     display_item_details(item)
-                    
-                    # Refresh recent scans to show updated stock
-                    refresh_recent_table()
                 else:
                     page.snack_bar = ft.SnackBar(
                         ft.Text(f"❌ Update failed!"),
                         bgcolor=self.danger_color,
-                        duration=3000
+                        duration=2000
                     )
                     page.snack_bar.open = True
-                page.update()
-            
-            def cancel_edit(e):
-                nonlocal is_edit_mode, current_edit_id
-                is_edit_mode = False
-                current_edit_id = None
-                scan_result_container.content = ft.Column([
-                    ft.Text("Edit cancelled", size=14, color="#888888", text_align=ft.TextAlign.CENTER),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
                 page.update()
             
             if is_accessory:
@@ -2563,7 +2422,7 @@ body {{
             scan_result_container.content = ft.Column([
                 ft.Container(
                     content=ft.Row([
-                        ft.Text("✏️ EDITING" if is_edit else "✅ ITEM FOUND", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color if is_edit else self.success_color),
+                        ft.Text("✅ ITEM FOUND", size=14, weight=ft.FontWeight.BOLD, color=self.success_color),
                         ft.Container(expand=True),
                         ft.Text(item.get('name', 'N/A'), size=14, weight=ft.FontWeight.BOLD, color=self.text_color),
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
@@ -2572,22 +2431,18 @@ body {{
                 ft.Divider(),
                 ft.Row([ft.Text("Barcode:", size=12, color="#CCCCCC", width=70), ft.Text(item.get('barcode_value') or item.get('item_code', 'N/A'), size=12, color=self.text_color)], spacing=8),
                 ft.Row([ft.Text("Type:", size=12, color="#CCCCCC", width=70), ft.Text(item_type, size=12, color=self.text_color)], spacing=8),
-                ft.Row([ft.Text("Current Quality:", size=12, color="#CCCCCC", width=100), ft.Container(content=ft.Text(item.get('quality', 'N/A'), size=11, color="white"), bgcolor=self.get_quality_color(item.get('quality', 'Used')), border_radius=8, padding=ft.padding.symmetric(horizontal=8, vertical=3))], spacing=8),
-                ft.Row([ft.Text("Current Quantity:", size=12, color="#CCCCCC", width=100), ft.Text(str(item.get('quantity', 0)), size=13, weight=ft.FontWeight.BOLD, color=self.text_color)], spacing=8),
+                ft.Row([ft.Text("Quality:", size=12, color="#CCCCCC", width=70), ft.Container(content=ft.Text(item.get('quality', 'N/A'), size=11, color="white"), bgcolor=self.get_quality_color(item.get('quality', 'Used')), border_radius=8, padding=ft.padding.symmetric(horizontal=8, vertical=3))], spacing=8),
+                ft.Row([ft.Text("Quantity:", size=12, color="#CCCCCC", width=70), ft.Text(str(item.get('quantity', 0)), size=13, weight=ft.FontWeight.BOLD, color=self.text_color)], spacing=8),
                 ft.Row([ft.Text("Location:", size=12, color="#CCCCCC", width=70), ft.Text(location_text, size=12, color=self.text_color)], spacing=8),
-                ft.Row([ft.Text("Price:", size=12, color="#CCCCCC", width=70), ft.Text(f"₹{item.get('price', 0):.2f}" if item.get('price') else "N/A", size=12, color=self.success_color)], spacing=8),
                 ft.Divider(),
                 ft.Text("✏️ UPDATE STOCK", size=13, weight=ft.FontWeight.BOLD, color=self.accent_color),
-                ft.Row([
-                    quantity_field,
-                    quality_dropdown,
-                ], spacing=15, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Row([quantity_field, quality_dropdown], spacing=10, wrap=True),
                 note_field,
                 ft.Row([
                     ft.FilledButton("✅ UPDATE", on_click=confirm_update, width=130, height=40, style=ft.ButtonStyle(bgcolor=self.success_color)),
-                    ft.OutlinedButton("❌ CANCEL", on_click=cancel_edit if is_edit else (lambda e: display_item_details(item)), width=130, height=40),
+                    ft.OutlinedButton("❌ CANCEL", on_click=lambda e: display_item_details(item), width=130, height=40),
                 ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
-            ], spacing=10, scroll=ft.ScrollMode.AUTO)
+            ], spacing=8, scroll=ft.ScrollMode.AUTO, height=280)
             scan_result_container.height = None
             page.update()
         
@@ -2604,25 +2459,22 @@ body {{
                 ft.Text(f"Barcode: {barcode_val}", size=14, weight=ft.FontWeight.BOLD, color=self.text_color),
                 ft.Text("No item found in database with this barcode.", size=12, color="#888888"),
                 ft.Text("You can add this item from the Materials or Accessories screen.", size=11, color="#888888", text_align=ft.TextAlign.CENTER),
-                ft.Container(height=10),
-                ft.Row([
-                    ft.ElevatedButton("➕ Add Material", on_click=lambda e: self.open_add_modal(page)),
-                    ft.ElevatedButton("➕ Add Accessory", on_click=lambda e: self.open_add_accessory_modal(page)),
-                ], alignment=ft.MainAxisAlignment.CENTER, spacing=15),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10)
-            scan_result_container.height = 260
+            scan_result_container.height = 180
             page.update()
         
-        # Camera functions
+        # Camera functions - FIXED: added 'e' parameter
         def on_barcode_detected(barcode_val):
             search_barcode(barcode_val)
         
-        def start_camera(e):
+        def start_camera(e):  # <-- ADDED 'e' parameter here
             nonlocal scanner, is_scanning
             try:
                 from barcode_scanner import CameraScanner
+                
                 scanner = CameraScanner()
                 success, message = scanner.start_scanning(callback=on_barcode_detected)
+                
                 if success:
                     is_scanning = True
                     status_text.value = "📷 Camera active"
@@ -2630,19 +2482,24 @@ body {{
                     start_btn.visible = False
                     stop_btn.visible = True
                     page.update()
-                    page.snack_bar = ft.SnackBar(ft.Text("Camera opened. Press 'Q' to close."), bgcolor=self.success_color, duration=3000)
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("Camera opened. Press 'Q' to close."),
+                        bgcolor=self.success_color,
+                        duration=3000
+                    )
                     page.snack_bar.open = True
                     page.update()
                 else:
-                    status_text.value = f"❌ {message}"
-                    status_text.color = self.danger_color
+                    status_text.value = f"ℹ️ {message} Please use manual entry."
+                    status_text.color = self.warning_color
                     page.update()
+                    
             except Exception as ex:
                 status_text.value = f"Error: {str(ex)}"
                 status_text.color = self.danger_color
                 page.update()
         
-        def stop_camera(e):
+        def stop_camera(e):  # <-- ADDED 'e' parameter here
             nonlocal scanner, is_scanning
             if scanner:
                 scanner.stop()
@@ -2652,7 +2509,12 @@ body {{
             start_btn.visible = True
             stop_btn.visible = False
             page.update()
-            page.snack_bar = ft.SnackBar(ft.Text("Camera stopped"), bgcolor=self.success_color, duration=2000)
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text("Camera stopped"),
+                bgcolor=self.success_color,
+                duration=2000
+            )
             page.snack_bar.open = True
             page.update()
         
@@ -2676,8 +2538,8 @@ body {{
         start_btn = ft.ElevatedButton("▶ START CAMERA", on_click=start_camera, style=ft.ButtonStyle(bgcolor=self.success_color))
         stop_btn = ft.ElevatedButton("⏹ STOP CAMERA", on_click=stop_camera, visible=False, style=ft.ButtonStyle(bgcolor=self.danger_color))
         
-        # ========== SECTION 1: STATS CARDS ==========
-        stats_section = ft.Row(
+        # ========== STATS CARDS ==========
+        stats_row = ft.Row(
             [
                 ft.Container(
                     content=ft.Column([
@@ -2716,7 +2578,7 @@ body {{
             spacing=15,
         )
         
-        # ========== SECTION 2: BARCODE INPUT SECTION ==========
+        # ========== BARCODE INPUT SECTION ==========
         barcode_section = ft.Container(
             content=ft.Column([
                 ft.Text("📷 Barcode Scanner", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
@@ -2729,14 +2591,14 @@ body {{
                     stop_btn,
                     ft.ElevatedButton("📋 PASTE", on_click=paste_action, icon=ft.icons.CONTENT_PASTE, style=ft.ButtonStyle(bgcolor=self.warning_color)),
                 ], alignment=ft.MainAxisAlignment.CENTER, spacing=15),
-                ft.Text("Or use camera to scan barcode", size=10, color="#888888"),
+                ft.Text("Or use camera to scan barcode (if available)", size=10, color="#888888"),
             ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
             padding=20,
             bgcolor=self.card_color,
             border_radius=12,
         )
         
-        # ========== SECTION 3: SCAN RESULT ==========
+        # ========== SCAN RESULT SECTION ==========
         result_section = ft.Container(
             content=ft.Column([
                 ft.Text("📋 Scan Result", size=14, weight=ft.FontWeight.BOLD, color=self.text_color),
@@ -2747,50 +2609,27 @@ body {{
             border_radius=12,
         )
         
-        # ========== SECTION 4: RECENT SCANS TABLE ==========
-        table_header = ft.Container(
-            content=ft.Row([
-                ft.Text("#", size=11, weight=ft.FontWeight.BOLD, width=40),
-                ft.Text("Product", size=11, weight=ft.FontWeight.BOLD, width=180),
-                ft.Text("SKU", size=11, weight=ft.FontWeight.BOLD, width=100),
-                ft.Text("Price", size=11, weight=ft.FontWeight.BOLD, width=80),
-                ft.Text("Stock", size=11, weight=ft.FontWeight.BOLD, width=70),
-                ft.Text("Scanned At", size=11, weight=ft.FontWeight.BOLD, width=140),
-                ft.Text("Status", size=11, weight=ft.FontWeight.BOLD, width=80),
-                ft.Text("Action", size=11, weight=ft.FontWeight.BOLD, width=60),
-            ], spacing=8),
-            padding=ft.padding.symmetric(vertical=10, horizontal=12),
-            bgcolor="#3C3C3C",
-            border_radius=8,
-        )
-        
-        table_rows = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, height=280)
-        
-        recent_section = ft.Container(
+        # ========== HISTORY SECTION ==========
+        history_section = ft.Container(
             content=ft.Column([
                 ft.Row([
-                    ft.Text("📜 Recent Scanned Items", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Text("📜 Recent Scans", size=14, weight=ft.FontWeight.BOLD, color=self.text_color),
                     ft.Container(expand=True),
-                    ft.TextButton("Clear All", on_click=clear_recent_scans, style=ft.ButtonStyle(color=self.danger_color)),
+                    ft.TextButton("Clear History", on_click=clear_history, style=ft.ButtonStyle(color=self.danger_color)),
                 ]),
-                ft.Container(height=10),
-                table_header,
-                table_rows,
-            ], spacing=5),
+                ft.Container(content=history_list, height=150, bgcolor=self.card_color, border_radius=8, padding=5),
+            ], spacing=8),
             padding=15,
             bgcolor=self.card_color,
             border_radius=12,
         )
-        
-        # ========== LOAD INITIAL DATA ==========
-        refresh_recent_table()
         
         # ========== MAIN LAYOUT ==========
         main_content = ft.Column([
             ft.Text("📷 BARCODE SCANNER", size=24, weight=ft.FontWeight.BOLD, color=self.text_color),
             ft.Container(height=15),
             
-            stats_section,
+            stats_row,
             ft.Container(height=20),
             
             barcode_section,
@@ -2799,7 +2638,7 @@ body {{
             result_section,
             ft.Container(height=20),
             
-            recent_section,
+            history_section,
             ft.Container(height=10),
             
             status_text,
@@ -4133,59 +3972,89 @@ body {{
         def __init__(self):
             self.cap = None
             self.is_scanning = False
+            
+            # Try to import OpenCV, but handle gracefully
+            self.CV2_AVAILABLE = False
+            self.cv2 = None
+            self.np = None
+            self.pyzbar = None
+            
+            try:
+                import cv2
+                import numpy as np
+                from pyzbar import pyzbar
+                self.cv2 = cv2
+                self.np = np
+                self.pyzbar = pyzbar
+                self.CV2_AVAILABLE = True
+                print("✅ Barcode scanner: Camera available")
+            except ImportError:
+                print("⚠️ Barcode scanner: Camera not available - using manual entry only")
         
         def scan_from_camera(self):
-            """Scan barcode using webcam"""
-            self.cap = cv2.VideoCapture(0)
-            if not self.cap.isOpened():
+            """Scan barcode using webcam (returns None if camera not available)"""
+            if not self.CV2_AVAILABLE:
+                print("Camera not available")
                 return None
             
-            barcode_data = None
-            
-            while True:
-                ret, frame = self.cap.read()
-                if not ret:
-                    break
+            try:
+                self.cap = self.cv2.VideoCapture(0)
+                if not self.cap.isOpened():
+                    return None
+                
+                barcode_data = None
+                
+                while True:
+                    ret, frame = self.cap.read()
+                    if not ret:
+                        break
+                        
+                    # Decode barcodes
+                    barcodes = self.pyzbar.decode(frame)
                     
-                # Decode barcodes
-                barcodes = pyzbar.decode(frame)
-                
-                for barcode in barcodes:
-                    barcode_data = barcode.data.decode('utf-8')
-                    # Draw rectangle around barcode
-                    (x, y, w, h) = barcode.rect
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                    cv2.putText(frame, barcode_data, (x, y - 10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    for barcode in barcodes:
+                        barcode_data = barcode.data.decode('utf-8')
+                        # Draw rectangle around barcode
+                        (x, y, w, h) = barcode.rect
+                        self.cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                        self.cv2.putText(frame, barcode_data, (x, y - 10), 
+                                self.cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        
+                        if barcode_data:
+                            self.cap.release()
+                            self.cv2.destroyAllWindows()
+                            return barcode_data
                     
-                    if barcode_data:
-                        self.cap.release()
-                        cv2.destroyAllWindows()
-                        return barcode_data
+                    # Show frame
+                    self.cv2.imshow('Barcode Scanner - Press Q to quit', frame)
+                    
+                    if self.cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
                 
-                # Show frame
-                cv2.imshow('Barcode Scanner - Press Q to quit', frame)
-                
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-            
-            self.cap.release()
-            cv2.destroyAllWindows()
-            return None
+                self.cap.release()
+                self.cv2.destroyAllWindows()
+                return None
+            except Exception as e:
+                print(f"Camera error: {e}")
+                return None
         
         def scan_from_image_file(self, image_path):
             """Scan barcode from image file"""
+            if not self.CV2_AVAILABLE:
+                return None
+            
             try:
+                from PIL import Image
                 # Try with OpenCV first
-                image = cv2.imread(image_path)
+                image = self.cv2.imread(image_path)
                 if image is not None:
-                    barcodes = pyzbar.decode(image)
+                    barcodes = self.pyzbar.decode(image)
                     if barcodes:
                         return barcodes[0].data.decode('utf-8')
                 
                 # Fallback to PIL
                 image = Image.open(image_path)
-                barcodes = pyzbar.decode(image)
+                barcodes = self.pyzbar.decode(image)
                 if barcodes:
                     return barcodes[0].data.decode('utf-8')
                 return None
@@ -4397,6 +4266,10 @@ body {{
                 ], alignment=ft.MainAxisAlignment.END, spacing=10),
             ], spacing=10)
             page.update()
+        
+        def is_camera_available(self):
+            """Check if camera functionality is available"""
+            return self.CV2_AVAILABLE
     
     def _create_stat_card(self, title, value, subtitle, color):
         """Create a statistics card"""
