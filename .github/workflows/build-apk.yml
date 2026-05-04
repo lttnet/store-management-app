@@ -1,4 +1,4 @@
-name: Build APK with NumPy
+name: Build Store Management APK
 
 on:
   workflow_dispatch:
@@ -15,17 +15,14 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Install build dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y python3-dev build-essential
-    
-    - name: Install Python packages
+    - name: Install dependencies
       run: |
         pip install --upgrade pip
-        pip install numpy
         pip install flet==0.21.2
-        pip install pillow requests pyzbar
+        pip install pillow
+        pip install requests
+        # Removed numpy - add back if essential
+        # pip install numpy
     
     - name: Setup Java
       uses: actions/setup-java@v4
@@ -44,5 +41,5 @@ jobs:
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: StoreApp
+        name: StoreManagement-App
         path: build/apk/*.apk
