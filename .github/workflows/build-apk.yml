@@ -1,48 +1,46 @@
-name: Build Flet APK
+name: Build Store Management APK
 
 on:
-  push:
-    branches: ["main"]
   workflow_dispatch:
 
 jobs:
-  build-apk:
+  build:
     runs-on: ubuntu-latest
-
+    
     steps:
-    # 1. Get code
-    - name: Checkout repository
+    - name: Checkout code
       uses: actions/checkout@v4
-
+    
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.11"
-
-    # 3. Setup Flutter (required for Flet)
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install flet==0.21.2
+        pip install pillow
+        pip install numpy
+        pip install requests
+        pip install pyzbar
+        # OpenCV removed - add back later if needed
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+    
     - name: Setup Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: "3.19.0"
-        
-    - name: Install Python dependencies (stable)
-      run: |
-        # 1. Upgrade core tools FIRST
-        python -m pip install --upgrade pip setuptools wheel
+        flutter-version: '3.19.6'
     
-        # 2. Install your app dependencies
-        pip install --no-cache-dir --only-binary=:all: -r requirements.txt
-    
-        # 3. FORCE fix packaging conflict (FINAL STEP)
-        pip install --upgrade "packaging>=24.0"
-        
-    # 6. Build APK
     - name: Build APK
       run: flet build apk
-
-    # 7. Upload APK artifact
+    
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: flet-apk
+        name: StoreManagement-App
         path: build/apk/*.apk
