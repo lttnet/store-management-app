@@ -27,7 +27,7 @@ except ImportError:
         def open(*args, **kwargs):
             raise ImportError("PIL not available")
 
-from pil_compat import Image, PIL_AVAILABLE
+#from pil_compat import Image, PIL_AVAILABLE
 
 import hashlib
 import json
