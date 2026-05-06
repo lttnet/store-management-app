@@ -3,64 +3,40 @@ name: Build Store Management APK
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
-env:
-  PYTHON_VERSION: '3.11'
-  JAVA_VERSION: '17'
-
 jobs:
-  build-android:
-    name: Build Android APK
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+      
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
+          python-version: '3.11'
+      
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.16.9'
-          channel: 'stable'
-
-      - name: Accept Android Licenses
-        run: |
-          # This automatically accepts all licenses
-          echo y | flutter doctor --android-licenses || true
-
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          echo "Installed packages:"
-          pip list
-
+          pip install flet==0.21.2 pillow requests
+      
       - name: Build APK
         run: |
-          flet build apk --verbose
-
-      - name: Upload APK artifact
+          flet build apk
+      
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Store-Management-APK
           path: build/app/outputs/flutter-apk/*.apk
-          retention-days: 30
