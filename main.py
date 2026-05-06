@@ -16,7 +16,18 @@ from managers.user_manager import UserManager
 #import cv2
 #import numpy as np
 #from pyzbar import pyzbar
-from PIL import Image
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    # Create dummy Image class
+    class Image:
+        @staticmethod
+        def open(*args, **kwargs):
+            raise ImportError("PIL not available")
+
+from pil_compat import Image, PIL_AVAILABLE
 
 import hashlib
 import json
