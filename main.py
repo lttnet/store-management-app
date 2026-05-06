@@ -34,19 +34,6 @@ import json
 import os
 from datetime import datetime, timedelta
 
-stats_row = ft.Row([
-    ft.Container(
-        content=ft.Column([
-            ft.Text("📦 Materials", size=14),
-            ft.Text(str(material_count), size=28, weight=ft.FontWeight.BOLD),
-        ]),
-        padding=20,
-        bgcolor=ft.Colors.BLUE_900,
-        border_radius=10,
-    ),
-    # Add more stat cards as needed
-])
-
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
