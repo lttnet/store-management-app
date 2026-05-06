@@ -3,42 +3,71 @@ name: Build Store Management APK
 on:
   push:
     branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
 
+env:
+  PYTHON_VERSION: '3.11'
+
 jobs:
-  build:
+  build-android:
+    name: Build Android APK
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 30
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      
-       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          # Change this line from a specific old version to 'stable'
-          flutter-version: 'stable' 
-          channel: 'stable'
-      
+          distribution: 'zulu'
+          java-version: '17'
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-      
-      - name: Install dependencies (NO PILLOW)
+
+      - name: Setup Flutter (Latest Stable)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+          channel: 'stable'
+
+      - name: Accept Android Licenses
+        run: |
+          echo "y" | flutter doctor --android-licenses || true
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install flet==0.21.2
           pip install requests
-      
+          # Do NOT install pillow in this workflow
+          # (Your app displays images without needing Pillow)
+          echo "Installed packages:"
+          pip list
+
       - name: Build APK
-        run: flet build apk
-      
-      - name: Upload APK
+        run: flet build apk --verbose
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: Store-Management-APK
           path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 30
+
+      - name: Upload AAB artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Store-Management-AAB
+          path: build/app/outputs/bundle/*.aab
+          retention-days: 30
