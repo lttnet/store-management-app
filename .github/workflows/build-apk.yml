@@ -5,7 +5,7 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:  # Allows manual trigger
+  workflow_dispatch:
 
 env:
   PYTHON_VERSION: '3.11'
@@ -44,8 +44,8 @@ jobs:
 
       - name: Accept Android Licenses
         run: |
-          flutter doctor --android-licenses --yes
-          echo "y" | sdkmanager --licenses || true
+          # This automatically accepts all licenses
+          echo y | flutter doctor --android-licenses || true
 
       - name: Install Python dependencies
         run: |
@@ -63,11 +63,4 @@ jobs:
         with:
           name: Store-Management-APK
           path: build/app/outputs/flutter-apk/*.apk
-          retention-days: 30
-
-      - name: Upload AAB artifact (optional)
-        uses: actions/upload-artifact@v4
-        with:
-          name: Store-Management-AAB
-          path: build/app/outputs/bundle/*.aab
           retention-days: 30
