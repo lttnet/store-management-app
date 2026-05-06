@@ -1,5 +1,3 @@
 flet==0.21.2
 pillow
 requests
-plotly
---no-deps plotly
