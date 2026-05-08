@@ -62,18 +62,29 @@ class ResponsiveHelper:
     
     def update(self):
         width = self.page.width if self.page.width else 1200
-        self.is_mobile = width < 800
+        # For landscape mode, use width to determine device type
+        # On mobile in landscape, width is typically > 600
+        self.is_mobile = width < 800  # Landscape tablets are usually wider
         self.is_tablet = 800 <= width < 1200
         self.is_desktop = width >= 1200
-        self.sidebar_width = 180 if self.is_mobile else 250
+        # Smaller sidebar on mobile landscape
+        self.sidebar_width = 200 if self.is_mobile else 250
     
     def get_padding(self):
-        return 8 if self.is_mobile else 20
+        # Smaller padding on mobile landscape
+        return 10 if self.is_mobile else 20
     
     def get_font_size(self, desktop_size):
         if self.is_mobile:
-            return desktop_size - 4
+            return desktop_size - 2  # Less reduction for landscape
         return desktop_size
+    
+    def get_spacing(self):
+        return 10 if self.is_mobile else 15
+    
+    def get_sidebar_visible(self):
+        # Always show sidebar on landscape (it fits)
+        return True
 
 
 class LicenseManager:
@@ -170,29 +181,43 @@ class StoreApp:
         return [dict(row) for row in rows]
         
     def main(self, page: ft.Page):
+        """Main entry point with landscape orientation support"""
+        
+        # Initialize responsive helper
         self.responsive = ResponsiveHelper(page)
         
-        # Set window size based on device
+        # FORCE LANDSCAPE/HORIZONTAL ORIENTATION
+        # This keeps your desktop layout usable on mobile
         if self.responsive.is_mobile:
-            page.window_width = None
-            page.window_height = None
+            # Mobile landscape settings
             page.window_maximized = True
-            page.window_min_width = None
-            page.window_min_height = None
+            page.window_width = None  # Auto full width
+            page.window_height = None  # Auto full height
+            page.window_min_width = 600
+            page.window_min_height = 400
+            page.window_max_width = None
+            page.window_max_height = None
         else:
+            # Desktop original settings
             page.window_width = 1600
             page.window_height = 900
             page.window_min_width = 1200
             page.window_min_height = 700
         
+        # Page settings
         page.title = "Store Management System"
         page.theme_mode = ft.ThemeMode.DARK
         page.bgcolor = self.bg_color
         page.padding = 0
         page.spacing = 0
         
+        # Prevent window from being resized too small
+        page.window_resizable = True
+        
+        # Handle resize events to maintain responsiveness
         def on_resize(e):
             self.responsive.update()
+            # Refresh current view on resize
             if self.current_user:
                 if self.current_view == "dashboard":
                     self.show_dashboard(page)
@@ -206,8 +231,13 @@ class StoreApp:
                     self.show_users(page)
                 elif self.current_view == "settings":
                     self.show_settings(page)
+                elif self.current_view == "barcode_scanner":
+                    self.show_barcode_scanner(page)
+            page.update()
         
         page.on_resize = on_resize
+        
+        # Initialize database and show login
         init_database()
         self.show_login(page)
         page.update()
@@ -236,10 +266,14 @@ class StoreApp:
         return self.quality_colors.get(quality, "#CCCCCC")
     
     def show_login(self, page: ft.Page):
+        """Show login screen - optimized for landscape orientation"""
         page.controls.clear()
         
-        field_width = page.width - 80 if self.responsive and self.responsive.is_mobile else 280
-        field_width = min(field_width, 350)
+        # Calculate responsive field width based on screen size
+        if self.responsive and self.responsive.is_mobile:
+            field_width = min(page.width - 100, 350) if page.width else 280
+        else:
+            field_width = 280
         
         email_field = ft.TextField(
             label="Email",
@@ -273,34 +307,81 @@ class StoreApp:
                 status_text.value = "Invalid email or password!"
                 page.update()
         
-        logo = ft.Image(src=logo_path, width=80, height=80, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=60)
+        def on_guest_login(e):
+            self.current_user = {
+                'id': 0,
+                'name': 'Guest User',
+                'email': 'guest@store.com',
+                'role': 'guest',
+                'guest_mode': True,
+                'is_premium': False
+            }
+            self.show_dashboard(page)
         
-        main_layout = ft.Column(
-            [
-                ft.Text("Welcome", size=28 if not self.responsive or not self.responsive.is_mobile else 24, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ft.Text("Sign in to manage your inventory", size=13, color="#AAAAAA"),
-                ft.Container(height=20),
-                ft.Container(width=50, height=2, bgcolor=self.accent_color, border_radius=1),
-                ft.Container(height=20),
-                email_field,
-                ft.Container(height=15),
-                password_field,
-                ft.Container(height=15),
-                status_text,
-                ft.Container(height=10),
-                ft.Row([logo, ft.Container(width=20), ft.FilledButton("Sign In", width=140, height=45, on_click=on_login)], alignment=ft.MainAxisAlignment.CENTER),
-                ft.Divider(height=20, color="#3C3C3C"),
-                ft.OutlinedButton("Continue as Guest", width=field_width, height=40, on_click=lambda e: self.guest_login(page)),
-                ft.Container(height=10),
-                ft.OutlinedButton("Start Free Trial (14 days)", width=field_width, height=40, on_click=lambda e: self.free_trial(page)),
-                ft.Container(height=10),
-                ft.TextButton("Forgot Password?", on_click=lambda e: self.show_forgot_password(page), style=ft.ButtonStyle(color="#888888")),
-            ],
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=0,
-        )
+        logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=60)
         
-        login_card = ft.Container(content=main_layout, padding=40, border_radius=20, width=min(500, page.width - 40))
+        # For landscape mode, use Row layout instead of Column for better fit
+        if self.responsive and self.responsive.is_mobile and page.width and page.width < 800:
+            # Landscape mobile layout - horizontal arrangement
+            main_layout = ft.Row(
+                [
+                    ft.Container(
+                        content=ft.Column([
+                            logo,
+                            ft.Container(height=20),
+                            ft.FilledButton("Sign In", width=140, height=45, on_click=on_login),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                        width=200,
+                    ),
+                    ft.VerticalDivider(width=20, color="#3C3C3C"),
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Text("Welcome", size=24, weight=ft.FontWeight.BOLD, color=self.text_color),
+                            ft.Text("Sign in to manage your inventory", size=12, color="#AAAAAA"),
+                            ft.Container(height=15),
+                            email_field,
+                            ft.Container(height=10),
+                            password_field,
+                            ft.Container(height=10),
+                            status_text,
+                            ft.Container(height=10),
+                            ft.OutlinedButton("Guest", width=field_width, height=40, on_click=on_guest_login),
+                            ft.TextButton("Forgot Password?", on_click=lambda e: self.show_forgot_password(page)),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                        expand=True,
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+            login_card = ft.Container(content=main_layout, padding=30, border_radius=20, width=min(700, page.width - 40))
+        else:
+            # Desktop/Tablet layout - vertical centered
+            main_layout = ft.Column(
+                [
+                    ft.Text("Welcome", size=28, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Text("Sign in to manage your inventory", size=13, color="#AAAAAA"),
+                    ft.Container(height=20),
+                    ft.Container(width=50, height=2, bgcolor=self.accent_color, border_radius=1),
+                    ft.Container(height=20),
+                    email_field,
+                    ft.Container(height=15),
+                    password_field,
+                    ft.Container(height=15),
+                    status_text,
+                    ft.Container(height=10),
+                    ft.Row([logo, ft.Container(width=20), ft.FilledButton("Sign In", width=140, height=45, on_click=on_login)], 
+                        alignment=ft.MainAxisAlignment.CENTER),
+                    ft.Divider(height=20, color="#3C3C3C"),
+                    ft.OutlinedButton("Continue as Guest", width=field_width, height=40, on_click=on_guest_login),
+                    ft.Container(height=10),
+                    ft.TextButton("Forgot Password?", on_click=lambda e: self.show_forgot_password(page), style=ft.ButtonStyle(color="#888888")),
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=0,
+            )
+            login_card = ft.Container(content=main_layout, padding=40, border_radius=20, width=min(500, page.width - 40))
+        
         centered_login = ft.Container(content=login_card, alignment=ft.alignment.center, expand=True)
         
         bg_image = ft.Image(src=background_path, fit=ft.ImageFit.COVER) if os.path.exists(background_path) else None
