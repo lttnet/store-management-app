@@ -389,282 +389,357 @@ class StoreApp:
         page.update()
     
     def show_dashboard(self, page: ft.Page):
-        """Show dashboard - FULL SCREEN no borders"""
+        """Show dashboard - COMPLETE WORKING VERSION"""
         page.controls.clear()
         
-        # Trial expiration check
-        if self.current_user and self.current_user.get('trial_mode', False):
-            trial_end_str = self.current_user.get('trial_end_date')
-            if trial_end_str:
-                trial_end_date = datetime.strptime(trial_end_str, '%Y-%m-%d')
-                if datetime.now().date() > trial_end_date.date():
-                    self.show_upgrade_screen(page)
-                    return
-        
-        materials = self.dict_list(MaterialManager.get_all())
-        accessories = self.dict_list(AccessoryManager.get_all())
-        stats = MaterialManager.get_stats()
-        accessory_stats = AccessoryManager.get_stats()
-        
-        # Create sidebar
-        sidebar = self.create_sidebar(page)
-        
-        # Get current scale
-        scale = self.scale_helper.scale if self.scale_helper else 1.0
-        
-        # Calculate responsive sizes based on scale
-        padding_size = int(20 * scale)
-        font_title = int(28 * scale)
-        font_stats = int(36 * scale)
-        font_normal = int(14 * scale)
-        
-        # Stats cards row
-        stats_row = ft.Row(
-            [
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("📦 Total Materials", size=font_normal, color="#CCCCCC"),
-                        ft.Text(str(stats.get('total_items', 0)), size=font_stats, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                    padding=padding_size, bgcolor=self.success_color, border_radius=10, expand=True,
-                ),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("🔧 Accessories", size=font_normal, color="#CCCCCC"),
-                        ft.Text(str(accessory_stats.get('total_items', 0)), size=font_stats, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                    padding=padding_size, bgcolor=self.accent_color, border_radius=10, expand=True,
-                ),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("📄 Export Records", size=font_normal, color="#CCCCCC"),
-                        ft.Text("120", size=font_stats, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                    padding=padding_size, bgcolor=self.warning_color, border_radius=10, expand=True,
-                ),
-            ],
-            spacing=int(15 * scale),
-            expand=True,
-        )
-        
-        # Materials Table Panel
-        materials_rows = []
-        for m in materials[:10]:
-            materials_rows.append(
-                ft.Row([
-                    ft.Text(m.get('name', 'N/A'), size=font_normal - 2, width=int(140 * scale)),
-                    ft.Text(m.get('location_ids') or "N/A", size=font_normal - 2, width=int(90 * scale)),
-                    ft.Text(m.get('size') or "N/A", size=font_normal - 2, width=int(80 * scale)),
+        try:
+            # Get REAL data from database
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            # Calculate stats
+            total_materials = len(materials)
+            total_accessories = len(accessories)
+            low_stock_materials = [m for m in materials if m.get('quantity', 0) < 10]
+            low_stock_accessories = [a for a in accessories if a.get('quantity', 0) < 10]
+            total_low_stock = len(low_stock_materials) + len(low_stock_accessories)
+            
+            # Create sidebar
+            sidebar = self.create_sidebar(page)
+            
+            # Get scale for responsive
+            scale = self.scale_helper.scale if self.scale_helper else 1.0
+            padding_size = int(20 * scale)
+            
+            # ========== STATS ROW ==========
+            stats_row = ft.Row(
+                [
                     ft.Container(
-                        content=ft.Text(m.get('quality', 'Used'), size=font_normal - 4, color="white"),
-                        bgcolor=self.get_quality_color(m.get('quality', 'Used')),
-                        border_radius=8,
-                        padding=ft.padding.symmetric(horizontal=int(6 * scale), vertical=int(2 * scale)),
-                        width=int(70 * scale),
+                        content=ft.Column([
+                            ft.Text("📦 Total Materials", size=14, color="#CCCCCC"),
+                            ft.Text(str(total_materials), size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                        padding=20, bgcolor=self.success_color, border_radius=10, expand=True,
                     ),
-                    ft.Text(str(m.get('quantity', 0)), size=font_normal - 2, width=int(55 * scale)),
-                ], alignment=ft.MainAxisAlignment.START)
-            )
-        
-        if not materials_rows:
-            materials_rows.append(ft.Text("No materials found", size=font_normal - 2, color="#888888"))
-        
-        materials_table = ft.Column([
-            ft.Row([
-                ft.Text("Materials", size=font_normal + 2, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ft.Container(expand=True),
-                ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)),
-            ]),
-            ft.Divider(height=1, color="#3C3C3C"),
-            ft.Container(height=int(5 * scale)),
-            ft.Row([
-                ft.Text("Name", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(140 * scale)),
-                ft.Text("Location", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(90 * scale)),
-                ft.Text("Size", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(80 * scale)),
-                ft.Text("Quality", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(70 * scale)),
-                ft.Text("Stock", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(55 * scale)),
-            ], alignment=ft.MainAxisAlignment.START),
-        ] + materials_rows, spacing=int(6 * scale), scroll=ft.ScrollMode.AUTO, height=int(300 * scale))
-        
-        left_panel = ft.Container(
-            content=materials_table,
-            padding=int(12 * scale),
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
-        )
-        
-        # Accessories Table Panel
-        accessories_rows = []
-        for a in accessories[:10]:
-            has_image = a.get('image_path') and os.path.exists(a.get('image_path', '')) if a.get('image_path') else False
-            image_icon = "🖼️" if has_image else "📷"
-            accessories_rows.append(
-                ft.Row([
-                    ft.Text(image_icon, size=font_normal - 2, width=int(30 * scale)),
-                    ft.Text(a.get('name', 'N/A'), size=font_normal - 2, width=int(140 * scale)),
-                    ft.Text(str(a.get('quantity', 0)), size=font_normal - 2, width=int(70 * scale)),
                     ft.Container(
-                        content=ft.Text(a.get('quality', 'Used'), size=font_normal - 4, color="white"),
-                        bgcolor=self.get_quality_color(a.get('quality', 'Used')),
-                        border_radius=8,
-                        padding=ft.padding.symmetric(horizontal=int(6 * scale), vertical=int(2 * scale)),
-                        width=int(70 * scale),
+                        content=ft.Column([
+                            ft.Text("🔧 Accessories", size=14, color="#CCCCCC"),
+                            ft.Text(str(total_accessories), size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                        padding=20, bgcolor=self.accent_color, border_radius=10, expand=True,
                     ),
-                    ft.Text("View", size=font_normal - 4, color=self.accent_color, width=int(50 * scale)),
-                ], alignment=ft.MainAxisAlignment.START)
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Text("⚠️ Low Stock", size=14, color="#CCCCCC"),
+                            ft.Text(str(total_low_stock), size=36, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                        padding=20, bgcolor=self.warning_color, border_radius=10, expand=True,
+                    ),
+                ],
+                spacing=15,
+                expand=True,
             )
-        
-        if not accessories_rows:
-            accessories_rows.append(ft.Text("No accessories found", size=font_normal - 2, color="#888888"))
-        
-        accessories_table = ft.Column([
-            ft.Row([
-                ft.Text("Accessories & Parts", size=font_normal + 2, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ft.Container(expand=True),
-                ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)),
-            ]),
-            ft.Divider(height=1, color="#3C3C3C"),
-            ft.Container(height=int(5 * scale)),
-            ft.Row([
-                ft.Text("Img", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(30 * scale)),
-                ft.Text("Part Name", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(140 * scale)),
-                ft.Text("Qty", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(70 * scale)),
-                ft.Text("Quality", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(70 * scale)),
-                ft.Text("Notes", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(50 * scale)),
-            ], alignment=ft.MainAxisAlignment.START),
-        ] + accessories_rows, spacing=int(6 * scale), scroll=ft.ScrollMode.AUTO, height=int(300 * scale))
-        
-        right_panel = ft.Container(
-            content=accessories_table,
-            padding=int(12 * scale),
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
-        )
-        
-        middle_row = ft.Row([left_panel, right_panel], spacing=int(15 * scale), expand=True)
-        
-        # Low Stock Panel
-        low_stock_materials = [m for m in materials if m.get('quantity', 0) < 10]
-        low_stock_accessories = [a for a in accessories if a.get('quantity', 0) < 10]
-        
-        low_stock_list = ft.Column(spacing=int(5 * scale), scroll=ft.ScrollMode.AUTO, height=int(180 * scale))
-        
-        for item in low_stock_materials[:8]:
-            low_stock_list.controls.append(
+            
+            # ========== MATERIALS SECTION ==========
+            materials_list = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, height=300)
+            
+            if materials:
+                for m in materials[:10]:
+                    materials_list.controls.append(
+                        ft.Card(
+                            content=ft.Container(
+                                content=ft.Column([
+                                    ft.Row([
+                                        ft.Text(m.get('name', 'N/A'), size=14, weight=ft.FontWeight.BOLD, expand=True),
+                                        ft.Text(f"Qty: {m.get('quantity', 0)}", size=14, color=self.accent_color),
+                                    ]),
+                                    ft.Row([
+                                        ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=11, color="#888888", expand=True),
+                                        ft.Text(f"🏷️ {m.get('quality', 'Used')}", size=11),
+                                    ]),
+                                ]),
+                                padding=12,
+                            ),
+                        )
+                    )
+            else:
+                materials_list.controls.append(
+                    ft.Text("No materials found. Click Add to create one.", size=12, color="#888888")
+                )
+            
+            materials_section = ft.Column([
                 ft.Row([
-                    ft.Text("📦", size=font_normal - 2, width=int(35 * scale)),
-                    ft.Text(item.get('name', 'Unknown')[:20], size=font_normal - 3, width=int(160 * scale)),
-                    ft.Text(f"Stock: {item.get('quantity', 0)}", size=font_normal - 3, color=self.danger_color),
-                ])
-            )
-        
-        for item in low_stock_accessories[:8]:
-            low_stock_list.controls.append(
-                ft.Row([
-                    ft.Text("🔧", size=font_normal - 2, width=int(35 * scale)),
-                    ft.Text(item.get('name', 'Unknown')[:20], size=font_normal - 3, width=int(160 * scale)),
-                    ft.Text(f"Stock: {item.get('quantity', 0)}", size=font_normal - 3, color=self.danger_color),
-                ])
-            )
-        
-        if not low_stock_list.controls:
-            low_stock_list.controls.append(ft.Text("✅ No low stock items", size=font_normal - 2, color=self.success_color))
-        
-        low_stock_panel = ft.Container(
-            content=ft.Column([
-                ft.Row([
-                    ft.Text("⚠️ Low Stock Items", size=font_normal, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Text("📋 Recent Materials", size=18, weight=ft.FontWeight.BOLD, color=self.text_color),
                     ft.Container(expand=True),
-                    ft.Text(f"Total: {len(low_stock_materials) + len(low_stock_accessories)}", size=font_normal - 3, color="#888888"),
+                    ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)),
+                    ft.FilledButton("➕ Add", on_click=lambda e: self.open_add_modal(page), style=ft.ButtonStyle(bgcolor=self.success_color)),
                 ]),
-                ft.Divider(height=1, color="#3C3C3C"),
-                ft.Container(height=int(5 * scale)),
-                low_stock_list,
-            ], spacing=int(8 * scale)),
-            padding=int(12 * scale),
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
-        )
-        
-        # Import/Export Panel
-        import_panel = ft.Container(
-            content=ft.Column([
-                ft.Text("📁 Import/Export", size=font_normal, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ft.Divider(height=1, color="#3C3C3C"),
-                ft.Container(height=int(5 * scale)),
+                ft.Divider(),
+                materials_list,
+            ])
+            
+            # ========== ACCESSORIES SECTION ==========
+            accessories_list = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, height=300)
+            
+            if accessories:
+                for a in accessories[:10]:
+                    accessories_list.controls.append(
+                        ft.Card(
+                            content=ft.Container(
+                                content=ft.Column([
+                                    ft.Row([
+                                        ft.Text(a.get('name', 'N/A'), size=14, weight=ft.FontWeight.BOLD, expand=True),
+                                        ft.Text(f"Qty: {a.get('quantity', 0)}", size=14, color=self.accent_color),
+                                    ]),
+                                    ft.Row([
+                                        ft.Text(f"📍 {a.get('location', 'N/A')}", size=11, color="#888888", expand=True),
+                                        ft.Text(f"🏷️ {a.get('quality', 'Used')}", size=11),
+                                    ]),
+                                ]),
+                                padding=12,
+                            ),
+                        )
+                    )
+            else:
+                accessories_list.controls.append(
+                    ft.Text("No accessories found. Click Add to create one.", size=12, color="#888888")
+                )
+            
+            accessories_section = ft.Column([
                 ft.Row([
-                    ft.ElevatedButton("📥 Import", on_click=lambda e: None, expand=True),
-                    ft.ElevatedButton("📤 Export", on_click=lambda e: None, expand=True),
-                ], spacing=int(10 * scale)),
-            ], spacing=int(8 * scale), horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=int(12 * scale),
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
-        )
-        
-        # Users Panel
-        users = self.dict_list(UserManager.get_all())
-        users_list = ft.Column(spacing=int(5 * scale), scroll=ft.ScrollMode.AUTO, height=int(150 * scale))
-        for u in users[:5]:
-            users_list.controls.append(
-                ft.Row([
-                    ft.Text(u.get('name', 'N/A')[:15], size=font_normal - 3, width=int(100 * scale)),
-                    ft.Container(
-                        content=ft.Text(u.get('role', 'user')[:8], size=font_normal - 5, color="white"),
-                        bgcolor=self.success_color if u.get('role') == 'user' else self.warning_color,
-                        border_radius=8,
-                        padding=ft.padding.symmetric(horizontal=int(6 * scale), vertical=int(2 * scale)),
-                    ),
-                ])
+                    ft.Text("🔧 Recent Accessories", size=18, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Container(expand=True),
+                    ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)),
+                    ft.FilledButton("➕ Add", on_click=lambda e: self.open_add_accessory_modal(page), style=ft.ButtonStyle(bgcolor=self.success_color)),
+                ]),
+                ft.Divider(),
+                accessories_list,
+            ])
+            
+            # ========== LOW STOCK SECTION ==========
+            low_stock_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=150)
+            
+            for m in low_stock_materials:
+                low_stock_list.controls.append(
+                    ft.Row([
+                        ft.Text("📦", size=14, width=35),
+                        ft.Text(m.get('name', 'Unknown'), size=12, expand=True),
+                        ft.Text(f"Stock: {m.get('quantity', 0)}", size=12, color=self.danger_color),
+                    ])
+                )
+            for a in low_stock_accessories:
+                low_stock_list.controls.append(
+                    ft.Row([
+                        ft.Text("🔧", size=14, width=35),
+                        ft.Text(a.get('name', 'Unknown'), size=12, expand=True),
+                        ft.Text(f"Stock: {a.get('quantity', 0)}", size=12, color=self.danger_color),
+                    ])
+                )
+            
+            if total_low_stock == 0:
+                low_stock_list.controls.append(
+                    ft.Text("✅ No low stock items!", size=12, color=self.success_color)
+                )
+            
+            low_stock_panel = ft.Container(
+                content=ft.Column([
+                    ft.Text("⚠️ Low Stock Alerts", size=16, weight=ft.FontWeight.BOLD),
+                    ft.Divider(),
+                    low_stock_list,
+                ]),
+                padding=12,
+                bgcolor=self.card_color,
+                border_radius=10,
+                expand=True,
             )
-        
-        users_panel = ft.Container(
-            content=ft.Column([
-                ft.Text("👥 Users & Permissions", size=font_normal, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ft.Divider(height=1, color="#3C3C3C"),
-                ft.Container(height=int(5 * scale)),
-                users_list,
-                ft.Container(expand=True),
-                ft.TextButton("Manage Users", on_click=lambda e: self.show_users(page)),
-            ], spacing=int(8 * scale)),
-            padding=int(12 * scale),
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
-        )
-        
-        bottom_row = ft.Row([low_stock_panel, import_panel, users_panel], spacing=int(15 * scale), expand=True)
-        
-        # Main content
-        main_content = ft.Column([
-            ft.Text("Dashboard", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
-            ft.Container(height=int(15 * scale)),
-            stats_row,
-            ft.Container(height=int(15 * scale)),
-            middle_row,
-            ft.Container(height=int(15 * scale)),
-            bottom_row,
-        ], spacing=int(5 * scale), expand=True, scroll=ft.ScrollMode.AUTO)
-        
-        main_container = ft.Container(
-            content=main_content,
-            expand=True,
-            padding=padding_size,
-        )
-        
-        # Combine sidebar and main content
-        dashboard_layout = ft.Row([sidebar, main_container], spacing=0, expand=True)
-        
-        # Add to page with expand=True to fill screen
-        page.add(dashboard_layout)
-        page.update()
+            
+            # ========== USERS SECTION ==========
+            users = self.dict_list(UserManager.get_all())
+            users_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=150)
+            
+            for u in users[:5]:
+                users_list.controls.append(
+                    ft.Row([
+                        ft.Text(u.get('name', 'N/A'), size=12, weight=ft.FontWeight.BOLD, expand=True),
+                        ft.Container(
+                            content=ft.Text(u.get('role', 'user'), size=10, color="white"),
+                            bgcolor=self.accent_color,
+                            border_radius=8,
+                            padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                        ),
+                    ])
+                )
+            
+            users_panel = ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Text("👥 Users", size=16, weight=ft.FontWeight.BOLD),
+                        ft.Container(expand=True),
+                        ft.TextButton("Manage", on_click=lambda e: self.show_users(page)),
+                    ]),
+                    ft.Divider(),
+                    users_list,
+                ]),
+                padding=12,
+                bgcolor=self.card_color,
+                border_radius=10,
+                expand=True,
+            )
+            
+            # ========== LAYOUT ==========
+            # Use responsive row for main content
+            content = ft.Column([
+                ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Container(height=15),
+                stats_row,
+                ft.Container(height=20),
+                ft.ResponsiveRow([
+                    ft.Container(content=materials_section, col={"xs": 12, "md": 6}),
+                    ft.Container(content=accessories_section, col={"xs": 12, "md": 6}),
+                ]),
+                ft.Container(height=20),
+                ft.ResponsiveRow([
+                    ft.Container(content=low_stock_panel, col={"xs": 12, "md": 6}),
+                    ft.Container(content=users_panel, col={"xs": 12, "md": 6}),
+                ]),
+            ], expand=True, scroll=ft.ScrollMode.AUTO)
+            
+            main_container = ft.Container(content=content, expand=True, padding=padding_size)
+            
+            # Combine with sidebar
+            page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
+            
+        except Exception as e:
+            print(f"Dashboard error: {e}")
+            import traceback
+            traceback.print_exc()
+            page.controls.clear()
+            page.add(ft.Text(f"Error: {str(e)}", size=20, color="red"))
+            page.add(ft.Text("Check the console for details", size=14, color="#888888"))
         
         self.current_view = "dashboard"
+        page.update()
     
+    def create_detail_panel(self, material, page):
+        """Create detail panel for selected material"""
+        if not material:
+            return ft.Column([
+                ft.Text("Material Details", size=18, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Divider(),
+                ft.Container(height=20),
+                ft.Text("Select a material to view details", size=12, color="#888888"),
+                ft.Container(expand=True),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10)
+        
+        return ft.Column([
+            ft.Text(material.get('name', 'N/A'), size=18, weight=ft.FontWeight.BOLD, color=self.text_color),
+            ft.Divider(),
+            ft.Row([ft.Text("📝 Code:", size=12, color="#CCCCCC", width=80), ft.Text(material.get('item_code') or "N/A", size=12, color=self.text_color)], spacing=5),
+            ft.Row([ft.Text("🏷️ Quality:", size=12, color="#CCCCCC", width=80), 
+                    ft.Container(content=ft.Text(material.get('quality', 'Used'), size=11, color="white"),
+                                bgcolor=self.get_quality_color(material.get('quality', 'Used')),
+                                border_radius=8, padding=ft.padding.symmetric(horizontal=8, vertical=3))], spacing=5),
+            ft.Row([ft.Text("📏 Size:", size=12, color="#CCCCCC", width=80), ft.Text(material.get('size') or "N/A", size=12, color=self.text_color)], spacing=5),
+            ft.Row([ft.Text("🔢 Quantity:", size=12, color="#CCCCCC", width=80), ft.Text(str(material.get('quantity', 0)), size=12, color=self.text_color)], spacing=5),
+            ft.Row([ft.Text("📍 Location:", size=12, color="#CCCCCC", width=80), ft.Text(material.get('location_ids') or "N/A", size=12, color=self.text_color)], spacing=5),
+            ft.Divider(),
+            ft.Text("📝 Notes:", size=14, weight=ft.FontWeight.BOLD, color="#CCCCCC"),
+            ft.Text(material.get('notes') or "No notes", size=12, color="#888888"),
+            ft.Container(height=15),
+            ft.Row([
+                ft.ElevatedButton("✏️ EDIT", on_click=lambda e: self.open_edit_modal(page, material['id']),
+                                style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color)),
+                ft.ElevatedButton("🗑️ DELETE", on_click=lambda e: self.open_delete_modal(page, material['id']),
+                                style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=15),
+            ft.Row([ft.ElevatedButton("📱 SHOW BARCODE", on_click=lambda e: self.show_barcode_dialog(page, material),
+                                    style=ft.ButtonStyle(bgcolor=self.warning_color, color=self.text_color))], 
+                alignment=ft.MainAxisAlignment.CENTER),
+        ], spacing=10, scroll=ft.ScrollMode.AUTO)
+    
+    def create_accessory_detail_panel(self, accessory, page):
+        """Create detail panel for selected accessory"""
+        if not accessory:
+            return ft.Column([
+                ft.Text("Accessory Details", size=18, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Divider(),
+                ft.Container(height=20),
+                ft.Text("Select an accessory to view details", size=12, color="#888888"),
+                ft.Container(expand=True),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10)
+        
+        return ft.Column([
+            ft.Text(accessory.get('name', 'N/A'), size=18, weight=ft.FontWeight.BOLD, color=self.text_color),
+            ft.Divider(),
+            ft.Row([ft.Text("📝 Code:", size=12, color="#CCCCCC", width=80), ft.Text(accessory.get('item_code') or "N/A", size=12, color=self.text_color)], spacing=5),
+            ft.Row([ft.Text("🏷️ Quality:", size=12, color="#CCCCCC", width=80), 
+                    ft.Container(content=ft.Text(accessory.get('quality', 'Used'), size=11, color="white"),
+                                bgcolor=self.get_quality_color(accessory.get('quality', 'Used')),
+                                border_radius=8, padding=ft.padding.symmetric(horizontal=8, vertical=3))], spacing=5),
+            ft.Row([ft.Text("🔢 Quantity:", size=12, color="#CCCCCC", width=80), ft.Text(str(accessory.get('quantity', 0)), size=12, color=self.text_color)], spacing=5),
+            ft.Row([ft.Text("💰 Price:", size=12, color="#CCCCCC", width=80), ft.Text(f"${accessory.get('price', 0):.2f}" if accessory.get('price') else "N/A", size=12, color=self.text_color)], spacing=5),
+            ft.Row([ft.Text("📍 Location:", size=12, color="#CCCCCC", width=80), ft.Text(accessory.get('location') or "N/A", size=12, color=self.text_color)], spacing=5),
+            ft.Divider(),
+            ft.Text("📝 Notes:", size=14, weight=ft.FontWeight.BOLD, color="#CCCCCC"),
+            ft.Text(accessory.get('notes') or "No notes", size=12, color="#888888"),
+            ft.Container(height=15),
+            ft.Row([
+                ft.ElevatedButton("✏️ EDIT", on_click=lambda e: self.open_edit_accessory_modal(page, accessory['id']),
+                                style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color)),
+                ft.ElevatedButton("🗑️ DELETE", on_click=lambda e: self.open_delete_accessory_modal(page, accessory['id']),
+                                style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=15),
+            ft.Row([ft.ElevatedButton("📱 SHOW BARCODE", on_click=lambda e: self.show_barcode_dialog(page, accessory),
+                                    style=ft.ButtonStyle(bgcolor=self.warning_color, color=self.text_color))], 
+                alignment=ft.MainAxisAlignment.CENTER),
+        ], spacing=10, scroll=ft.ScrollMode.AUTO)
+    
+
+
+    def open_add_modal(self, page: ft.Page):
+        """Open add material modal"""
+        page.snack_bar = ft.SnackBar(ft.Text("Add Material - Will be implemented"), bgcolor=self.accent_color)
+        page.snack_bar.open = True
+        page.update()
+
+    def open_add_accessory_modal(self, page: ft.Page):
+        """Open add accessory modal"""
+        page.snack_bar = ft.SnackBar(ft.Text("Add Accessory - Will be implemented"), bgcolor=self.accent_color)
+        page.snack_bar.open = True
+        page.update()
+
+    def view_material_from_dashboard(self, page: ft.Page, material):
+        """Navigate to material details from dashboard"""
+        self.selected_material_detail = material
+        self.show_materials_screen(page)
+
+    def view_accessory_from_dashboard(self, page: ft.Page, accessory):
+        """Navigate to accessory details from dashboard"""
+        self.selected_accessory_detail = accessory
+        self.show_accessories(page)
+
+    def view_material_detail(self, page: ft.Page, material):
+        """View material detail (called from dashboard)"""
+        self.selected_material_detail = material
+        self.show_materials_screen(page)
+
+    def view_accessory_detail(self, page: ft.Page, accessory):
+        """View accessory detail (called from dashboard)"""
+        self.selected_accessory_detail = accessory
+        self.show_accessories(page)
+
+    def show_import_dialog(self, page: ft.Page):
+        """Show import dialog"""
+        page.snack_bar = ft.SnackBar(ft.Text("Import CSV - Coming Soon"), bgcolor=self.accent_color)
+        page.snack_bar.open = True
+        page.update()
+
+    def export_data(self, page: ft.Page):
+        """Export data to CSV"""
+        page.snack_bar = ft.SnackBar(ft.Text("Export CSV - Coming Soon"), bgcolor=self.accent_color)
+        page.snack_bar.open = True
+        page.update()
+
     def create_sidebar(self, page: ft.Page):
         """Create sidebar navigation with responsive sizing"""
         
@@ -797,122 +872,191 @@ class StoreApp:
     # ==================== STUB METHODS for other screens ====================
     
     def show_materials_screen(self, page: ft.Page):
-        """Show materials screen - FULL SCREEN like dashboard"""
+        """Show materials screen with REAL data"""
         page.controls.clear()
         
         self.page_ref = page
         materials = self.dict_list(MaterialManager.get_all())
         sidebar = self.create_sidebar(page)
         
-        # Get scale for responsive sizing
         scale = self.scale_helper.scale if self.scale_helper else 1.0
         padding_size = int(20 * scale)
-        font_title = int(24 * scale)
-        font_normal = int(14 * scale)
-        font_small = int(12 * scale)
         
-        # Search field
-        search_field = ft.TextField(
-            hint_text="Search...",
-            width=int(200 * scale),
-            bgcolor=self.card_color,
-            border_color=self.accent_color,
-            on_change=lambda e: self.search_materials_table(page, e.control.value),
-        )
+        # Search
+        search_field = ft.TextField(hint_text="Search...", width=180, bgcolor=self.card_color, border_color=self.accent_color,
+                                    on_change=lambda e: self.search_materials_table(page, e.control.value))
         
-        # Filter buttons
-        self.filter_buttons = {}
+        # Add button
+        add_button = ft.FilledButton("➕ Add Material", on_click=lambda e: self.open_add_modal(page), style=ft.ButtonStyle(bgcolor=self.success_color))
         
-        def create_filter_button(label, color, filter_type):
-            btn = ft.Container(
-                content=ft.Text(label, size=font_small, weight=ft.FontWeight.BOLD, color=self.text_color),
-                padding=ft.padding.symmetric(horizontal=int(12 * scale), vertical=int(6 * scale)),
-                bgcolor=self.card_color,
-                border_radius=20,
-                ink=True,
-                on_click=lambda e, f=filter_type: self.filter_materials(page, f),
-            )
-            self.filter_buttons[filter_type] = btn
-            return btn
-        
-        filter_buttons = ft.Row([
-            create_filter_button("All", self.accent_color, "All"),
-            create_filter_button("New", self.success_color, "New"),
-            create_filter_button("Used", self.warning_color, "Used"),
-            create_filter_button("Damaged", self.danger_color, "Damaged"),
-            create_filter_button("Repaired", self.accent_color, "Repaired"),
-        ], spacing=int(8 * scale))
-        
-        if "All" in self.filter_buttons:
-            self.filter_buttons["All"].bgcolor = self.accent_color
-        
-        add_button = ft.FilledButton(
-            "➕ Add Material",
-            style=ft.ButtonStyle(bgcolor=self.success_color, color=self.text_color),
-            on_click=lambda e: self.open_add_modal(page),
-        )
-        
-        # Table header
+        # Table
         header_row = ft.Container(
             content=ft.Row([
-                ft.Text("Image", size=font_small - 1, weight=ft.FontWeight.BOLD, width=int(50 * scale)),
-                ft.Text("Name", size=font_small - 1, weight=ft.FontWeight.BOLD, width=int(160 * scale)),
-                ft.Text("Length", size=font_small - 1, weight=ft.FontWeight.BOLD, width=int(50 * scale)),
-                ft.Text("Size", size=font_small - 1, weight=ft.FontWeight.BOLD, width=int(70 * scale)),
-                ft.Text("Qty", size=font_small - 1, weight=ft.FontWeight.BOLD, width=int(45 * scale)),
-                ft.Text("Quality", size=font_small - 1, weight=ft.FontWeight.BOLD, width=int(75 * scale)),
-                ft.Text("Location", size=font_small - 1, weight=ft.FontWeight.BOLD, width=int(100 * scale)),
-                ft.Text("Created", size=font_small - 1, weight=ft.FontWeight.BOLD, width=int(90 * scale)),
-                ft.Text("Actions", size=font_small - 1, weight=ft.FontWeight.BOLD, width=int(90 * scale)),
-            ], alignment=ft.MainAxisAlignment.START),
-            padding=ft.padding.symmetric(vertical=int(6 * scale), horizontal=int(8 * scale)),
+                ft.Text("Name", size=12, weight=ft.FontWeight.BOLD, width=180),
+                ft.Text("Location", size=12, weight=ft.FontWeight.BOLD, width=120),
+                ft.Text("Size", size=12, weight=ft.FontWeight.BOLD, width=100),
+                ft.Text("Qty", size=12, weight=ft.FontWeight.BOLD, width=60),
+                ft.Text("Quality", size=12, weight=ft.FontWeight.BOLD, width=100),
+                ft.Text("Created", size=12, weight=ft.FontWeight.BOLD, width=120),
+                ft.Text("Actions", size=12, weight=ft.FontWeight.BOLD, width=120),
+            ]),
+            padding=ft.padding.symmetric(vertical=8, horizontal=10),
             bgcolor="#3C3C3C",
             border_radius=6,
         )
         
-        # Table rows container
-        self.table_rows_container = ft.Column(spacing=int(2 * scale), scroll=ft.ScrollMode.AUTO, height=int(450 * scale))
-        self.update_materials_table(materials)
+        self.table_rows_container = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, height=450)
         
-        left_panel = ft.Container(
-            content=ft.Column([header_row, self.table_rows_container], spacing=0),
-            expand=True,
-            bgcolor=self.card_color,
-            border_radius=10,
-            padding=int(5 * scale),
-        )
+        # Populate table
+        for m in materials:
+            row = ft.Container(
+                content=ft.Row([
+                    ft.Text(m.get('name', 'N/A'), size=12, width=180),
+                    ft.Text(m.get('location_ids') or "N/A", size=12, width=120),
+                    ft.Text(m.get('size') or "N/A", size=12, width=100),
+                    ft.Text(str(m.get('quantity', 0)), size=12, width=60),
+                    ft.Container(content=ft.Text(m.get('quality', 'Used'), size=10, color="white"), bgcolor=self.get_quality_color(m.get('quality', 'Used')), border_radius=8, padding=ft.padding.symmetric(horizontal=6, vertical=2), width=90),
+                    ft.Text(str(m.get('created_at', ''))[:10], size=11, width=120, color="#888888"),
+                    ft.Row([
+                        ft.IconButton(icon=ft.icons.EDIT, icon_size=18, on_click=lambda e, mat=m: self.open_edit_modal(page, mat['id'])),
+                        ft.IconButton(icon=ft.icons.DELETE, icon_size=18, on_click=lambda e, mat=m: self.open_delete_modal(page, mat['id'])),
+                        ft.IconButton(icon=ft.icons.QR_CODE, icon_size=18, on_click=lambda e, mat=m: self.show_barcode_dialog(page, mat)),
+                    ]),
+                ]),
+                padding=ft.padding.symmetric(vertical=6, horizontal=10),
+                border_radius=6,
+                ink=True,
+                on_click=lambda e, mat=m: self.on_material_select(mat),
+            )
+            self.table_rows_container.controls.append(row)
         
-        # Detail panel (right side)
-        self.detail_panel = ft.Container(
-            content=self.create_detail_panel(None, page),
-            width=int(300 * scale),
-            bgcolor=self.card_color,
-            border_radius=10,
-            padding=int(12 * scale),
-        )
+        left_panel = ft.Container(content=ft.Column([header_row, self.table_rows_container], spacing=0), expand=True, bgcolor=self.card_color, border_radius=10, padding=5)
         
-        # Main content
+        # Detail panel
+        self.detail_panel = ft.Container(content=self.create_detail_panel(None, page), width=320, bgcolor=self.card_color, border_radius=10, padding=15)
+        
+        # Content
         content = ft.Column([
-            ft.Row([
-                ft.Text("Materials", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ft.Container(expand=True),
-                ft.Row([ft.Icon(ft.icons.SEARCH, size=int(18 * scale)), search_field], spacing=int(5 * scale)),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            ft.Container(height=int(8 * scale)),
-            ft.Row([filter_buttons, ft.Container(expand=True), add_button], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            ft.Container(height=int(12 * scale)),
-            ft.Row([left_panel, ft.Container(width=int(12 * scale)), self.detail_panel], spacing=0, expand=True),
+            ft.Row([ft.Text("Materials", size=24, weight=ft.FontWeight.BOLD), ft.Container(expand=True), ft.Row([ft.Icon(ft.icons.SEARCH), search_field])]),
+            ft.Container(height=10),
+            ft.Row([add_button], alignment=ft.MainAxisAlignment.END),
+            ft.Container(height=15),
+            ft.Row([left_panel, ft.Container(width=15), self.detail_panel], expand=True),
         ], expand=True)
         
         main_container = ft.Container(content=content, expand=True, padding=padding_size)
-        
-        # Combine with sidebar
-        materials_layout = ft.Row([sidebar, main_container], spacing=0, expand=True)
-        page.add(materials_layout)
+        page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
         
         self.current_view = "materials"
         page.update()
     
+    def view_material_detail(self, page: ft.Page, material):
+        """View material detail from dashboard"""
+        self.selected_material_detail = material
+        self.show_materials_screen(page)
+
+    def view_accessory_detail(self, page: ft.Page, accessory):
+        """View accessory detail from dashboard"""
+        self.selected_accessory_detail = accessory
+        self.show_accessories(page)
+
+    def update_materials_table(self, materials):
+        """Update the materials table with given materials"""
+        if not hasattr(self, 'table_rows_container'):
+            return
+        
+        scale = self.scale_helper.scale if self.scale_helper else 1.0
+        font_small = int(12 * scale)
+        
+        self.table_rows_container.controls.clear()
+        
+        for m in materials:
+            has_image = m.get('image_path') and os.path.exists(m.get('image_path', '')) if m.get('image_path') else False
+            image_icon = "🖼️" if has_image else "📷"
+            created_date = str(m.get('created_at', ''))[:10] if m.get('created_at') else 'N/A'
+            
+            row = ft.Container(
+                content=ft.Row([
+                    ft.Text(image_icon, size=font_small + 2, width=int(50 * scale)),
+                    ft.Text(m.get('name', 'N/A'), size=font_small, width=int(160 * scale)),
+                    ft.Text(str(m.get('length') or ""), size=font_small, width=int(50 * scale)),
+                    ft.Text(m.get('size') or "N/A", size=font_small, width=int(70 * scale)),
+                    ft.Text(str(m.get('quantity', 0)), size=font_small, width=int(45 * scale)),
+                    ft.Container(
+                        content=ft.Text(m.get('quality', 'Used'), size=font_small - 2, color="white"),
+                        bgcolor=self.get_quality_color(m.get('quality', 'Used')),
+                        border_radius=8,
+                        padding=ft.padding.symmetric(horizontal=int(6 * scale), vertical=int(2 * scale)),
+                        width=int(75 * scale),
+                    ),
+                    ft.Text(m.get('location_ids') or "N/A", size=font_small, width=int(100 * scale)),
+                    ft.Text(created_date, size=font_small - 2, width=int(90 * scale), color="#888888"),
+                    ft.Row([
+                        ft.IconButton(icon=ft.icons.EDIT, icon_size=int(18 * scale), 
+                                    on_click=lambda e, mat=m: self.open_edit_modal(self.page_ref, mat['id'])),
+                        ft.IconButton(icon=ft.icons.DELETE, icon_size=int(18 * scale),
+                                    on_click=lambda e, mat=m: self.open_delete_modal(self.page_ref, mat['id'])),
+                        ft.IconButton(icon=ft.icons.QR_CODE, icon_size=int(18 * scale),
+                                    on_click=lambda e, mat=m: self.show_barcode_dialog(self.page_ref, mat)),
+                    ], spacing=0),
+                ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.padding.symmetric(vertical=int(8 * scale), horizontal=int(10 * scale)),
+                border_radius=6,
+                ink=True,
+                on_click=lambda e, mat=m: self.on_material_select(mat),
+            )
+            self.table_rows_container.controls.append(row)
+        
+        if self.page_ref:
+            self.page_ref.update()
+
+    def search_materials_table(self, page: ft.Page, query):
+        """Search materials and update table"""
+        if not query:
+            if self.current_filter == "All":
+                materials = self.dict_list(MaterialManager.get_all())
+            else:
+                all_materials = self.dict_list(MaterialManager.get_all())
+                materials = [m for m in all_materials if m.get('quality') == self.current_filter]
+        else:
+            searched_materials = self.dict_list(MaterialManager.search(query))
+            if self.current_filter != "All":
+                materials = [m for m in searched_materials if m.get('quality') == self.current_filter]
+            else:
+                materials = searched_materials
+        
+        self.update_materials_table(materials)
+        page.update()
+
+    def filter_materials(self, page: ft.Page, filter_type):
+        """Filter materials by quality"""
+        self.current_filter = filter_type
+        
+        # Update button colors
+        if hasattr(self, 'filter_buttons'):
+            for btn in self.filter_buttons.values():
+                if hasattr(btn, 'bgcolor'):
+                    btn.bgcolor = self.card_color
+            if filter_type in self.filter_buttons:
+                self.filter_buttons[filter_type].bgcolor = self.accent_color
+        
+        # Filter materials
+        if filter_type == "All":
+            materials = self.dict_list(MaterialManager.get_all())
+        else:
+            all_materials = self.dict_list(MaterialManager.get_all())
+            materials = [m for m in all_materials if m.get('quality') == filter_type]
+        
+        self.update_materials_table(materials)
+        page.update()
+
+    def on_material_select(self, material):
+        """Handle material selection from table"""
+        self.selected_material_detail = material
+        if hasattr(self, 'detail_panel'):
+            self.detail_panel.content = self.create_detail_panel(material, self.page_ref)
+            self.page_ref.update()
+
     def show_accessories(self, page: ft.Page):
         """Show accessories screen - FULL SCREEN like dashboard"""
         page.controls.clear()
@@ -1026,6 +1170,63 @@ class StoreApp:
         self.current_view = "accessories"
         page.update()
     
+    def update_accessories_table(self, accessories):
+        """Update the accessories table with given accessories"""
+        if not hasattr(self, 'accessory_rows_container'):
+            return
+        
+        scale = self.scale_helper.scale if self.scale_helper else 1.0
+        font_small = int(12 * scale)
+        
+        self.accessory_rows_container.controls.clear()
+        
+        for a in accessories:
+            has_image = a.get('image_path') and os.path.exists(a.get('image_path', '')) if a.get('image_path') else False
+            image_text = "🖼️" if has_image else "📷"
+            location = a.get('location') or a.get('location_ids') or "N/A"
+            created_date = str(a.get('created_at', ''))[:10] if a.get('created_at') else 'N/A'
+            
+            row = ft.Container(
+                content=ft.Row([
+                    ft.Text(image_text, size=font_small + 2, width=int(50 * scale)),
+                    ft.Text(a.get('name', 'N/A'), size=font_small, width=int(160 * scale)),
+                    ft.Text(a.get('item_code', 'N/A'), size=font_small, width=int(100 * scale)),
+                    ft.Text(str(a.get('quantity', 0)), size=font_small, width=int(45 * scale)),
+                    ft.Container(
+                        content=ft.Text(a.get('quality', 'Used'), size=font_small - 2, color="white"),
+                        bgcolor=self.get_quality_color(a.get('quality', 'Used')),
+                        border_radius=8,
+                        padding=ft.padding.symmetric(horizontal=int(6 * scale), vertical=int(2 * scale)),
+                        width=int(75 * scale),
+                    ),
+                    ft.Text(location, size=font_small, width=int(100 * scale)),
+                    ft.Text(created_date, size=font_small - 2, width=int(90 * scale), color="#888888"),
+                    ft.Row([
+                        ft.IconButton(icon=ft.icons.EDIT, icon_size=int(18 * scale), 
+                                    on_click=lambda e, acc=a: self.open_edit_accessory_modal(self.page_ref, acc['id'])),
+                        ft.IconButton(icon=ft.icons.DELETE, icon_size=int(18 * scale),
+                                    on_click=lambda e, acc=a: self.open_delete_accessory_modal(self.page_ref, acc['id'])),
+                        ft.IconButton(icon=ft.icons.QR_CODE, icon_size=int(18 * scale),
+                                    on_click=lambda e, acc=a: self.show_barcode_dialog(self.page_ref, acc)),
+                    ], spacing=0),
+                ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.padding.symmetric(vertical=int(8 * scale), horizontal=int(10 * scale)),
+                border_radius=6,
+                ink=True,
+                on_click=lambda e, acc=a: self.on_accessory_select(acc),
+            )
+            self.accessory_rows_container.controls.append(row)
+        
+        if self.page_ref:
+            self.page_ref.update()
+
+    def on_accessory_select(self, accessory):
+        """Handle accessory selection from table"""
+        self.selected_accessory_detail = accessory
+        if hasattr(self, 'accessory_detail_panel'):
+            self.accessory_detail_panel.content = self.create_accessory_detail_panel(accessory, self.page_ref)
+            self.page_ref.update()
+
     def show_inventory(self, page: ft.Page):
         """Show inventory screen - FULL SCREEN like dashboard"""
         page.controls.clear()
