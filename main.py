@@ -217,12 +217,9 @@ class StoreApp:
         page.window_width = None
         page.window_height = None
         page.window_maximized = True
-        page.window_maximized = True
         page.window_resizable = True
         page.window_min_width = None
         page.window_min_height = None
-        page.window_max_width = None
-        page.window_max_height = None
         
         # Set page to use full available space
         page.title = "Store Management System"
@@ -230,13 +227,12 @@ class StoreApp:
         page.bgcolor = self.bg_color
         page.padding = 0
         page.spacing = 0
-        page.expand = True
         
-        # Handle resize to update scale
+        # Handle resize
         def on_resize(e):
             self.scale_helper.update_scale()
             if self.current_user:
-                # Refresh current view with new scale
+                # Force rebuild of current view
                 if self.current_view == "dashboard":
                     self.show_dashboard(page)
                 elif self.current_view == "materials":
@@ -249,8 +245,6 @@ class StoreApp:
                     self.show_users(page)
                 elif self.current_view == "settings":
                     self.show_settings(page)
-                elif self.current_view == "barcode_scanner":
-                    self.show_barcode_scanner(page)
         
         page.on_resize = on_resize
         
@@ -395,7 +389,7 @@ class StoreApp:
         page.update()
     
     def show_dashboard(self, page: ft.Page):
-        """Show dashboard - FULL SCREEN with proper scaling"""
+        """Show dashboard - FULL SCREEN no borders"""
         page.controls.clear()
         
         # Trial expiration check
@@ -411,50 +405,45 @@ class StoreApp:
         accessories = self.dict_list(AccessoryManager.get_all())
         stats = MaterialManager.get_stats()
         accessory_stats = AccessoryManager.get_stats()
-        low_stock = self.dict_list(MaterialManager.get_low_stock(10))
         
         # Create sidebar
         sidebar = self.create_sidebar(page)
         
-        # Calculate scale to fit screen
-        if self.scale_helper:
-            scale = self.scale_helper.scale
-        else:
-            scale = 1.0
+        # Get current scale
+        scale = self.scale_helper.scale if self.scale_helper else 1.0
         
-        # Desktop original dimensions
-        DESKTOP_WIDTH = 1600
-        DESKTOP_HEIGHT = 900
+        # Calculate responsive sizes based on scale
+        padding_size = int(20 * scale)
+        font_title = int(28 * scale)
+        font_stats = int(36 * scale)
+        font_normal = int(14 * scale)
         
-        # Stats cards row (using original sizes)
+        # Stats cards row
         stats_row = ft.Row(
             [
                 ft.Container(
                     content=ft.Column([
-                        ft.Text("📦 Total Materials", size=14, color="#CCCCCC"),
-                        ft.Text(str(stats.get('total_items', 0)), size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
-                        ft.Text("Total materials in stock", size=10, color="#888888"),
+                        ft.Text("📦 Total Materials", size=font_normal, color="#CCCCCC"),
+                        ft.Text(str(stats.get('total_items', 0)), size=font_stats, weight=ft.FontWeight.BOLD, color=self.text_color),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                    padding=20, bgcolor=self.success_color, border_radius=10, expand=True,
+                    padding=padding_size, bgcolor=self.success_color, border_radius=10, expand=True,
                 ),
                 ft.Container(
                     content=ft.Column([
-                        ft.Text("🔧 Accessories", size=14, color="#CCCCCC"),
-                        ft.Text(str(accessory_stats.get('total_items', 0)), size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
-                        ft.Text("Total parts available", size=10, color="#888888"),
+                        ft.Text("🔧 Accessories", size=font_normal, color="#CCCCCC"),
+                        ft.Text(str(accessory_stats.get('total_items', 0)), size=font_stats, weight=ft.FontWeight.BOLD, color=self.text_color),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                    padding=20, bgcolor=self.accent_color, border_radius=10, expand=True,
+                    padding=padding_size, bgcolor=self.accent_color, border_radius=10, expand=True,
                 ),
                 ft.Container(
                     content=ft.Column([
-                        ft.Text("📄 Export Records", size=14, color="#CCCCCC"),
-                        ft.Text("120", size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
-                        ft.Text("Total exports this month", size=10, color="#888888"),
+                        ft.Text("📄 Export Records", size=font_normal, color="#CCCCCC"),
+                        ft.Text("120", size=font_stats, weight=ft.FontWeight.BOLD, color=self.text_color),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                    padding=20, bgcolor=self.warning_color, border_radius=10, expand=True,
+                    padding=padding_size, bgcolor=self.warning_color, border_radius=10, expand=True,
                 ),
             ],
-            spacing=15,
+            spacing=int(15 * scale),
             expand=True,
         )
         
@@ -463,43 +452,43 @@ class StoreApp:
         for m in materials[:10]:
             materials_rows.append(
                 ft.Row([
-                    ft.Text(m.get('name', 'N/A'), size=12, width=140),
-                    ft.Text(m.get('location_ids') or "N/A", size=12, width=90),
-                    ft.Text(m.get('size') or "N/A", size=12, width=80),
+                    ft.Text(m.get('name', 'N/A'), size=font_normal - 2, width=int(140 * scale)),
+                    ft.Text(m.get('location_ids') or "N/A", size=font_normal - 2, width=int(90 * scale)),
+                    ft.Text(m.get('size') or "N/A", size=font_normal - 2, width=int(80 * scale)),
                     ft.Container(
-                        content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
+                        content=ft.Text(m.get('quality', 'Used'), size=font_normal - 4, color="white"),
                         bgcolor=self.get_quality_color(m.get('quality', 'Used')),
                         border_radius=8,
-                        padding=ft.padding.symmetric(horizontal=6, vertical=2),
-                        width=70,
+                        padding=ft.padding.symmetric(horizontal=int(6 * scale), vertical=int(2 * scale)),
+                        width=int(70 * scale),
                     ),
-                    ft.Text(str(m.get('quantity', 0)), size=12, width=55),
+                    ft.Text(str(m.get('quantity', 0)), size=font_normal - 2, width=int(55 * scale)),
                 ], alignment=ft.MainAxisAlignment.START)
             )
         
         if not materials_rows:
-            materials_rows.append(ft.Text("No materials found", size=12, color="#888888"))
+            materials_rows.append(ft.Text("No materials found", size=font_normal - 2, color="#888888"))
         
         materials_table = ft.Column([
             ft.Row([
-                ft.Text("Materials", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Text("Materials", size=font_normal + 2, weight=ft.FontWeight.BOLD, color=self.text_color),
                 ft.Container(expand=True),
                 ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)),
             ]),
             ft.Divider(height=1, color="#3C3C3C"),
-            ft.Container(height=5),
+            ft.Container(height=int(5 * scale)),
             ft.Row([
-                ft.Text("Name", size=10, weight=ft.FontWeight.BOLD, width=140),
-                ft.Text("Location", size=10, weight=ft.FontWeight.BOLD, width=90),
-                ft.Text("Size", size=10, weight=ft.FontWeight.BOLD, width=80),
-                ft.Text("Quality", size=10, weight=ft.FontWeight.BOLD, width=70),
-                ft.Text("Stock", size=10, weight=ft.FontWeight.BOLD, width=55),
+                ft.Text("Name", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(140 * scale)),
+                ft.Text("Location", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(90 * scale)),
+                ft.Text("Size", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(80 * scale)),
+                ft.Text("Quality", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(70 * scale)),
+                ft.Text("Stock", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(55 * scale)),
             ], alignment=ft.MainAxisAlignment.START),
-        ] + materials_rows, spacing=6, scroll=ft.ScrollMode.AUTO, height=300)
+        ] + materials_rows, spacing=int(6 * scale), scroll=ft.ScrollMode.AUTO, height=int(300 * scale))
         
         left_panel = ft.Container(
             content=materials_table,
-            padding=12,
+            padding=int(12 * scale),
             bgcolor=self.card_color,
             border_radius=10,
             expand=True,
@@ -512,95 +501,89 @@ class StoreApp:
             image_icon = "🖼️" if has_image else "📷"
             accessories_rows.append(
                 ft.Row([
-                    ft.Text(image_icon, size=12, width=30),
-                    ft.Text(a.get('name', 'N/A'), size=12, width=140),
-                    ft.Text(str(a.get('quantity', 0)), size=12, width=70),
+                    ft.Text(image_icon, size=font_normal - 2, width=int(30 * scale)),
+                    ft.Text(a.get('name', 'N/A'), size=font_normal - 2, width=int(140 * scale)),
+                    ft.Text(str(a.get('quantity', 0)), size=font_normal - 2, width=int(70 * scale)),
                     ft.Container(
-                        content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
+                        content=ft.Text(a.get('quality', 'Used'), size=font_normal - 4, color="white"),
                         bgcolor=self.get_quality_color(a.get('quality', 'Used')),
                         border_radius=8,
-                        padding=ft.padding.symmetric(horizontal=6, vertical=2),
-                        width=70,
+                        padding=ft.padding.symmetric(horizontal=int(6 * scale), vertical=int(2 * scale)),
+                        width=int(70 * scale),
                     ),
-                    ft.Text("View", size=10, color=self.accent_color, width=50),
+                    ft.Text("View", size=font_normal - 4, color=self.accent_color, width=int(50 * scale)),
                 ], alignment=ft.MainAxisAlignment.START)
             )
         
         if not accessories_rows:
-            accessories_rows.append(ft.Text("No accessories found", size=12, color="#888888"))
+            accessories_rows.append(ft.Text("No accessories found", size=font_normal - 2, color="#888888"))
         
         accessories_table = ft.Column([
             ft.Row([
-                ft.Text("Accessories & Parts", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Text("Accessories & Parts", size=font_normal + 2, weight=ft.FontWeight.BOLD, color=self.text_color),
                 ft.Container(expand=True),
                 ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)),
             ]),
             ft.Divider(height=1, color="#3C3C3C"),
-            ft.Container(height=5),
+            ft.Container(height=int(5 * scale)),
             ft.Row([
-                ft.Text("Img", size=10, weight=ft.FontWeight.BOLD, width=30),
-                ft.Text("Part Name", size=10, weight=ft.FontWeight.BOLD, width=140),
-                ft.Text("Qty", size=10, weight=ft.FontWeight.BOLD, width=70),
-                ft.Text("Quality", size=10, weight=ft.FontWeight.BOLD, width=70),
-                ft.Text("Notes", size=10, weight=ft.FontWeight.BOLD, width=50),
+                ft.Text("Img", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(30 * scale)),
+                ft.Text("Part Name", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(140 * scale)),
+                ft.Text("Qty", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(70 * scale)),
+                ft.Text("Quality", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(70 * scale)),
+                ft.Text("Notes", size=font_normal - 4, weight=ft.FontWeight.BOLD, width=int(50 * scale)),
             ], alignment=ft.MainAxisAlignment.START),
-        ] + accessories_rows, spacing=6, scroll=ft.ScrollMode.AUTO, height=300)
+        ] + accessories_rows, spacing=int(6 * scale), scroll=ft.ScrollMode.AUTO, height=int(300 * scale))
         
         right_panel = ft.Container(
             content=accessories_table,
-            padding=12,
+            padding=int(12 * scale),
             bgcolor=self.card_color,
             border_radius=10,
             expand=True,
         )
         
-        middle_row = ft.Row([left_panel, right_panel], spacing=15, expand=True, height=380)
+        middle_row = ft.Row([left_panel, right_panel], spacing=int(15 * scale), expand=True)
         
-        # Low Stock Panel (simplified)
+        # Low Stock Panel
         low_stock_materials = [m for m in materials if m.get('quantity', 0) < 10]
         low_stock_accessories = [a for a in accessories if a.get('quantity', 0) < 10]
         
-        low_stock_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=180)
+        low_stock_list = ft.Column(spacing=int(5 * scale), scroll=ft.ScrollMode.AUTO, height=int(180 * scale))
         
         for item in low_stock_materials[:8]:
             low_stock_list.controls.append(
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text("📦", size=14, width=35),
-                        ft.Text(item.get('name', 'Unknown')[:20], size=11, width=160),
-                        ft.Text(f"Stock: {item.get('quantity', 0)}", size=11, color=self.danger_color),
-                    ]),
-                    padding=5,
-                )
+                ft.Row([
+                    ft.Text("📦", size=font_normal - 2, width=int(35 * scale)),
+                    ft.Text(item.get('name', 'Unknown')[:20], size=font_normal - 3, width=int(160 * scale)),
+                    ft.Text(f"Stock: {item.get('quantity', 0)}", size=font_normal - 3, color=self.danger_color),
+                ])
             )
         
         for item in low_stock_accessories[:8]:
             low_stock_list.controls.append(
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text("🔧", size=14, width=35),
-                        ft.Text(item.get('name', 'Unknown')[:20], size=11, width=160),
-                        ft.Text(f"Stock: {item.get('quantity', 0)}", size=11, color=self.danger_color),
-                    ]),
-                    padding=5,
-                )
+                ft.Row([
+                    ft.Text("🔧", size=font_normal - 2, width=int(35 * scale)),
+                    ft.Text(item.get('name', 'Unknown')[:20], size=font_normal - 3, width=int(160 * scale)),
+                    ft.Text(f"Stock: {item.get('quantity', 0)}", size=font_normal - 3, color=self.danger_color),
+                ])
             )
         
         if not low_stock_list.controls:
-            low_stock_list.controls.append(ft.Text("✅ No low stock items", size=12, color=self.success_color))
+            low_stock_list.controls.append(ft.Text("✅ No low stock items", size=font_normal - 2, color=self.success_color))
         
         low_stock_panel = ft.Container(
             content=ft.Column([
                 ft.Row([
-                    ft.Text("⚠️ Low Stock Items", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Text("⚠️ Low Stock Items", size=font_normal, weight=ft.FontWeight.BOLD, color=self.text_color),
                     ft.Container(expand=True),
-                    ft.Text(f"Total: {len(low_stock_materials) + len(low_stock_accessories)}", size=11, color="#888888"),
+                    ft.Text(f"Total: {len(low_stock_materials) + len(low_stock_accessories)}", size=font_normal - 3, color="#888888"),
                 ]),
                 ft.Divider(height=1, color="#3C3C3C"),
-                ft.Container(height=5),
+                ft.Container(height=int(5 * scale)),
                 low_stock_list,
-            ], spacing=8),
-            padding=12,
+            ], spacing=int(8 * scale)),
+            padding=int(12 * scale),
             bgcolor=self.card_color,
             border_radius=10,
             expand=True,
@@ -609,17 +592,15 @@ class StoreApp:
         # Import/Export Panel
         import_panel = ft.Container(
             content=ft.Column([
-                ft.Text("📁 Import/Export", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Text("📁 Import/Export", size=font_normal, weight=ft.FontWeight.BOLD, color=self.text_color),
                 ft.Divider(height=1, color="#3C3C3C"),
-                ft.Container(height=5),
+                ft.Container(height=int(5 * scale)),
                 ft.Row([
                     ft.ElevatedButton("📥 Import", on_click=lambda e: None, expand=True),
                     ft.ElevatedButton("📤 Export", on_click=lambda e: None, expand=True),
-                ], spacing=10),
-                ft.Container(height=10),
-                ft.Text("CSV format supported", size=10, color="#888888", text_align=ft.TextAlign.CENTER),
-            ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=12,
+                ], spacing=int(10 * scale)),
+            ], spacing=int(8 * scale), horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=int(12 * scale),
             bgcolor=self.card_color,
             border_radius=10,
             expand=True,
@@ -627,82 +608,76 @@ class StoreApp:
         
         # Users Panel
         users = self.dict_list(UserManager.get_all())
-        users_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=150)
+        users_list = ft.Column(spacing=int(5 * scale), scroll=ft.ScrollMode.AUTO, height=int(150 * scale))
         for u in users[:5]:
             users_list.controls.append(
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text(u.get('name', 'N/A')[:15], size=11, width=100),
-                        ft.Container(
-                            content=ft.Text(u.get('role', 'user')[:8], size=9, color="white"),
-                            bgcolor=self.success_color if u.get('role') == 'user' else self.warning_color,
-                            border_radius=8,
-                            padding=ft.padding.symmetric(horizontal=6, vertical=2),
-                        ),
-                    ]),
-                    padding=5,
-                )
+                ft.Row([
+                    ft.Text(u.get('name', 'N/A')[:15], size=font_normal - 3, width=int(100 * scale)),
+                    ft.Container(
+                        content=ft.Text(u.get('role', 'user')[:8], size=font_normal - 5, color="white"),
+                        bgcolor=self.success_color if u.get('role') == 'user' else self.warning_color,
+                        border_radius=8,
+                        padding=ft.padding.symmetric(horizontal=int(6 * scale), vertical=int(2 * scale)),
+                    ),
+                ])
             )
         
         users_panel = ft.Container(
             content=ft.Column([
-                ft.Text("👥 Users & Permissions", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Text("👥 Users & Permissions", size=font_normal, weight=ft.FontWeight.BOLD, color=self.text_color),
                 ft.Divider(height=1, color="#3C3C3C"),
-                ft.Container(height=5),
+                ft.Container(height=int(5 * scale)),
                 users_list,
                 ft.Container(expand=True),
                 ft.TextButton("Manage Users", on_click=lambda e: self.show_users(page)),
-            ], spacing=8),
-            padding=12,
+            ], spacing=int(8 * scale)),
+            padding=int(12 * scale),
             bgcolor=self.card_color,
             border_radius=10,
             expand=True,
         )
         
-        bottom_row = ft.Row([low_stock_panel, import_panel, users_panel], spacing=15, expand=True, height=240)
+        bottom_row = ft.Row([low_stock_panel, import_panel, users_panel], spacing=int(15 * scale), expand=True)
         
-        # Main content container (desktop size)
-        main_content = ft.Container(
-            content=ft.Column([
-                ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ft.Container(height=15),
-                stats_row,
-                ft.Container(height=15),
-                middle_row,
-                ft.Container(height=15),
-                bottom_row,
-            ], spacing=5, expand=True),
+        # Main content
+        main_content = ft.Column([
+            ft.Text("Dashboard", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
+            ft.Container(height=int(15 * scale)),
+            stats_row,
+            ft.Container(height=int(15 * scale)),
+            middle_row,
+            ft.Container(height=int(15 * scale)),
+            bottom_row,
+        ], spacing=int(5 * scale), expand=True, scroll=ft.ScrollMode.AUTO)
+        
+        main_container = ft.Container(
+            content=main_content,
             expand=True,
-            padding=20,
+            padding=padding_size,
         )
         
         # Combine sidebar and main content
-        desktop_layout = ft.Row([sidebar, main_content], spacing=0, expand=True)
+        dashboard_layout = ft.Row([sidebar, main_container], spacing=0, expand=True)
         
-        # Apply scaling to fit screen - THIS IS THE KEY PART
-        if scale < 0.95:  # If screen is smaller than desktop
-            # Create a container that centers and scales the content
-            scaled_container = ft.Container(
-                content=ft.Container(
-                    content=desktop_layout,
-                    width=DESKTOP_WIDTH,
-                    height=DESKTOP_HEIGHT,
-                ),
-                scale=ft.Scale(scale),
-                alignment=ft.alignment.center,
-                expand=True,
-            )
-            page.add(scaled_container)
-        else:
-            # Screen is large enough, show at original size
-            desktop_layout.expand = True
-            page.add(desktop_layout)
+        # Add to page with expand=True to fill screen
+        page.add(dashboard_layout)
+        page.update()
         
         self.current_view = "dashboard"
-        page.update()
     
     def create_sidebar(self, page: ft.Page):
-        """Create sidebar navigation (original desktop size)"""
+        """Create sidebar navigation with responsive sizing"""
+        
+        # Get current scale
+        scale = self.scale_helper.scale if self.scale_helper else 1.0
+        
+        # Calculate responsive widths
+        sidebar_width = int(250 * scale)
+        font_size_title = int(18 * scale)
+        font_size_nav = int(14 * scale)
+        font_size_user = int(10 * scale)
+        padding_vertical = int(12 * scale)
+        padding_horizontal = int(15 * scale)
         
         nav_items = [
             ("📊", "Dashboard", "dashboard", "view_dashboard"),
@@ -720,23 +695,44 @@ class StoreApp:
             if view == "dashboard":
                 self.show_dashboard(page)
             elif view == "materials":
-                self.show_materials_screen(page)
+                if self.has_permission('view_materials'):
+                    self.show_materials_screen(page)
+                else:
+                    self.show_no_permission(page)
             elif view == "accessories":
-                self.show_accessories(page)
+                if self.has_permission('view_accessories'):
+                    self.show_accessories(page)
+                else:
+                    self.show_no_permission(page)
             elif view == "barcode_scanner":
-                self.show_barcode_scanner(page)
+                if self.has_permission('scan_barcode'):
+                    self.show_barcode_scanner(page)
+                else:
+                    self.show_no_permission(page)
             elif view == "inventory":
-                self.show_inventory(page)
+                if self.has_permission('view_inventory'):
+                    self.show_inventory(page)
+                else:
+                    self.show_no_permission(page)
             elif view == "users":
-                self.show_users(page)
+                if self.has_permission('view_users'):
+                    self.show_users(page)
+                else:
+                    self.show_no_permission(page)
             elif view == "settings":
-                self.show_settings(page)
+                if self.has_permission('view_settings'):
+                    self.show_settings(page)
+                else:
+                    self.show_no_permission(page)
         
         for emoji, label, view, permission in nav_items:
             if self.has_permission(permission):
                 btn = ft.Container(
-                    content=ft.Row([ft.Text(emoji, size=20), ft.Text(label, size=14, color=self.text_color)], spacing=10),
-                    padding=ft.padding.symmetric(horizontal=15, vertical=12),
+                    content=ft.Row(
+                        [ft.Text(emoji, size=font_size_nav + 6), ft.Text(label, size=font_size_nav, color=self.text_color)], 
+                        spacing=int(10 * scale)
+                    ),
+                    padding=ft.padding.symmetric(horizontal=padding_horizontal, vertical=padding_vertical),
                     border_radius=8,
                     ink=True,
                     on_click=lambda e, v=view: navigate(e, v),
@@ -748,21 +744,21 @@ class StoreApp:
             self.show_login(page)
         
         logout_btn = ft.Container(
-            content=ft.Row([ft.Text("🚪", size=20), ft.Text("Logout", size=14, color="#FF5252")], spacing=10),
-            padding=ft.padding.symmetric(horizontal=15, vertical=12),
+            content=ft.Row([ft.Text("🚪", size=font_size_nav + 6), ft.Text("Logout", size=font_size_nav, color="#FF5252")], spacing=int(10 * scale)),
+            padding=ft.padding.symmetric(horizontal=padding_horizontal, vertical=padding_vertical),
             border_radius=8,
             ink=True,
             on_click=logout,
         )
         
         logo_exists = os.path.exists(logo_path)
-        sidebar_logo = ft.Image(src=logo_path, width=30, height=30, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=24)
+        sidebar_logo = ft.Image(src=logo_path, width=int(30 * scale), height=int(30 * scale), fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=font_size_title)
         
         title_content = ft.Row(
-            [sidebar_logo, ft.Text("Store Manager", size=18, weight=ft.FontWeight.BOLD, color=self.text_color)],
+            [sidebar_logo, ft.Text("Store Manager", size=font_size_title, weight=ft.FontWeight.BOLD, color=self.text_color)],
             alignment=ft.MainAxisAlignment.CENTER,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=5,
+            spacing=int(5 * scale),
         )
         
         role = self.current_user.get('role', 'guest') if self.current_user else 'guest'
@@ -772,27 +768,29 @@ class StoreApp:
         return ft.Container(
             content=ft.Column(
                 [
-                    ft.Container(content=title_content, padding=20),
+                    ft.Container(content=title_content, padding=int(20 * scale)),
                     ft.Divider(),
-                    ft.Column(nav_buttons, spacing=5),
+                    ft.Column(nav_buttons, spacing=int(5 * scale)),
                     ft.Container(expand=True),
                     ft.Divider(),
                     logout_btn,
                     ft.Container(
                         content=ft.Column(
                             [
-                                ft.Text(f"User: {self.current_user.get('name', 'User') if self.current_user else 'Guest'}", size=10, color="#888888", text_align=ft.TextAlign.CENTER),
-                                ft.Text(role_display, size=10, weight=ft.FontWeight.BOLD, color=self.success_color if is_premium else self.text_color, text_align=ft.TextAlign.CENTER),
+                                ft.Text(f"User: {self.current_user.get('name', 'User') if self.current_user else 'Guest'}", 
+                                    size=font_size_user, color="#888888", text_align=ft.TextAlign.CENTER),
+                                ft.Text(role_display, size=font_size_user, weight=ft.FontWeight.BOLD, 
+                                    color=self.success_color if is_premium else self.text_color, text_align=ft.TextAlign.CENTER),
                             ],
-                            spacing=3,
+                            spacing=int(3 * scale),
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
-                        padding=10,
+                        padding=int(10 * scale),
                     ),
                 ],
                 spacing=0,
             ),
-            width=250,
+            width=sidebar_width,
             bgcolor=self.sidebar_color,
         )
     
