@@ -77,6 +77,8 @@ class ScaleHelper:
             self.scale = min(scale_w, scale_h, 1.0)  # Max scale 1.0 (don't enlarge)
         else:
             self.scale = 1.0
+        
+        print(f"Screen: {self.page.width}x{self.page.height}, Scale: {self.scale:.2f}")
     
     def get_scaled_size(self, original_size):
         """Get scaled size for a dimension"""
@@ -90,25 +92,6 @@ class ScaleHelper:
     def get_scaled_padding(self, original_padding):
         """Get scaled padding"""
         return original_padding * self.scale
-    
-    def wrap_with_scale(self, content):
-        """Wrap content in a scaled container"""
-        return ft.Container(
-            content=content,
-            width=self.DESKTOP_WIDTH * self.scale,
-            height=self.DESKTOP_HEIGHT * self.scale,
-            scale=ft.Scale(self.scale),
-            animate_scale=ft.animation.Animation(200, ft.AnimationCurve.EASE_IN_OUT),
-        )
-    
-    def get_responsive_font(self, original_size):
-        """Get font size that scales with screen but maintains readability"""
-        if self.scale < 0.6:
-            # On very small screens, ensure minimum readability
-            return max(original_size - 4, 10)
-        elif self.scale < 0.8:
-            return original_size - 2
-        return original_size
 
 
 class LicenseManager:
@@ -230,19 +213,24 @@ class StoreApp:
         # Initialize scale helper
         self.scale_helper = ScaleHelper(page)
         
-        # Make app full screen and resizable
+        # FORCE FULL SCREEN - remove all constraints
         page.window_width = None
         page.window_height = None
         page.window_maximized = True
+        page.window_maximized = True
         page.window_resizable = True
-        page.window_min_width = 800
-        page.window_min_height = 500
+        page.window_min_width = None
+        page.window_min_height = None
+        page.window_max_width = None
+        page.window_max_height = None
         
+        # Set page to use full available space
         page.title = "Store Management System"
         page.theme_mode = ft.ThemeMode.DARK
         page.bgcolor = self.bg_color
         page.padding = 0
         page.spacing = 0
+        page.expand = True
         
         # Handle resize to update scale
         def on_resize(e):
@@ -263,7 +251,6 @@ class StoreApp:
                     self.show_settings(page)
                 elif self.current_view == "barcode_scanner":
                     self.show_barcode_scanner(page)
-            page.update()
         
         page.on_resize = on_resize
         
@@ -408,8 +395,17 @@ class StoreApp:
         page.update()
     
     def show_dashboard(self, page: ft.Page):
-        """Show dashboard - scaled to fit screen"""
+        """Show dashboard - FULL SCREEN with proper scaling"""
         page.controls.clear()
+        
+        # Trial expiration check
+        if self.current_user and self.current_user.get('trial_mode', False):
+            trial_end_str = self.current_user.get('trial_end_date')
+            if trial_end_str:
+                trial_end_date = datetime.strptime(trial_end_str, '%Y-%m-%d')
+                if datetime.now().date() > trial_end_date.date():
+                    self.show_upgrade_screen(page)
+                    return
         
         materials = self.dict_list(MaterialManager.get_all())
         accessories = self.dict_list(AccessoryManager.get_all())
@@ -420,8 +416,15 @@ class StoreApp:
         # Create sidebar
         sidebar = self.create_sidebar(page)
         
-        # Use original sizes (they will be scaled automatically)
-        original_width = self.scale_helper.DESKTOP_WIDTH - 250  # Subtract sidebar width
+        # Calculate scale to fit screen
+        if self.scale_helper:
+            scale = self.scale_helper.scale
+        else:
+            scale = 1.0
+        
+        # Desktop original dimensions
+        DESKTOP_WIDTH = 1600
+        DESKTOP_HEIGHT = 900
         
         # Stats cards row (using original sizes)
         stats_row = ft.Row(
@@ -430,6 +433,7 @@ class StoreApp:
                     content=ft.Column([
                         ft.Text("📦 Total Materials", size=14, color="#CCCCCC"),
                         ft.Text(str(stats.get('total_items', 0)), size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
+                        ft.Text("Total materials in stock", size=10, color="#888888"),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
                     padding=20, bgcolor=self.success_color, border_radius=10, expand=True,
                 ),
@@ -437,6 +441,7 @@ class StoreApp:
                     content=ft.Column([
                         ft.Text("🔧 Accessories", size=14, color="#CCCCCC"),
                         ft.Text(str(accessory_stats.get('total_items', 0)), size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
+                        ft.Text("Total parts available", size=10, color="#888888"),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
                     padding=20, bgcolor=self.accent_color, border_radius=10, expand=True,
                 ),
@@ -444,6 +449,7 @@ class StoreApp:
                     content=ft.Column([
                         ft.Text("📄 Export Records", size=14, color="#CCCCCC"),
                         ft.Text("120", size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
+                        ft.Text("Total exports this month", size=10, color="#888888"),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
                     padding=20, bgcolor=self.warning_color, border_radius=10, expand=True,
                 ),
@@ -554,23 +560,46 @@ class StoreApp:
         low_stock_materials = [m for m in materials if m.get('quantity', 0) < 10]
         low_stock_accessories = [a for a in accessories if a.get('quantity', 0) < 10]
         
-        low_stock_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=200)
+        low_stock_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=180)
         
-        for item in low_stock_materials[:10]:
+        for item in low_stock_materials[:8]:
             low_stock_list.controls.append(
-                ft.Row([
-                    ft.Text("📦", size=14, width=30),
-                    ft.Text(item.get('name', 'Unknown')[:20], size=11, width=150),
-                    ft.Text(f"Qty: {item.get('quantity', 0)}", size=11, color=self.danger_color),
-                ])
+                ft.Container(
+                    content=ft.Row([
+                        ft.Text("📦", size=14, width=35),
+                        ft.Text(item.get('name', 'Unknown')[:20], size=11, width=160),
+                        ft.Text(f"Stock: {item.get('quantity', 0)}", size=11, color=self.danger_color),
+                    ]),
+                    padding=5,
+                )
             )
+        
+        for item in low_stock_accessories[:8]:
+            low_stock_list.controls.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Text("🔧", size=14, width=35),
+                        ft.Text(item.get('name', 'Unknown')[:20], size=11, width=160),
+                        ft.Text(f"Stock: {item.get('quantity', 0)}", size=11, color=self.danger_color),
+                    ]),
+                    padding=5,
+                )
+            )
+        
+        if not low_stock_list.controls:
+            low_stock_list.controls.append(ft.Text("✅ No low stock items", size=12, color=self.success_color))
         
         low_stock_panel = ft.Container(
             content=ft.Column([
-                ft.Row([ft.Text("⚠️ Low Stock", size=14, weight=ft.FontWeight.BOLD), ft.Container(expand=True), ft.Text(f"{len(low_stock_materials) + len(low_stock_accessories)} items", size=10)]),
-                ft.Divider(),
+                ft.Row([
+                    ft.Text("⚠️ Low Stock Items", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Container(expand=True),
+                    ft.Text(f"Total: {len(low_stock_materials) + len(low_stock_accessories)}", size=11, color="#888888"),
+                ]),
+                ft.Divider(height=1, color="#3C3C3C"),
+                ft.Container(height=5),
                 low_stock_list,
-            ]),
+            ], spacing=8),
             padding=12,
             bgcolor=self.card_color,
             border_radius=10,
@@ -580,13 +609,16 @@ class StoreApp:
         # Import/Export Panel
         import_panel = ft.Container(
             content=ft.Column([
-                ft.Text("📁 Import/Export", size=14, weight=ft.FontWeight.BOLD),
-                ft.Divider(),
+                ft.Text("📁 Import/Export", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Divider(height=1, color="#3C3C3C"),
+                ft.Container(height=5),
                 ft.Row([
-                    ft.ElevatedButton("Import", on_click=lambda e: None, expand=True),
-                    ft.ElevatedButton("Export", on_click=lambda e: None, expand=True),
+                    ft.ElevatedButton("📥 Import", on_click=lambda e: None, expand=True),
+                    ft.ElevatedButton("📤 Export", on_click=lambda e: None, expand=True),
                 ], spacing=10),
-            ]),
+                ft.Container(height=10),
+                ft.Text("CSV format supported", size=10, color="#888888", text_align=ft.TextAlign.CENTER),
+            ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
             padding=12,
             bgcolor=self.card_color,
             border_radius=10,
@@ -598,27 +630,38 @@ class StoreApp:
         users_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=150)
         for u in users[:5]:
             users_list.controls.append(
-                ft.Row([
-                    ft.Text(u.get('name', 'N/A')[:12], size=11, width=80),
-                    ft.Text(u.get('role', 'user'), size=10, color="#4CAF50"),
-                ])
+                ft.Container(
+                    content=ft.Row([
+                        ft.Text(u.get('name', 'N/A')[:15], size=11, width=100),
+                        ft.Container(
+                            content=ft.Text(u.get('role', 'user')[:8], size=9, color="white"),
+                            bgcolor=self.success_color if u.get('role') == 'user' else self.warning_color,
+                            border_radius=8,
+                            padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                        ),
+                    ]),
+                    padding=5,
+                )
             )
         
         users_panel = ft.Container(
             content=ft.Column([
-                ft.Text("👥 Users", size=14, weight=ft.FontWeight.BOLD),
-                ft.Divider(),
+                ft.Text("👥 Users & Permissions", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Divider(height=1, color="#3C3C3C"),
+                ft.Container(height=5),
                 users_list,
-            ]),
+                ft.Container(expand=True),
+                ft.TextButton("Manage Users", on_click=lambda e: self.show_users(page)),
+            ], spacing=8),
             padding=12,
             bgcolor=self.card_color,
             border_radius=10,
             expand=True,
         )
         
-        bottom_row = ft.Row([low_stock_panel, import_panel, users_panel], spacing=15, expand=True, height=220)
+        bottom_row = ft.Row([low_stock_panel, import_panel, users_panel], spacing=15, expand=True, height=240)
         
-        # Main content (original desktop size)
+        # Main content container (desktop size)
         main_content = ft.Container(
             content=ft.Column([
                 ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color),
@@ -628,7 +671,7 @@ class StoreApp:
                 middle_row,
                 ft.Container(height=15),
                 bottom_row,
-            ], spacing=5),
+            ], spacing=5, expand=True),
             expand=True,
             padding=20,
         )
@@ -636,19 +679,23 @@ class StoreApp:
         # Combine sidebar and main content
         desktop_layout = ft.Row([sidebar, main_content], spacing=0, expand=True)
         
-        # Wrap with scale container to fit any screen
-        if self.scale_helper and self.scale_helper.scale < 1.0:
-            # On smaller screens, scale down to fit
-            scaled_content = ft.Container(
-                content=desktop_layout,
-                scale=ft.Scale(self.scale_helper.scale),
-                animate_scale=ft.animation.Animation(200),
-                expand=True,
+        # Apply scaling to fit screen - THIS IS THE KEY PART
+        if scale < 0.95:  # If screen is smaller than desktop
+            # Create a container that centers and scales the content
+            scaled_container = ft.Container(
+                content=ft.Container(
+                    content=desktop_layout,
+                    width=DESKTOP_WIDTH,
+                    height=DESKTOP_HEIGHT,
+                ),
+                scale=ft.Scale(scale),
                 alignment=ft.alignment.center,
+                expand=True,
             )
-            page.add(scaled_content)
+            page.add(scaled_container)
         else:
-            # On larger screens, show at original size
+            # Screen is large enough, show at original size
+            desktop_layout.expand = True
             page.add(desktop_layout)
         
         self.current_view = "dashboard"
