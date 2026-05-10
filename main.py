@@ -726,56 +726,77 @@ class StoreApp:
         self.material_cards_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
         
         def update_materials_list():
-            # Filter by quality
+            """Update the materials list with cards"""
             if self.current_material_filter == "All":
                 filtered = materials
             else:
                 filtered = [m for m in materials if m.get('quality') == self.current_material_filter]
             
-            # Filter by search
             if hasattr(self, 'material_search_query') and self.material_search_query:
                 query = self.material_search_query.lower()
                 filtered = [m for m in filtered if query in m.get('name', '').lower() or query in m.get('item_code', '').lower()]
             
             self.material_cards_container.controls.clear()
             
-            for m in filtered:
-                self.material_cards_container.controls.append(
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Row([
-                                    ft.Text(m.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD, expand=True),
-                                    ft.Text(f"Qty: {m.get('quantity', 0)}", size=font_normal, weight=ft.FontWeight.BOLD,
-                                        color=self.danger_color if m.get('quantity', 0) < 10 else self.text_color),
-                                ]),
-                                ft.Row([
-                                    ft.Text(m.get('location_ids', 'N/A'), size=font_small - 1, color="#888888", expand=True),
-                                    ft.Container(
-                                        content=ft.Text(m.get('quality', 'Used'), size=font_small - 2, color="white"),
-                                        bgcolor=self.get_quality_color(m.get('quality', 'Used')),
-                                        border_radius=10,
-                                        padding=ft.padding.symmetric(horizontal=10, vertical=3),
-                                    ),
-                                ]),
-                                ft.Row([
-                                    ft.IconButton(icon=ft.icons.EDIT, icon_size=20, 
-                                                on_click=lambda e, mat=m: self.open_edit_modal(page, mat['id']),
-                                                tooltip="Edit"),
-                                    ft.IconButton(icon=ft.icons.DELETE, icon_size=20,
-                                                on_click=lambda e, mat=m: self.open_delete_modal(page, mat['id']),
-                                                tooltip="Delete"),
-                                    ft.IconButton(icon=ft.icons.QR_CODE, icon_size=20,
-                                                on_click=lambda e, mat=m: self.show_barcode_dialog(page, mat),
-                                                tooltip="Barcode"),
-                                ], spacing=0),
-                            ]),
-                            padding=12,
-                        ),
-                        elevation=2,
-                        margin=ft.margin.only(bottom=8),
-                    )
+            for mat in filtered:
+                # Create buttons with proper lambda capturing
+                edit_btn = ft.IconButton(
+                    icon=ft.icons.EDIT,
+                    icon_size=20,
+                    icon_color=self.accent_color,
+                    on_click=lambda e, m=mat: self.open_edit_modal(page, m['id']),
                 )
+                
+                delete_btn = ft.IconButton(
+                    icon=ft.icons.DELETE,
+                    icon_size=20,
+                    icon_color=self.danger_color,
+                    on_click=lambda e, m=mat: self.open_delete_modal(page, m['id']),
+                )
+                
+                barcode_btn = ft.IconButton(
+                    icon=ft.icons.QR_CODE,
+                    icon_size=20,
+                    icon_color=self.warning_color,
+                    on_click=lambda e, m=mat: self.show_barcode_dialog(page, m),
+                )
+                
+                card_content = ft.Column([
+                    ft.Row([
+                        ft.Text(mat.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD, expand=True),
+                        ft.Text(f"Qty: {mat.get('quantity', 0)}", size=font_normal, weight=ft.FontWeight.BOLD,
+                            color=self.danger_color if mat.get('quantity', 0) < 10 else self.text_color),
+                    ]),
+                    ft.Row([
+                        ft.Text(mat.get('location_ids', 'N/A'), size=font_small - 1, color="#888888", expand=True),
+                        ft.Container(
+                            content=ft.Text(mat.get('quality', 'Used'), size=font_small - 2, color="white"),
+                            bgcolor=self.get_quality_color(mat.get('quality', 'Used')),
+                            border_radius=10,
+                            padding=ft.padding.symmetric(horizontal=10, vertical=3),
+                        ),
+                    ]),
+                    ft.Row([
+                        edit_btn,
+                        delete_btn,
+                        barcode_btn,
+                    ], spacing=5),
+                ], spacing=8)
+                
+                card = ft.Card(
+                    content=ft.Container(content=card_content, padding=12),
+                    elevation=2,
+                )
+                
+                # Wrap card in container for click handling
+                clickable_card = ft.Container(
+                    content=card,
+                    margin=ft.margin.only(bottom=8),
+                    ink=True,
+                    on_click=lambda e, m=mat: self.show_material_detail_dialog(page, m),
+                )
+                
+                self.material_cards_container.controls.append(clickable_card)
             
             page.update()
         
@@ -1061,62 +1082,83 @@ class StoreApp:
         self.accessory_cards_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
         
         def update_accessories_list():
-            # Filter by quality
+            """Update the accessories list with cards - FIXED: prevents edit/delete from opening detail"""
             if self.current_accessory_filter == "All":
                 filtered = accessories
             else:
                 filtered = [a for a in accessories if a.get('quality') == self.current_accessory_filter]
             
-            # Filter by search
             if hasattr(self, 'accessory_search_query') and self.accessory_search_query:
                 query = self.accessory_search_query.lower()
                 filtered = [a for a in filtered if query in a.get('name', '').lower() or query in a.get('item_code', '').lower()]
             
             self.accessory_cards_container.controls.clear()
             
-            for a in filtered:
-                location = a.get('location') or a.get('location_ids') or 'N/A'
-                price = a.get('price', 0)
+            for acc in filtered:
+                location = acc.get('location') or acc.get('location_ids') or 'N/A'
+                price = acc.get('price', 0)
                 price_text = f"${price:.2f}" if price else ""
                 
-                self.accessory_cards_container.controls.append(
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Row([
-                                    ft.Text(a.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD, expand=True),
-                                    ft.Text(f"Qty: {a.get('quantity', 0)}", size=font_normal, weight=ft.FontWeight.BOLD,
-                                        color=self.danger_color if a.get('quantity', 0) < 10 else self.text_color),
-                                ]),
-                                ft.Row([
-                                    ft.Text(location, size=font_small - 1, color="#888888", expand=True),
-                                    ft.Container(
-                                        content=ft.Text(a.get('quality', 'Used'), size=font_small - 2, color="white"),
-                                        bgcolor=self.get_quality_color(a.get('quality', 'Used')),
-                                        border_radius=10,
-                                        padding=ft.padding.symmetric(horizontal=10, vertical=3),
-                                    ),
-                                ]),
-                                ft.Row([
-                                    ft.Text(price_text, size=font_small, color="#4CAF50") if price_text else ft.Container(),
-                                    ft.Container(expand=True),
-                                    ft.IconButton(icon=ft.icons.EDIT, icon_size=20, 
-                                                on_click=lambda e, acc=a: self.open_edit_accessory_modal(page, acc['id']),
-                                                tooltip="Edit"),
-                                    ft.IconButton(icon=ft.icons.DELETE, icon_size=20,
-                                                on_click=lambda e, acc=a: self.open_delete_accessory_modal(page, acc['id']),
-                                                tooltip="Delete"),
-                                    ft.IconButton(icon=ft.icons.QR_CODE, icon_size=20,
-                                                on_click=lambda e, acc=a: self.show_barcode_dialog(page, acc),
-                                                tooltip="Barcode"),
-                                ], spacing=0),
-                            ]),
-                            padding=12,
+                # Create a separate row for buttons that WON'T trigger the card click
+                button_row = ft.Row(
+                    [
+                        ft.Container(
+                            content=ft.Icon(ft.icons.EDIT, size=20, color=self.accent_color),
+                            on_click=lambda e, a=acc: self.open_edit_accessory_modal(page, a['id']),
+                            padding=5,
                         ),
-                        elevation=2,
-                        margin=ft.margin.only(bottom=8),
-                    )
+                        ft.Container(
+                            content=ft.Icon(ft.icons.DELETE, size=20, color=self.danger_color),
+                            on_click=lambda e, a=acc: self.open_delete_accessory_modal(page, a['id']),
+                            padding=5,
+                        ),
+                        ft.Container(
+                            content=ft.Icon(ft.icons.QR_CODE, size=20, color=self.warning_color),
+                            on_click=lambda e, a=acc: self.show_barcode_dialog(page, a),
+                            padding=5,
+                        ),
+                    ],
+                    spacing=10,
                 )
+                
+                # Card content WITHOUT using IconButton (use Container with Icon instead)
+                card_content = ft.Column([
+                    ft.Row([
+                        ft.Text(acc.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD, expand=True),
+                        ft.Text(f"Qty: {acc.get('quantity', 0)}", size=font_normal, weight=ft.FontWeight.BOLD,
+                            color=self.danger_color if acc.get('quantity', 0) < 10 else self.text_color),
+                    ]),
+                    ft.Row([
+                        ft.Text(location, size=font_small - 1, color="#888888", expand=True),
+                        ft.Container(
+                            content=ft.Text(acc.get('quality', 'Used'), size=font_small - 2, color="white"),
+                            bgcolor=self.get_quality_color(acc.get('quality', 'Used')),
+                            border_radius=10,
+                            padding=ft.padding.symmetric(horizontal=10, vertical=3),
+                        ),
+                    ]),
+                    ft.Row([
+                        ft.Text(price_text, size=font_small, color="#4CAF50") if price_text else ft.Container(),
+                        ft.Container(expand=True),
+                    ]),
+                    button_row,  # Buttons as separate row
+                ], spacing=8)
+                
+                # Create card
+                card = ft.Card(
+                    content=ft.Container(content=card_content, padding=12),
+                    elevation=2,
+                )
+                
+                # Wrap card in container for click handling
+                clickable_card = ft.Container(
+                    content=card,
+                    margin=ft.margin.only(bottom=8),
+                    ink=True,
+                    on_click=lambda e, a=acc: self.show_accessory_detail_dialog(page, a),
+                )
+                
+                self.accessory_cards_container.controls.append(clickable_card)
             
             page.update()
         
@@ -1167,6 +1209,141 @@ class StoreApp:
                 page.add(add_button)
         
         self.current_view = "accessories"
+        page.update()
+
+    def show_accessory_detail_dialog(self, page: ft.Page, accessory):
+        """Show detailed view of accessory in a modal dialog"""
+        
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Format dates
+        created_date = str(accessory.get('created_at', ''))[:16] if accessory.get('created_at') else 'N/A'
+        updated_date = str(accessory.get('updated_at', ''))[:16] if accessory.get('updated_at') else 'N/A'
+        
+        # Get location
+        location = accessory.get('location') or accessory.get('location_ids') or 'N/A'
+        price = accessory.get('price', 0)
+        price_text = f"${price:.2f}" if price else "N/A"
+        
+        # Get image
+        has_image = False
+        image_path = accessory.get('image_path', '')
+        if image_path and os.path.exists(image_path):
+            has_image = True
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        def edit_accessory(e):
+            page.dialog.open = False
+            self.open_edit_accessory_modal(page, accessory['id'])
+        
+        def delete_accessory(e):
+            page.dialog.open = False
+            self.open_delete_accessory_modal(page, accessory['id'])
+        
+        def show_barcode(e):
+            self.show_barcode_dialog(page, accessory)
+        
+        # Build content
+        content_items = []
+        
+        # Image section
+        if has_image:
+            content_items.append(
+                ft.Container(
+                    content=ft.Image(src=image_path, width=200, height=150, fit=ft.ImageFit.CONTAIN),
+                    alignment=ft.alignment.center,
+                    margin=ft.margin.only(bottom=10),
+                )
+            )
+        else:
+            content_items.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.icons.IMAGE, size=50, color="#888888"),
+                        ft.Text("No Image", size=12, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.center,
+                    margin=ft.margin.only(bottom=10),
+                )
+            )
+        
+        # Details section
+        content_items.extend([
+            ft.Divider(),
+            ft.Row([
+                ft.Text("📝 Code:", size=14, color="#CCCCCC", width=80),
+                ft.Text(accessory.get('item_code') or "N/A", size=14, color=self.text_color),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("🏷️ Quality:", size=14, color="#CCCCCC", width=80),
+                ft.Container(
+                    content=ft.Text(accessory.get('quality', 'Used'), size=12, color="white"),
+                    bgcolor=self.get_quality_color(accessory.get('quality', 'Used')),
+                    border_radius=10,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=4),
+                ),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("🔢 Quantity:", size=14, color="#CCCCCC", width=80),
+                ft.Text(str(accessory.get('quantity', 0)), size=16, weight=ft.FontWeight.BOLD,
+                    color=self.danger_color if accessory.get('quantity', 0) < 10 else self.text_color),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("💰 Price:", size=14, color="#CCCCCC", width=80),
+                ft.Text(price_text, size=14, color="#4CAF50", weight=ft.FontWeight.BOLD),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("📍 Location:", size=14, color="#CCCCCC", width=80),
+                ft.Text(location, size=14, color=self.text_color),
+            ], spacing=8),
+            ft.Divider(),
+            ft.Row([
+                ft.Text("📅 Created:", size=13, color="#CCCCCC", width=80),
+                ft.Text(created_date, size=13, color="#888888"),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("🔄 Updated:", size=13, color="#CCCCCC", width=80),
+                ft.Text(updated_date, size=13, color="#888888"),
+            ], spacing=8),
+            ft.Divider(),
+            ft.Text("📝 Notes:", size=14, weight=ft.FontWeight.BOLD, color="#CCCCCC"),
+            ft.Container(
+                content=ft.Text(accessory.get('notes') or "No notes", size=13, color="#888888"),
+                padding=10,
+                bgcolor="#2C2C2C",
+                border_radius=8,
+                margin=ft.margin.only(top=5, bottom=10),
+            ),
+            ft.Row([
+                ft.ElevatedButton("✏️ EDIT", on_click=edit_accessory, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color)),
+                ft.ElevatedButton("🗑️ DELETE", on_click=delete_accessory, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
+            ], spacing=10),
+            ft.Row([
+                ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.warning_color, color=self.text_color)),
+            ], spacing=10),
+        ])
+        
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text(accessory.get('name', 'Accessory Details'), size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ], spacing=0),
+            content=ft.Container(
+                content=ft.Column(content_items, spacing=10, scroll=ft.ScrollMode.AUTO),
+                width=400 if not is_mobile else page.width - 40,
+                height=550,
+            ),
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
         page.update()
 
     def on_accessory_select(self, accessory):
@@ -1296,7 +1473,7 @@ class StoreApp:
         ], spacing=10, scroll=ft.ScrollMode.AUTO, height=450)
     
     def show_barcode_dialog(self, page: ft.Page, item):
-        """Show barcode dialog for material or accessory with real barcode image"""
+        """Show barcode dialog"""
         barcode_text = item.get('barcode_value') or item.get('item_code', 'N/A')
         item_name = item.get('name', 'Item')
         item_type = "Material" if 'location_ids' in item else "Accessory"
@@ -1430,7 +1607,7 @@ class StoreApp:
         page.update()
 
     def open_add_accessory_modal(self, page: ft.Page):
-        """Open modal for adding accessory with barcode generation"""
+        """Open modal for adding accessory with barcode generation and database save"""
         
         import random
         import string
@@ -1439,7 +1616,7 @@ class StoreApp:
         from datetime import datetime
         
         def generate_barcode():
-            """Generate a unique numeric barcode"""
+            """Generate a unique 13-digit barcode"""
             prefix = "890"
             random_numbers = ''.join(random.choices(string.digits, k=9))
             barcode_without_checksum = prefix + random_numbers
@@ -1457,13 +1634,16 @@ class StoreApp:
         if not os.path.exists(images_folder):
             os.makedirs(images_folder)
         
+        # Form fields
         name_field = ft.TextField(label="Name *", width=380, bgcolor=self.card_color)
+        
         barcode_field = ft.TextField(
             label="Barcode (13 digits)", 
             width=380, 
             bgcolor=self.card_color, 
             read_only=True,
         )
+        
         quantity_field = ft.TextField(label="Quantity", width=380, bgcolor=self.card_color, value="0")
         price_field = ft.TextField(label="Price", width=380, bgcolor=self.card_color, value="0.00")
         
@@ -1495,7 +1675,6 @@ class StoreApp:
             content=ft.Column([
                 ft.Text("📷", size=50),
                 ft.Text("No Image", size=12, color="#888888"),
-                ft.Text("Click 'Upload Image' to select", size=9, color="#888888"),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
             width=180,
             height=150,
@@ -1537,7 +1716,6 @@ class StoreApp:
                                     style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
         
         def save_uploaded_image():
-            """Save the uploaded image to images folder"""
             if selected_temp_image and os.path.exists(selected_temp_image):
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 file_ext = os.path.splitext(selected_temp_image)[1]
@@ -1547,7 +1725,7 @@ class StoreApp:
                 return new_path
             return None
         
-        # Initialize with a generated barcode
+        # Initialize with generated barcode
         current_barcode = generate_barcode()
         barcode_field.value = current_barcode
         
@@ -1616,7 +1794,6 @@ class StoreApp:
                 page.snack_bar.open = True
                 page.update()
         
-        # Form layout
         form_column = ft.Column([
             name_field,
             barcode_field,
@@ -1628,7 +1805,7 @@ class StoreApp:
             upload_btn,
             image_preview,
             notes_field,
-        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=600)
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=550)
         
         modal = ft.Container(
             content=ft.Card(
@@ -1640,8 +1817,8 @@ class StoreApp:
                         ft.Divider(),
                         ft.Row([
                             ft.TextButton("Cancel", on_click=close_modal),
-                            ft.FilledButton("Save Accessory", on_click=save_accessory, style=ft.ButtonStyle(bgcolor=self.success_color)),
-                        ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                            ft.FilledButton("Save", on_click=save_accessory, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                        ], alignment=ft.MainAxisAlignment.END, spacing=10),
                     ], spacing=10),
                     padding=20,
                     width=520,
@@ -1652,8 +1829,457 @@ class StoreApp:
         )
         
         page.overlay.append(modal)
-        page.update()  
-    
+        page.update()
+    def open_edit_accessory_modal(self, page: ft.Page, accessory_id):
+        """Open edit modal for accessory"""
+        import os
+        import shutil
+        from datetime import datetime
+        
+        accessory = AccessoryManager.get_by_id(accessory_id)
+        if not accessory:
+            return
+        
+        accessory_dict = dict(accessory) if accessory else {}
+        
+        images_folder = "images"
+        if not os.path.exists(images_folder):
+            os.makedirs(images_folder)
+        
+        name_field = ft.TextField(label="Name *", value=accessory_dict.get('name', ''), width=380, bgcolor=self.card_color)
+        
+        barcode_field = ft.TextField(
+            label="Barcode (13 digits)", 
+            width=380, 
+            bgcolor=self.card_color, 
+            value=accessory_dict.get('barcode_value', ''),
+            read_only=True,
+        )
+        
+        quantity_field = ft.TextField(label="Quantity", value=str(accessory_dict.get('quantity', 0)), width=380, bgcolor=self.card_color)
+        price_field = ft.TextField(label="Price", value=str(accessory_dict.get('price', 0)), width=380, bgcolor=self.card_color)
+        
+        quality_field = ft.Dropdown(
+            label="Quality *", 
+            width=380,
+            options=[
+                ft.dropdown.Option("New"),
+                ft.dropdown.Option("Used"),
+                ft.dropdown.Option("Damaged"),
+                ft.dropdown.Option("Repaired"),
+            ],
+            value=accessory_dict.get('quality', 'New'),
+            bgcolor=self.card_color,
+        )
+        
+        location_field = ft.TextField(label="Location", value=accessory_dict.get('location') or "", width=380, bgcolor=self.card_color)
+        notes_field = ft.TextField(
+            label="Notes", 
+            width=380, 
+            bgcolor=self.card_color, 
+            value=accessory_dict.get('notes', ''),
+            multiline=True, 
+            min_lines=3,
+            max_lines=5,
+        )
+        
+        current_image_path = accessory_dict.get('image_path', '')
+        has_current_image = current_image_path and os.path.exists(current_image_path) if current_image_path else False
+        
+        image_preview = ft.Container(
+            content=ft.Column([
+                ft.Text("📷", size=40),
+                ft.Text("No image", size=10, color="#888888"),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+            width=150, height=120,
+            bgcolor="#2C2C2C",
+            border_radius=8,
+        )
+        
+        if has_current_image:
+            try:
+                image_preview.content = ft.Column([
+                    ft.Image(src=current_image_path, width=140, height=100, fit=ft.ImageFit.CONTAIN),
+                    ft.Text("Current image", size=8, color=self.accent_color),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
+            except:
+                pass
+        
+        selected_temp_image = None
+        
+        def on_image_picked(e: ft.FilePickerResultEvent):
+            nonlocal selected_temp_image
+            if e.files:
+                file = e.files[0]
+                selected_temp_image = file.path
+                try:
+                    image_preview.content = ft.Column([
+                        ft.Image(src=selected_temp_image, width=140, height=100, fit=ft.ImageFit.CONTAIN),
+                        ft.Text("New image selected", size=8, color=self.success_color),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
+                    page.update()
+                except:
+                    pass
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Image selected: {file.name}"), bgcolor=self.success_color)
+                page.snack_bar.open = True
+                page.update()
+        
+        image_picker = ft.FilePicker(on_result=on_image_picked)
+        page.overlay.append(image_picker)
+        
+        def upload_image(e):
+            image_picker.pick_files(
+                allow_multiple=False,
+                allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"],
+                dialog_title="Select an Image"
+            )
+        
+        upload_btn = ft.FilledButton("📁 Upload New Image", on_click=upload_image, icon="cloud_upload",
+                                    style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
+        
+        def save_uploaded_image():
+            if selected_temp_image and os.path.exists(selected_temp_image):
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                file_ext = os.path.splitext(selected_temp_image)[1]
+                new_filename = f"accessory_{accessory_id}_{timestamp}{file_ext}"
+                new_path = os.path.join(images_folder, new_filename)
+                shutil.copy2(selected_temp_image, new_path)
+                return new_path
+            return None
+        
+        def delete_current_image(e):
+            nonlocal selected_temp_image
+            if current_image_path and os.path.exists(current_image_path):
+                try:
+                    os.remove(current_image_path)
+                    image_preview.content = ft.Column([
+                        ft.Text("📷", size=40),
+                        ft.Text("Image deleted", size=10, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5)
+                    selected_temp_image = "DELETE"
+                    page.update()
+                    page.snack_bar = ft.SnackBar(ft.Text("✓ Image deleted"), bgcolor=self.success_color)
+                    page.snack_bar.open = True
+                    page.update()
+                except Exception as ex:
+                    print(f"Error deleting: {ex}")
+        
+        delete_btn = ft.TextButton("🗑️ Delete Image", on_click=delete_current_image,
+                                    style=ft.ButtonStyle(color=self.danger_color),
+                                    visible=has_current_image)
+        
+        def regenerate_barcode(e):
+            import random
+            import string
+            prefix = "890"
+            random_numbers = ''.join(random.choices(string.digits, k=9))
+            barcode_without_checksum = prefix + random_numbers
+            total = 0
+            for i, digit in enumerate(barcode_without_checksum):
+                if i % 2 == 0:
+                    total += int(digit) * 1
+                else:
+                    total += int(digit) * 3
+            checksum = (10 - (total % 10)) % 10
+            new_barcode = barcode_without_checksum + str(checksum)
+            barcode_field.value = new_barcode
+            page.update()
+        
+        regenerate_btn = ft.TextButton("🔄 Generate New Barcode", on_click=regenerate_barcode)
+        
+        def close_modal(e):
+            page.overlay.clear()
+            page.update()
+        
+        def update_accessory(e):
+            name = name_field.value
+            if not name:
+                page.snack_bar = ft.SnackBar(ft.Text("Please enter a name!"), bgcolor="red")
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            try:
+                quantity = int(quantity_field.value) if quantity_field.value else 0
+            except ValueError:
+                quantity = 0
+            
+            try:
+                price = float(price_field.value) if price_field.value else 0.0
+            except ValueError:
+                price = 0.0
+            
+            final_image_path = current_image_path
+            
+            if selected_temp_image == "DELETE":
+                final_image_path = None
+            elif selected_temp_image:
+                saved_path = save_uploaded_image()
+                if saved_path:
+                    final_image_path = saved_path
+                    if current_image_path and os.path.exists(current_image_path) and current_image_path != saved_path:
+                        try:
+                            os.remove(current_image_path)
+                        except:
+                            pass
+            
+            data = {
+                'name': name,
+                'quantity': quantity,
+                'price': price,
+                'quality': quality_field.value,
+                'location': location_field.value,
+                'image_path': final_image_path,
+                'notes': notes_field.value,
+                'barcode_value': barcode_field.value,
+            }
+            
+            result = AccessoryManager.update(accessory_id, data, self.current_user['id'] if self.current_user else None)
+            
+            if result:
+                page.overlay.clear()
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Updated accessory: {name}"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                self.show_accessories(page)
+            else:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("❌ Error updating accessory!"),
+                    bgcolor=self.danger_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                page.update()
+        
+        image_buttons_row = ft.Row([upload_btn, delete_btn], spacing=10, alignment=ft.MainAxisAlignment.CENTER)
+        
+        form_column = ft.Column([
+            name_field,
+            barcode_field,
+            ft.Row([regenerate_btn], alignment=ft.MainAxisAlignment.START),
+            quantity_field,
+            price_field,
+            quality_field,
+            location_field,
+            image_buttons_row,
+            image_preview,
+            notes_field,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=550)
+        
+        modal = ft.Container(
+            content=ft.Card(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text("✏️ Edit Accessory", size=18, weight=ft.FontWeight.BOLD),
+                        ft.Divider(),
+                        form_column,
+                        ft.Divider(),
+                        ft.Row([
+                            ft.TextButton("Cancel", on_click=close_modal),
+                            ft.FilledButton("Update", on_click=update_accessory, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                        ], alignment=ft.MainAxisAlignment.END, spacing=10),
+                    ], spacing=10),
+                    padding=20,
+                    width=520,
+                ),
+            ),
+            expand=True,
+            bgcolor="#80000000",
+        )
+        
+        page.overlay.append(modal)
+        page.update() 
+    def open_delete_accessory_modal(self, page: ft.Page, accessory_id):
+        """Open delete modal for accessory"""
+        accessory = AccessoryManager.get_by_id(accessory_id)
+        if not accessory:
+            return
+        
+        accessory_dict = dict(accessory)
+        
+        def close_modal(e):
+            page.overlay.clear()
+            page.update()
+        
+        def confirm_delete(e):
+            # Delete the accessory from database
+            AccessoryManager.delete(accessory_id)
+            
+            # Also delete image file if exists
+            image_path = accessory_dict.get('image_path')
+            if image_path and os.path.exists(image_path):
+                try:
+                    os.remove(image_path)
+                except:
+                    pass
+            
+            page.overlay.clear()
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Deleted: {accessory_dict.get('name', 'item')}"),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            self.show_accessories(page)
+            page.update()
+        
+        modal = ft.Container(
+            content=ft.Card(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text("🗑️ Confirm Delete", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                        ft.Divider(),
+                        ft.Text(f"Are you sure you want to delete:", size=14),
+                        ft.Text(f"'{accessory_dict.get('name', 'item')}'?", size=16, weight=ft.FontWeight.BOLD),
+                        ft.Container(height=10),
+                        ft.Text("This action cannot be undone!", size=12, color="#888888"),
+                        ft.Divider(),
+                        ft.Row([
+                            ft.TextButton("Cancel", on_click=close_modal),
+                            ft.FilledButton("Yes, Delete", on_click=confirm_delete, style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
+                        ], alignment=ft.MainAxisAlignment.END, spacing=10),
+                    ], spacing=15),
+                    padding=20,
+                    width=400,
+                ),
+            ),
+            expand=True,
+            bgcolor="#80000000",
+        )
+        
+        page.overlay.append(modal)
+        page.update()
+    def show_accessory_detail_dialog(self, page: ft.Page, accessory):
+        """Show detailed view of accessory in a modal dialog"""
+        
+        is_mobile = page.width < 800 if page.width else False
+        
+        created_date = str(accessory.get('created_at', ''))[:16] if accessory.get('created_at') else 'N/A'
+        updated_date = str(accessory.get('updated_at', ''))[:16] if accessory.get('updated_at') else 'N/A'
+        
+        location = accessory.get('location') or accessory.get('location_ids') or 'N/A'
+        price = accessory.get('price', 0)
+        price_text = f"${price:.2f}" if price else "N/A"
+        
+        has_image = False
+        image_path = accessory.get('image_path', '')
+        if image_path and os.path.exists(image_path):
+            has_image = True
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        def edit_accessory(e):
+            page.dialog.open = False
+            self.open_edit_accessory_modal(page, accessory['id'])
+        
+        def delete_accessory(e):
+            page.dialog.open = False
+            self.open_delete_accessory_modal(page, accessory['id'])
+        
+        def show_barcode(e):
+            self.show_barcode_dialog(page, accessory)
+        
+        content_items = []
+        
+        if has_image:
+            content_items.append(
+                ft.Container(
+                    content=ft.Image(src=image_path, width=200, height=150, fit=ft.ImageFit.CONTAIN),
+                    alignment=ft.alignment.center,
+                    margin=ft.margin.only(bottom=10),
+                )
+            )
+        else:
+            content_items.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.icons.IMAGE, size=50, color="#888888"),
+                        ft.Text("No Image", size=12, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.center,
+                    margin=ft.margin.only(bottom=10),
+                )
+            )
+        
+        content_items.extend([
+            ft.Divider(),
+            ft.Row([
+                ft.Text("📝 Code:", size=14, color="#CCCCCC", width=80),
+                ft.Text(accessory.get('item_code') or "N/A", size=14, color=self.text_color),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("🏷️ Quality:", size=14, color="#CCCCCC", width=80),
+                ft.Container(
+                    content=ft.Text(accessory.get('quality', 'Used'), size=12, color="white"),
+                    bgcolor=self.get_quality_color(accessory.get('quality', 'Used')),
+                    border_radius=10,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=4),
+                ),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("🔢 Quantity:", size=14, color="#CCCCCC", width=80),
+                ft.Text(str(accessory.get('quantity', 0)), size=16, weight=ft.FontWeight.BOLD,
+                    color=self.danger_color if accessory.get('quantity', 0) < 10 else self.text_color),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("💰 Price:", size=14, color="#CCCCCC", width=80),
+                ft.Text(price_text, size=14, color="#4CAF50", weight=ft.FontWeight.BOLD),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("📍 Location:", size=14, color="#CCCCCC", width=80),
+                ft.Text(location, size=14, color=self.text_color),
+            ], spacing=8),
+            ft.Divider(),
+            ft.Row([
+                ft.Text("📅 Created:", size=13, color="#CCCCCC", width=80),
+                ft.Text(created_date, size=13, color="#888888"),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("🔄 Updated:", size=13, color="#CCCCCC", width=80),
+                ft.Text(updated_date, size=13, color="#888888"),
+            ], spacing=8),
+            ft.Divider(),
+            ft.Text("📝 Notes:", size=14, weight=ft.FontWeight.BOLD, color="#CCCCCC"),
+            ft.Container(
+                content=ft.Text(accessory.get('notes') or "No notes", size=13, color="#888888"),
+                padding=10,
+                bgcolor="#2C2C2C",
+                border_radius=8,
+                margin=ft.margin.only(top=5, bottom=10),
+            ),
+            ft.Row([
+                ft.ElevatedButton("✏️ EDIT", on_click=edit_accessory, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color)),
+                ft.ElevatedButton("🗑️ DELETE", on_click=delete_accessory, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
+            ], spacing=10),
+            ft.Row([
+                ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.warning_color, color=self.text_color)),
+            ], spacing=10),
+        ])
+        
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text(accessory.get('name', 'Accessory Details'), size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ], spacing=0),
+            content=ft.Container(
+                content=ft.Column(content_items, spacing=10, scroll=ft.ScrollMode.AUTO),
+                width=400 if not is_mobile else page.width - 40,
+                height=550,
+            ),
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
     def convert_size_to_length(self, size_text):
         """Convert size text like '34 1/2' or '34.5' to decimal"""
         if not size_text:
@@ -1678,9 +2304,153 @@ class StoreApp:
                 pass
         
         return None
+    
+    def show_material_detail_dialog(self, page: ft.Page, material):
+        """Show detailed view of material in a modal dialog"""
+        
+        # Check if mobile
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Format dates
+        created_date = str(material.get('created_at', ''))[:16] if material.get('created_at') else 'N/A'
+        updated_date = str(material.get('updated_at', ''))[:16] if material.get('updated_at') else 'N/A'
+        
+        # Get image
+        has_image = False
+        image_path = material.get('image_path', '')
+        if image_path and os.path.exists(image_path):
+            has_image = True
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        def edit_material(e):
+            page.dialog.open = False
+            self.open_edit_modal(page, material['id'])
+        
+        def delete_material(e):
+            page.dialog.open = False
+            self.open_delete_modal(page, material['id'])
+        
+        def show_barcode(e):
+            self.show_barcode_dialog(page, material)
+        
+        # Build content
+        content_items = []
+        
+        # Image section
+        if has_image:
+            content_items.append(
+                ft.Container(
+                    content=ft.Image(src=image_path, width=200, height=150, fit=ft.ImageFit.CONTAIN),
+                    alignment=ft.alignment.center,
+                    margin=ft.margin.only(bottom=10),
+                )
+            )
+        else:
+            content_items.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.icons.IMAGE, size=50, color="#888888"),
+                        ft.Text("No Image", size=12, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.center,
+                    margin=ft.margin.only(bottom=10),
+                )
+            )
+        
+        # Details section
+        content_items.extend([
+            ft.Divider(),
+            ft.Row([
+                ft.Text("📝 Code:", size=14, color="#CCCCCC", width=80),
+                ft.Text(material.get('item_code') or "N/A", size=14, color=self.text_color),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("🏷️ Quality:", size=14, color="#CCCCCC", width=80),
+                ft.Container(
+                    content=ft.Text(material.get('quality', 'Used'), size=12, color="white"),
+                    bgcolor=self.get_quality_color(material.get('quality', 'Used')),
+                    border_radius=10,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=4),
+                ),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("📏 Size:", size=14, color="#CCCCCC", width=80),
+                ft.Text(material.get('size') or "N/A", size=14, color=self.text_color),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("📐 Length:", size=14, color="#CCCCCC", width=80),
+                ft.Text(str(material.get('length') or "N/A"), size=14, color=self.text_color),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("🔢 Quantity:", size=14, color="#CCCCCC", width=80),
+                ft.Text(str(material.get('quantity', 0)), size=16, weight=ft.FontWeight.BOLD,
+                    color=self.danger_color if material.get('quantity', 0) < 10 else self.text_color),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("📍 Location:", size=14, color="#CCCCCC", width=80),
+                ft.Text(material.get('location_ids') or "N/A", size=14, color=self.text_color),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("🎨 Colors:", size=14, color="#CCCCCC", width=80),
+                ft.Text(material.get('colors') or "N/A", size=14, color=self.text_color),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("💰 Price:", size=14, color="#CCCCCC", width=80),
+                ft.Text(f"${material.get('price', 0):.2f}" if material.get('price') else "N/A", size=14, color="#4CAF50"),
+            ], spacing=8) if 'price' in material else ft.Container(),
+            ft.Divider(),
+            ft.Row([
+                ft.Text("📅 Created:", size=13, color="#CCCCCC", width=80),
+                ft.Text(created_date, size=13, color="#888888"),
+            ], spacing=8),
+            ft.Row([
+                ft.Text("🔄 Updated:", size=13, color="#CCCCCC", width=80),
+                ft.Text(updated_date, size=13, color="#888888"),
+            ], spacing=8),
+            ft.Divider(),
+            ft.Text("📝 Notes:", size=14, weight=ft.FontWeight.BOLD, color="#CCCCCC"),
+            ft.Container(
+                content=ft.Text(material.get('notes') or "No notes", size=13, color="#888888"),
+                padding=10,
+                bgcolor="#2C2C2C",
+                border_radius=8,
+                margin=ft.margin.only(top=5, bottom=10),
+            ),
+            ft.Row([
+                ft.ElevatedButton("✏️ EDIT", on_click=edit_material, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color)),
+                ft.ElevatedButton("🗑️ DELETE", on_click=delete_material, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
+            ], spacing=10),
+            ft.Row([
+                ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.warning_color, color=self.text_color)),
+            ], spacing=10),
+        ])
+        
+        # Create dialog
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text(material.get('name', 'Material Details'), size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ], spacing=0),
+            content=ft.Container(
+                content=ft.Column(content_items, spacing=10, scroll=ft.ScrollMode.AUTO),
+                width=400 if not is_mobile else page.width - 40,
+                height=550,
+            ),
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Open a modal overlay for adding material with barcode generation"""
+        """Open a modal overlay for adding material with image upload and database save"""
         
         import random
         import string
@@ -1706,7 +2476,6 @@ class StoreApp:
         images_folder = "images"
         if not os.path.exists(images_folder):
             os.makedirs(images_folder)
-            print(f"Created images folder: {images_folder}")
         
         # Form fields
         name_field = ft.TextField(label="Name *", width=380, bgcolor=self.card_color)
@@ -1770,7 +2539,6 @@ class StoreApp:
             multiline=True,
             min_lines=3,
             max_lines=5,
-            hint_text="Enter any additional notes here...",
         )
         
         # Image preview
@@ -1778,7 +2546,6 @@ class StoreApp:
             content=ft.Column([
                 ft.Text("📷", size=50),
                 ft.Text("No Image", size=12, color="#888888"),
-                ft.Text("Click 'Upload Image' to select", size=9, color="#888888"),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
             width=180,
             height=150,
@@ -1794,7 +2561,6 @@ class StoreApp:
             if e.files:
                 file = e.files[0]
                 selected_temp_image = file.path
-                print(f"Image selected: {selected_temp_image}")
                 try:
                     image_preview.content = ft.Column([
                         ft.Image(src=selected_temp_image, width=160, height=120, fit=ft.ImageFit.CONTAIN),
@@ -1821,18 +2587,16 @@ class StoreApp:
                                     style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
         
         def save_uploaded_image():
-            """Save the uploaded image to images folder and return the path"""
             if selected_temp_image and os.path.exists(selected_temp_image):
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 file_ext = os.path.splitext(selected_temp_image)[1]
                 new_filename = f"material_{timestamp}{file_ext}"
                 new_path = os.path.join(images_folder, new_filename)
                 shutil.copy2(selected_temp_image, new_path)
-                print(f"Image saved to: {new_path}")
                 return new_path
             return None
         
-        # Initialize with a generated barcode
+        # Initialize with generated barcode
         current_barcode = generate_barcode()
         barcode_field.value = current_barcode
         
@@ -1884,9 +2648,7 @@ class StoreApp:
             if size_value:
                 length_value = self.convert_size_to_length(size_value)
             
-            # Save uploaded image if exists
             saved_image_path = save_uploaded_image() if selected_temp_image else None
-            print(f"Saving material with image_path: {saved_image_path}")
             
             data = {
                 'name': name,
@@ -1899,7 +2661,6 @@ class StoreApp:
                 'colors': color_field.value,
                 'notes': notes_field.value,
                 'barcode_value': barcode_value,
-                'barcode_path': "",
                 'image_path': saved_image_path,
             }
             
@@ -1907,12 +2668,12 @@ class StoreApp:
             
             if result:
                 page.overlay.clear()
-                quality_color = self.get_quality_color(quality_field.value)
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✓ Added: {name} | Barcode: {barcode_value}"),
-                    bgcolor=quality_color,
+                    ft.Text(f"✓ Added: {name}"),
+                    bgcolor=self.success_color,
                 )
                 page.snack_bar.open = True
+                # Refresh the materials screen
                 self.show_materials_screen(page)
             else:
                 page.snack_bar = ft.SnackBar(ft.Text("Error: Barcode already exists!"), bgcolor="red")
@@ -1932,7 +2693,7 @@ class StoreApp:
             upload_btn,
             image_preview,
             notes_field,
-        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=650)
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=550)
         
         modal = ft.Container(
             content=ft.Card(
@@ -1945,7 +2706,7 @@ class StoreApp:
                         ft.Row([
                             ft.TextButton("Cancel", on_click=close_modal),
                             ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
-                        ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                        ], alignment=ft.MainAxisAlignment.END, spacing=10),
                     ], spacing=10),
                     padding=20,
                     width=520,
@@ -1958,6 +2719,358 @@ class StoreApp:
         page.overlay.append(modal)
         page.update()
         # ============ STUB METHODS ============
+    
+    def open_edit_modal(self, page: ft.Page, material_id):
+        """Open edit modal"""
+        import os
+        import shutil
+        from datetime import datetime
+        
+        material = MaterialManager.get_by_id(material_id)
+        if not material:
+            return
+        
+        material_dict = dict(material) if material else {}
+        
+        images_folder = "images"
+        if not os.path.exists(images_folder):
+            os.makedirs(images_folder)
+        
+        name_field = ft.TextField(label="Name *", value=material_dict.get('name', ''), width=380, bgcolor=self.card_color)
+        
+        barcode_field = ft.TextField(
+            label="Barcode (13 digits)", 
+            width=380, 
+            bgcolor=self.card_color, 
+            value=material_dict.get('barcode_value', ''),
+            read_only=True,
+        )
+        
+        quantity_field = ft.TextField(label="Quantity", value=str(material_dict.get('quantity', 0)), width=380, bgcolor=self.card_color)
+        
+        size_field = ft.TextField(
+            label="Size", 
+            value=material_dict.get('size') or "", 
+            width=380, 
+            bgcolor=self.card_color,
+        )
+        
+        length_field = ft.TextField(
+            label="Length (auto-calculated)", 
+            value=str(material_dict.get('length') or ""), 
+            width=380, 
+            bgcolor=self.card_color,
+            read_only=True,
+        )
+        
+        quality_field = ft.Dropdown(
+            label="Quality *", 
+            width=380,
+            options=[
+                ft.dropdown.Option("New"),
+                ft.dropdown.Option("Used"),
+                ft.dropdown.Option("Damaged"),
+                ft.dropdown.Option("Repaired"),
+            ],
+            value=material_dict.get('quality', 'New'),
+            bgcolor=self.card_color,
+        )
+        
+        location_field = ft.TextField(label="Location", value=material_dict.get('location_ids') or "", width=380, bgcolor=self.card_color)
+        color_field = ft.TextField(label="Colors", value=material_dict.get('colors') or "", width=380, bgcolor=self.card_color)
+        notes_field = ft.TextField(
+            label="Notes", 
+            width=380, 
+            bgcolor=self.card_color, 
+            value=material_dict.get('notes', ''),
+            multiline=True, 
+            min_lines=3,
+            max_lines=5,
+        )
+        
+        current_image_path = material_dict.get('image_path', '')
+        has_current_image = current_image_path and os.path.exists(current_image_path) if current_image_path else False
+        
+        image_preview = ft.Container(
+            content=ft.Column([
+                ft.Text("📷", size=40),
+                ft.Text("No image", size=10, color="#888888"),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+            width=150, height=120,
+            bgcolor="#2C2C2C",
+            border_radius=8,
+        )
+        
+        if has_current_image:
+            try:
+                image_preview.content = ft.Column([
+                    ft.Image(src=current_image_path, width=140, height=100, fit=ft.ImageFit.CONTAIN),
+                    ft.Text("Current image", size=8, color=self.accent_color),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
+            except:
+                pass
+        
+        selected_temp_image = None
+        
+        def on_image_picked(e: ft.FilePickerResultEvent):
+            nonlocal selected_temp_image
+            if e.files:
+                file = e.files[0]
+                selected_temp_image = file.path
+                try:
+                    image_preview.content = ft.Column([
+                        ft.Image(src=selected_temp_image, width=140, height=100, fit=ft.ImageFit.CONTAIN),
+                        ft.Text("New image selected", size=8, color=self.success_color),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
+                    page.update()
+                except:
+                    pass
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Image selected: {file.name}"), bgcolor=self.success_color)
+                page.snack_bar.open = True
+                page.update()
+        
+        image_picker = ft.FilePicker(on_result=on_image_picked)
+        page.overlay.append(image_picker)
+        
+        def upload_image(e):
+            image_picker.pick_files(
+                allow_multiple=False,
+                allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"],
+                dialog_title="Select an Image"
+            )
+        
+        upload_btn = ft.FilledButton("📁 Upload New Image", on_click=upload_image, icon="cloud_upload",
+                                    style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
+        
+        def save_uploaded_image():
+            if selected_temp_image and os.path.exists(selected_temp_image):
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                file_ext = os.path.splitext(selected_temp_image)[1]
+                new_filename = f"material_{material_id}_{timestamp}{file_ext}"
+                new_path = os.path.join(images_folder, new_filename)
+                shutil.copy2(selected_temp_image, new_path)
+                return new_path
+            return None
+        
+        def delete_current_image(e):
+            nonlocal selected_temp_image
+            if current_image_path and os.path.exists(current_image_path):
+                try:
+                    os.remove(current_image_path)
+                    image_preview.content = ft.Column([
+                        ft.Text("📷", size=40),
+                        ft.Text("Image deleted", size=10, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5)
+                    selected_temp_image = "DELETE"
+                    page.update()
+                    page.snack_bar = ft.SnackBar(ft.Text("✓ Image deleted"), bgcolor=self.success_color)
+                    page.snack_bar.open = True
+                    page.update()
+                except Exception as ex:
+                    print(f"Error deleting: {ex}")
+        
+        delete_btn = ft.TextButton("🗑️ Delete Image", on_click=delete_current_image,
+                                    style=ft.ButtonStyle(color=self.danger_color),
+                                    visible=has_current_image)
+        
+        def regenerate_barcode(e):
+            import random
+            import string
+            prefix = "890"
+            random_numbers = ''.join(random.choices(string.digits, k=9))
+            barcode_without_checksum = prefix + random_numbers
+            total = 0
+            for i, digit in enumerate(barcode_without_checksum):
+                if i % 2 == 0:
+                    total += int(digit) * 1
+                else:
+                    total += int(digit) * 3
+            checksum = (10 - (total % 10)) % 10
+            new_barcode = barcode_without_checksum + str(checksum)
+            barcode_field.value = new_barcode
+            page.update()
+        
+        regenerate_btn = ft.TextButton("🔄 Generate New Barcode", on_click=regenerate_barcode)
+        
+        def update_length(e):
+            size_value = size_field.value
+            if size_value:
+                converted = self.convert_size_to_length(size_value)
+                if converted is not None:
+                    length_field.value = str(converted)
+                else:
+                    length_field.value = ""
+            else:
+                length_field.value = ""
+            page.update()
+        
+        size_field.on_change = update_length
+        
+        def close_modal(e):
+            page.overlay.clear()
+            page.update()
+        
+        def update_material(e):
+            name = name_field.value
+            if not name:
+                page.snack_bar = ft.SnackBar(ft.Text("Please enter a name!"), bgcolor="red")
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            size_value = size_field.value
+            length_value = self.convert_size_to_length(size_value) if size_value else None
+            
+            final_image_path = current_image_path
+            
+            if selected_temp_image == "DELETE":
+                final_image_path = None
+            elif selected_temp_image:
+                saved_path = save_uploaded_image()
+                if saved_path:
+                    final_image_path = saved_path
+                    if current_image_path and os.path.exists(current_image_path) and current_image_path != saved_path:
+                        try:
+                            os.remove(current_image_path)
+                        except:
+                            pass
+            
+            data = {
+                'name': name,
+                'quantity': int(quantity_field.value) if quantity_field.value.isdigit() else 0,
+                'size': size_value,
+                'length': length_value,
+                'quality': quality_field.value,
+                'location_ids': location_field.value,
+                'colors': color_field.value,
+                'notes': notes_field.value,
+                'barcode_value': barcode_field.value,
+                'image_path': final_image_path,
+            }
+            
+            result = MaterialManager.update(material_id, data, self.current_user['id'] if self.current_user else None)
+            
+            if result:
+                page.overlay.clear()
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Updated material: {name}"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                self.show_materials_screen(page)
+            else:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("❌ Error updating material!"),
+                    bgcolor=self.danger_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                page.update()
+        
+        image_buttons_row = ft.Row([upload_btn, delete_btn], spacing=10, alignment=ft.MainAxisAlignment.CENTER)
+        
+        form_column = ft.Column([
+            name_field,
+            barcode_field,
+            ft.Row([regenerate_btn], alignment=ft.MainAxisAlignment.START),
+            quantity_field,
+            size_field,
+            length_field,
+            quality_field,
+            location_field,
+            color_field,
+            image_buttons_row,
+            image_preview,
+            notes_field,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=550)
+        
+        modal = ft.Container(
+            content=ft.Card(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text("✏️ Edit Material", size=18, weight=ft.FontWeight.BOLD),
+                        ft.Divider(),
+                        form_column,
+                        ft.Divider(),
+                        ft.Row([
+                            ft.TextButton("Cancel", on_click=close_modal),
+                            ft.FilledButton("Update Material", on_click=update_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                        ], alignment=ft.MainAxisAlignment.END, spacing=10),
+                    ], spacing=10),
+                    padding=20,
+                    width=520,
+                ),
+            ),
+            expand=True,
+            bgcolor="#80000000",
+        )
+        
+        page.overlay.append(modal)
+        page.update()
+    
+    def open_delete_modal(self, page: ft.Page, material_id):
+        """Open delete modal"""
+        material = MaterialManager.get_by_id(material_id)
+        if not material:
+            return
+        
+        material_dict = dict(material)
+        
+        def close_modal(e):
+            page.overlay.clear()
+            page.update()
+        
+        def confirm_delete(e):
+            # Delete the material from database
+            MaterialManager.delete(material_id)
+            
+            # Also delete image file if exists
+            image_path = material_dict.get('image_path')
+            if image_path and os.path.exists(image_path):
+                try:
+                    os.remove(image_path)
+                except:
+                    pass
+            
+            page.overlay.clear()
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Deleted: {material_dict.get('name', 'item')}"),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            # Refresh the materials screen
+            self.show_materials_screen(page)
+            page.update()
+        
+        modal = ft.Container(
+            content=ft.Card(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text("🗑️ Confirm Delete", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                        ft.Divider(),
+                        ft.Text(f"Are you sure you want to delete:", size=14),
+                        ft.Text(f"'{material_dict.get('name', 'item')}'?", size=16, weight=ft.FontWeight.BOLD),
+                        ft.Container(height=10),
+                        ft.Text("This action cannot be undone!", size=12, color="#888888"),
+                        ft.Divider(),
+                        ft.Row([
+                            ft.TextButton("Cancel", on_click=close_modal),
+                            ft.FilledButton("Yes, Delete", on_click=confirm_delete, style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
+                        ], alignment=ft.MainAxisAlignment.END, spacing=10),
+                    ], spacing=15),
+                    padding=20,
+                    width=400,
+                ),
+            ),
+            expand=True,
+            bgcolor="#80000000",
+        )
+        
+        page.overlay.append(modal)
+        page.update()
+
     def show_barcode_scanner(self, page: ft.Page):
         """Show barcode scanner - MOBILE OPTIMIZED"""
         page.controls.clear()
