@@ -31,6 +31,20 @@ def init_database():
         )
     ''')
     
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scan_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            barcode TEXT,
+            item_name TEXT,
+            item_sku TEXT,
+            item_price REAL,
+            item_stock INTEGER,
+            item_type TEXT,
+            scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            found INTEGER DEFAULT 1
+        )
+    ''')
+
     # Create materials table (no image_path)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS materials (
