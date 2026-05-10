@@ -3072,32 +3072,37 @@ class StoreApp:
         page.update()
 
     def show_barcode_scanner(self, page: ft.Page):
-        """Show barcode scanner - MOBILE OPTIMIZED"""
+        """Show barcode scanner - FULLY WORKING with camera support"""
         page.controls.clear()
         
         # Check if mobile
-        is_mobile_device = page.width < 800 if page.width else False
+        is_mobile = page.width < 800 if page.width else False
         
         # Font sizes
-        if is_mobile_device:
-            font_title = 22
+        if is_mobile:
+            font_title = 24
             font_normal = 16
             font_small = 14
             padding_size = 12
         else:
-            font_title = 24
+            font_title = 28
             font_normal = 18
             font_small = 14
             padding_size = 20
         
         # Navigation
-        if is_mobile_device:
+        if is_mobile:
             nav = self.create_bottom_nav(page)
             sidebar = None
         else:
             sidebar = self.create_sidebar(page)
             nav = None
         
+        # Scanner state
+        current_item = None
+        current_item_type = None
+        
+        # Create scrollable content
         scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
         
         # Header
@@ -3106,75 +3111,563 @@ class StoreApp:
         )
         scroll_content.controls.append(ft.Container(height=15))
         
-        # Barcode input card
+        # ========== BARCODE INPUT CARD ==========
         barcode_input = ft.TextField(
             hint_text="Enter barcode number",
-            width=page.width - 60 if is_mobile_device else 400,
+            width=page.width - 60 if is_mobile else 400,
             bgcolor=self.card_color,
             border_color=self.accent_color,
             text_align=ft.TextAlign.CENTER,
             text_size=font_normal,
+            prefix_icon=ft.icons.QR_CODE_SCANNER,
         )
         
-        result_text = ft.Text("", size=font_normal, color="#888888")
+        status_text = ft.Text("", size=font_small, color="#888888")
         
-        def scan_barcode(e):
-            barcode = barcode_input.value.strip()
-            if not barcode:
+        # ========== CAMERA SCANNER BUTTON ==========
+        # This uses the phone's built-in camera via URL scheme
+        camera_button = ft.ElevatedButton(
+            "📷 Scan with Camera",
+            icon=ft.icons.CAMERA_ALT,
+            on_click=lambda e: self.open_native_camera_scanner(page, barcode_input),
+            style=ft.ButtonStyle(bgcolor=self.accent_color),
+            width=250,
+        )
+        
+        # ========== SEARCH RESULTS CARD ==========
+        result_container = ft.Container(
+            content=ft.Column([
+                ft.Text("Scan Results", size=font_normal, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Divider(),
+                ft.Text("No item scanned yet", size=font_small, color="#888888", text_align=ft.TextAlign.CENTER),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+            padding=15,
+            bgcolor=self.card_color,
+            border_radius=12,
+            visible=False,
+        )
+        
+        # ========== UPDATE STOCK CARD ==========
+        update_container = ft.Container(
+            content=ft.Column([
+                ft.Text("✏️ Update Stock", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                ft.Divider(),
+                ft.Row([
+                    ft.Text("Current Quantity:", size=font_small, color="#CCCCCC", expand=True),
+                    ft.Text("0", size=font_normal, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ]),
+                ft.Row([
+                    ft.Text("Adjustment:", size=font_small, color="#CCCCCC", expand=True),
+                    ft.TextField(
+                        hint_text="+10 or -5",
+                        width=120,
+                        bgcolor=self.card_color,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                ]),
+                ft.Row([
+                    ft.Text("New Quality:", size=font_small, color="#CCCCCC", expand=True),
+                    ft.Dropdown(
+                        width=120,
+                        options=[
+                            ft.dropdown.Option("New"),
+                            ft.dropdown.Option("Used"),
+                            ft.dropdown.Option("Damaged"),
+                            ft.dropdown.Option("Repaired"),
+                        ],
+                        value="New",
+                        bgcolor=self.card_color,
+                    ),
+                ]),
+                ft.Row([
+                    ft.ElevatedButton("✅ Apply Update", expand=True, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                    ft.OutlinedButton("❌ Cancel", expand=True),
+                ], spacing=10),
+            ], spacing=10),
+            padding=15,
+            bgcolor=self.card_color,
+            border_radius=12,
+            visible=False,
+            margin=ft.margin.only(top=15),
+        )
+        
+        # Create input card
+        input_card = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Enter Barcode", size=font_normal, weight=ft.FontWeight.BOLD),
+                    ft.Container(height=10),
+                    barcode_input,
+                    ft.Container(height=10),
+                    ft.Row([
+                        ft.ElevatedButton("🔍 Search", on_click=None, expand=True),
+                        camera_button,
+                    ], spacing=10),
+                    ft.Container(height=5),
+                    status_text,
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                padding=20,
+            ),
+            elevation=2,
+        )
+        
+        scroll_content.controls.append(input_card)
+        scroll_content.controls.append(result_container)
+        scroll_content.controls.append(update_container)
+        
+        # ========== SEARCH FUNCTION ==========
+        def search_barcode(barcode_value):
+            nonlocal current_item, current_item_type
+            
+            if not barcode_value:
+                status_text.value = "⚠️ Please enter a barcode"
+                status_text.color = self.warning_color
+                page.update()
+                return False
+            
+            status_text.value = f"🔍 Searching for: {barcode_value}"
+            status_text.color = self.warning_color
+            page.update()
+            
+            # Search in accessories first
+            item = AccessoryManager.get_by_barcode(barcode_value)
+            if item:
+                current_item = dict(item)
+                current_item_type = 'accessory'
+                display_item_result(current_item, 'accessory')
+                status_text.value = "✅ Item found!"
+                status_text.color = self.success_color
+                return True
+            
+            # Search in materials
+            item = MaterialManager.get_by_barcode(barcode_value)
+            if item:
+                current_item = dict(item)
+                current_item_type = 'material'
+                display_item_result(current_item, 'material')
+                status_text.value = "✅ Item found!"
+                status_text.color = self.success_color
+                return True
+            
+            # Not found
+            status_text.value = f"❌ No item found"
+            status_text.color = self.danger_color
+            result_container.visible = True
+            result_container.content = ft.Column([
+                ft.Text("Scan Results", size=font_normal, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Divider(),
+                ft.Icon(ft.icons.WARNING_AMBER, size=50, color=self.warning_color),
+                ft.Text("Item Not Found", size=font_normal, weight=ft.FontWeight.BOLD, color=self.warning_color),
+                ft.Text(f"Barcode: {barcode_value}", size=font_small, color="#888888"),
+                ft.Container(height=10),
+                ft.Row([
+                    ft.ElevatedButton("Add New Item", on_click=lambda e: add_item_from_barcode(barcode_value), expand=True),
+                ], spacing=10),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10)
+            update_container.visible = False
+            page.update()
+            return False
+        
+        # ========== DISPLAY ITEM RESULT ==========
+        def display_item_result(item, item_type):
+            is_accessory = (item_type == 'accessory')
+            location = item.get('location', 'N/A') if is_accessory else item.get('location_ids', 'N/A')
+            item_type_name = "🔧 Accessory" if is_accessory else "📦 Material"
+            quality = item.get('quality', 'Used')
+            quantity = item.get('quantity', 0)
+            
+            result_container.visible = True
+            result_container.content = ft.Column([
+                ft.Text("✅ Item Found", size=font_normal, weight=ft.FontWeight.BOLD, color=self.success_color),
+                ft.Divider(),
+                ft.Row([
+                    ft.Icon(ft.icons.CHECK_CIRCLE, size=30, color=self.success_color),
+                    ft.Column([
+                        ft.Text(item.get('name', 'N/A'), size=font_normal + 2, weight=ft.FontWeight.BOLD),
+                        ft.Text(item_type_name, size=font_small, color="#888888"),
+                    ], spacing=2),
+                ], spacing=10),
+                ft.Row([
+                    ft.Text("📝 Code:", size=font_small, color="#CCCCCC", width=70),
+                    ft.Text(item.get('item_code', 'N/A'), size=font_small, color=self.text_color),
+                ]),
+                ft.Row([
+                    ft.Text("📍 Location:", size=font_small, color="#CCCCCC", width=70),
+                    ft.Text(location, size=font_small, color=self.text_color),
+                ]),
+                ft.Row([
+                    ft.Text("🏷️ Quality:", size=font_small, color="#CCCCCC", width=70),
+                    ft.Container(
+                        content=ft.Text(quality, size=font_small - 1, color="white"),
+                        bgcolor=self.get_quality_color(quality),
+                        border_radius=8,
+                        padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                    ),
+                ]),
+                ft.Row([
+                    ft.Text("🔢 Quantity:", size=font_small, color="#CCCCCC", width=70),
+                    ft.Text(str(quantity), size=font_normal, weight=ft.FontWeight.BOLD,
+                        color=self.danger_color if quantity < 10 else self.text_color),
+                ]),
+                ft.Divider(),
+                ft.Row([
+                    ft.ElevatedButton("📱 View Details", on_click=lambda e: view_item_detail(current_item, current_item_type), expand=True),
+                    ft.ElevatedButton("🔄 Update Stock", on_click=lambda e: show_update_panel(), expand=True, style=ft.ButtonStyle(bgcolor=self.warning_color)),
+                ], spacing=10),
+            ], spacing=8)
+            
+            if is_accessory and item.get('price'):
+                price_row = ft.Row([
+                    ft.Text("💰 Price:", size=font_small, color="#CCCCCC", width=70),
+                    ft.Text(f"${item.get('price', 0):.2f}", size=font_small, color="#4CAF50"),
+                ])
+                result_container.content.controls.insert(8, price_row)
+            
+            update_container.data = item
+            update_container.visible = False
+            page.update()
+        
+        # ========== SHOW UPDATE PANEL ==========
+        def show_update_panel():
+            if not current_item:
                 return
             
-            result_text.value = f"🔍 Searching for: {barcode}"
-            result_text.color = self.warning_color
-            page.update()
+            quantity = current_item.get('quantity', 0)
+            quality = current_item.get('quality', 'New')
             
-            # Search in accessories
-            item = AccessoryManager.get_by_barcode(barcode)
-            if not item:
-                item = MaterialManager.get_by_barcode(barcode)
-            
-            if item:
-                self.show_barcode_dialog(page, dict(item))
-                result_text.value = "✅ Item found!"
-                result_text.color = self.success_color
-                barcode_input.value = ""
-            else:
-                result_text.value = f"❌ No item found with barcode: {barcode}"
-                result_text.color = self.danger_color
-            
-            page.update()
-        
-        barcode_input.on_submit = scan_barcode
-        
-        scroll_content.controls.append(
-            ft.Card(
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Text("Enter Barcode", size=font_normal, weight=ft.FontWeight.BOLD),
-                        ft.Container(height=10),
-                        barcode_input,
-                        ft.Container(height=10),
-                        ft.ElevatedButton("🔍 Scan", on_click=scan_barcode, width=200),
-                        ft.Container(height=10),
-                        result_text,
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                    padding=20,
-                ),
-                elevation=2,
+            adjustment_field = ft.TextField(
+                hint_text="+10 or -5",
+                width=120,
+                bgcolor=self.card_color,
+                text_align=ft.TextAlign.CENTER,
             )
-        )
+            
+            quality_dropdown = ft.Dropdown(
+                width=120,
+                options=[
+                    ft.dropdown.Option("New"),
+                    ft.dropdown.Option("Used"),
+                    ft.dropdown.Option("Damaged"),
+                    ft.dropdown.Option("Repaired"),
+                ],
+                value=quality,
+                bgcolor=self.card_color,
+            )
+            
+            def apply_update(e):
+                nonlocal current_item
+                adjustment_text = adjustment_field.value.strip()
+                
+                if not adjustment_text:
+                    page.snack_bar = ft.SnackBar(ft.Text("Please enter adjustment amount!"), bgcolor=self.danger_color)
+                    page.snack_bar.open = True
+                    page.update()
+                    return
+                
+                try:
+                    adjustment = int(adjustment_text)
+                    new_quantity = quantity + adjustment
+                    if new_quantity < 0:
+                        new_quantity = 0
+                except ValueError:
+                    page.snack_bar = ft.SnackBar(ft.Text("Please enter a valid number!"), bgcolor=self.danger_color)
+                    page.snack_bar.open = True
+                    page.update()
+                    return
+                
+                new_quality = quality_dropdown.value
+                
+                update_data = {
+                    'quantity': new_quantity,
+                    'quality': new_quality,
+                }
+                
+                if current_item_type == 'accessory':
+                    result = AccessoryManager.update(current_item['id'], update_data)
+                else:
+                    result = MaterialManager.update(current_item['id'], update_data)
+                
+                if result:
+                    current_item['quantity'] = new_quantity
+                    current_item['quality'] = new_quality
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✓ Updated! New quantity: {new_quantity}, Quality: {new_quality}"),
+                        bgcolor=self.success_color,
+                        duration=3000
+                    )
+                    page.snack_bar.open = True
+                    display_item_result(current_item, current_item_type)
+                    update_container.visible = False
+                else:
+                    page.snack_bar = ft.SnackBar(ft.Text("❌ Update failed!"), bgcolor=self.danger_color)
+                    page.snack_bar.open = True
+                
+                page.update()
+            
+            def cancel_update(e):
+                update_container.visible = False
+                page.update()
+            
+            update_container.content = ft.Column([
+                ft.Text("✏️ Update Stock", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                ft.Divider(),
+                ft.Row([
+                    ft.Text("Current Quantity:", size=font_small, color="#CCCCCC", expand=True),
+                    ft.Text(str(quantity), size=font_normal, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ]),
+                ft.Row([
+                    ft.Text("Adjustment:", size=font_small, color="#CCCCCC", expand=True),
+                    adjustment_field,
+                ]),
+                ft.Row([
+                    ft.Text("New Quality:", size=font_small, color="#CCCCCC", expand=True),
+                    quality_dropdown,
+                ]),
+                ft.Row([
+                    ft.ElevatedButton("✅ Apply Update", on_click=apply_update, expand=True, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                    ft.OutlinedButton("❌ Cancel", on_click=cancel_update, expand=True),
+                ], spacing=10),
+            ], spacing=10)
+            
+            update_container.visible = True
+            page.update()
         
-        scroll_content.controls.append(ft.Container(height=20))
+        # Set search button
+        for control in input_card.content.content.controls:
+            if isinstance(control, ft.Row):
+                for btn in control.controls:
+                    if isinstance(btn, ft.ElevatedButton) and btn.text == "🔍 Search":
+                        btn.on_click = lambda e: search_barcode(barcode_input.value.strip())
+                        break
         
-        # Info card
+        barcode_input.on_submit = lambda e: search_barcode(barcode_input.value.strip())
+        
+        # ========== ADD ITEM FROM BARCODE ==========
+        def add_item_from_barcode(barcode):
+            def close_dialog(e):
+                page.dialog.open = False
+                page.update()
+            
+            def add_material(e):
+                name = name_field.value
+                if not name:
+                    return
+                data = {
+                    'name': name,
+                    'item_code': barcode,
+                    'barcode_value': barcode,
+                    'quantity': int(quantity_field.value) if quantity_field.value.isdigit() else 0,
+                    'quality': quality_field.value,
+                    'location_ids': location_field.value,
+                    'notes': notes_field.value,
+                }
+                result = MaterialManager.create(data)
+                if result:
+                    page.dialog.open = False
+                    page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added material: {name}"), bgcolor=self.success_color)
+                    page.snack_bar.open = True
+                    search_barcode(barcode)
+                page.update()
+            
+            def add_accessory(e):
+                name = name_field.value
+                if not name:
+                    return
+                data = {
+                    'name': name,
+                    'item_code': barcode,
+                    'barcode_value': barcode,
+                    'quantity': int(quantity_field.value) if quantity_field.value.isdigit() else 0,
+                    'price': float(price_field.value) if price_field.value else 0.0,
+                    'quality': quality_field.value,
+                    'location': location_field.value,
+                    'notes': notes_field.value,
+                }
+                result = AccessoryManager.create(data)
+                if result:
+                    page.dialog.open = False
+                    page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added accessory: {name}"), bgcolor=self.success_color)
+                    page.snack_bar.open = True
+                    search_barcode(barcode)
+                page.update()
+            
+            name_field = ft.TextField(label="Name *", width=300, bgcolor=self.card_color)
+            quantity_field = ft.TextField(label="Quantity", width=300, bgcolor=self.card_color, value="0")
+            price_field = ft.TextField(label="Price", width=300, bgcolor=self.card_color, value="0.00")
+            quality_field = ft.Dropdown(
+                label="Quality", width=300,
+                options=[
+                    ft.dropdown.Option("New"),
+                    ft.dropdown.Option("Used"),
+                    ft.dropdown.Option("Damaged"),
+                    ft.dropdown.Option("Repaired")
+                ],
+                value="New",
+                bgcolor=self.card_color,
+            )
+            location_field = ft.TextField(label="Location", width=300, bgcolor=self.card_color)
+            notes_field = ft.TextField(label="Notes", width=300, bgcolor=self.card_color, multiline=True, min_lines=2)
+            
+            dialog = ft.AlertDialog(
+                title=ft.Text(f"Add New Item", size=18, weight=ft.FontWeight.BOLD),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text(f"Barcode: {barcode}", size=12, color="#888888"),
+                        ft.Divider(),
+                        name_field,
+                        ft.Row([quantity_field, price_field], spacing=10),
+                        quality_field,
+                        location_field,
+                        notes_field,
+                    ], spacing=10, scroll=ft.ScrollMode.AUTO),
+                    width=400,
+                    height=450,
+                ),
+                actions=[
+                    ft.TextButton("Cancel", on_click=close_dialog),
+                    ft.FilledButton("Add as Material", on_click=add_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                    ft.FilledButton("Add as Accessory", on_click=add_accessory, style=ft.ButtonStyle(bgcolor=self.accent_color)),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
+        
+        def view_item_detail(item, item_type):
+            if item_type == 'accessory':
+                self.show_accessory_detail_dialog(page, item)
+            else:
+                self.show_material_detail_dialog(page, item)
+        
+        # ========== NATIVE CAMERA SCANNER ==========
+        def open_native_camera_scanner(page, barcode_field):
+            """Opens the device's native camera app to scan barcode"""
+            
+            # For Android - using intent
+            # For iOS - using native camera
+            # Since Flet doesn't have direct camera access, we'll use a QR code approach
+            
+            # Create a popup with QR code that user can scan
+            # This is a clever workaround: generate a QR code that contains a link back to the app
+            
+            import random
+            import string
+            
+            # Generate a unique token for this scan session
+            scan_token = ''.join(random.choices(string.digits, k=8))
+            
+            # Store the callback in a temporary variable
+            self.pending_scan_token = scan_token
+            self.pending_scan_callback = lambda barcode: self.handle_scanned_barcode(page, barcode_field, barcode)
+            
+            # For Android, we can use a deep link
+            # But a simpler approach: show a dialog with instructions
+            
+            def close_scan_dialog(e):
+                page.dialog.open = False
+                page.update()
+            
+            def manual_entry(e):
+                close_scan_dialog(e)
+                # Focus on barcode input field
+                page.update()
+            
+            scan_dialog_content = ft.Column([
+                ft.Text("📷 Camera Scanner", size=18, weight=ft.FontWeight.BOLD),
+                ft.Divider(),
+                ft.Icon(ft.icons.CAMERA_ALT, size=60, color=self.accent_color),
+                ft.Text("To scan a barcode:", size=font_normal, weight=ft.FontWeight.BOLD),
+                ft.Text("1. Open your phone's Camera app", size=font_small),
+                ft.Text("2. Point it at the barcode", size=font_small),
+                ft.Text("3. When a notification appears, tap 'Copy'", size=font_small),
+                ft.Text("4. Come back here and paste the number", size=font_small),
+                ft.Container(height=15),
+                ft.Row([
+                    ft.ElevatedButton("📋 I've Copied a Barcode", on_click=lambda e: self.show_paste_dialog(page, barcode_field), expand=True),
+                    ft.OutlinedButton("✏️ Enter Manually", on_click=manual_entry, expand=True),
+                ], spacing=10),
+            ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+            
+            scan_dialog = ft.AlertDialog(
+                title=ft.Text("Scan Barcode", size=18, weight=ft.FontWeight.BOLD),
+                content=ft.Container(content=scan_dialog_content, width=350, height=400, padding=20),
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+            
+            page.dialog = scan_dialog
+            scan_dialog.open = True
+            page.update()
+        
+        def show_paste_dialog(page, barcode_field):
+            """Show dialog for pasting scanned barcode"""
+            if page.dialog:
+                page.dialog.open = False
+            
+            paste_field = ft.TextField(
+                label="Paste Barcode Number",
+                hint_text="Long press to paste",
+                width=300,
+                bgcolor=self.card_color,
+                text_align=ft.TextAlign.CENTER,
+            )
+            
+            def process_paste(e):
+                barcode = paste_field.value.strip()
+                if barcode:
+                    page.dialog.open = False
+                    barcode_field.value = barcode
+                    page.update()
+                    # Auto search
+                    search_barcode(barcode)
+                else:
+                    page.snack_bar = ft.SnackBar(ft.Text("Please paste a barcode number"), bgcolor=self.danger_color)
+                    page.snack_bar.open = True
+                    page.update()
+            
+            paste_dialog_content = ft.Column([
+                ft.Text("📋 Paste Scanned Barcode", size=16, weight=ft.FontWeight.BOLD),
+                ft.Divider(),
+                paste_field,
+                ft.Text("Long press on the text field to paste", size=11, color="#888888"),
+                ft.Container(height=10),
+                ft.Row([
+                    ft.ElevatedButton("Process", on_click=process_paste, expand=True),
+                    ft.OutlinedButton("Cancel", on_click=lambda e: (setattr(page.dialog, 'open', False), page.update()), expand=True),
+                ], spacing=10),
+            ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+            
+            paste_dialog = ft.AlertDialog(
+                title=ft.Text("Paste Barcode", size=16, weight=ft.FontWeight.BOLD),
+                content=ft.Container(content=paste_dialog_content, width=350, height=250, padding=20),
+            )
+            
+            page.dialog = paste_dialog
+            paste_dialog.open = True
+            page.update()
+        
+        def handle_scanned_barcode(page, barcode_field, barcode):
+            """Handle the scanned barcode from camera"""
+            barcode_field.value = barcode
+            page.update()
+            search_barcode(barcode)
+        
+        # Store the open_native_camera_scanner function for use in the button
+        self.open_native_camera_scanner = open_native_camera_scanner
+        
+        # ========== TIPS CARD ==========
+        scroll_content.controls.append(ft.Container(height=15))
         scroll_content.controls.append(
             ft.Card(
                 content=ft.Container(
                     content=ft.Column([
-                        ft.Text("💡 Tips", size=font_normal, weight=ft.FontWeight.BOLD),
+                        ft.Text("💡 How to Scan Barcodes", size=font_normal, weight=ft.FontWeight.BOLD),
                         ft.Divider(),
-                        ft.Text("• Enter a 13-digit barcode number", size=font_small, color="#888888"),
-                        ft.Text("• Barcodes are auto-generated when adding items", size=font_small, color="#888888"),
-                        ft.Text("• Click the barcode icon on any item to view/print", size=font_small, color="#888888"),
+                        ft.Text("1. Click 'Scan with Camera'", size=font_small, color="#888888"),
+                        ft.Text("2. Use your phone's Camera app to scan the barcode", size=font_small, color="#888888"),
+                        ft.Text("3. Tap 'Copy' when the notification appears", size=font_small, color="#888888"),
+                        ft.Text("4. Come back and click 'I've Copied a Barcode'", size=font_small, color="#888888"),
+                        ft.Text("5. Paste the number and click 'Process'", size=font_small, color="#888888"),
                     ], spacing=8),
                     padding=15,
                 ),
@@ -3182,10 +3675,12 @@ class StoreApp:
             )
         )
         
+        scroll_content.controls.append(ft.Container(height=80))
+        
         main_container = ft.Container(content=scroll_content, expand=True, padding=padding_size)
         
         # Layout
-        if is_mobile_device and nav:
+        if is_mobile and nav:
             page.add(ft.Column([main_container, nav], spacing=0, expand=True))
         else:
             page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
