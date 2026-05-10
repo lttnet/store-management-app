@@ -138,56 +138,48 @@ class StoreApp:
             self.show_accessories(page)
         page.update()
     
-        # ============ MAIN ============
+            # ============ MAIN ============
     def main(self, page: ft.Page):
-        """Main entry point - FULL SCREEN with proper font scaling"""
-        try:
-            self.page_ref = page
-            
-            # Make app FULL SCREEN - NO BORDERS
-            page.title = "Store Management System"
-            page.theme_mode = ft.ThemeMode.DARK
-            page.bgcolor = self.bg_color
-            page.padding = 0  # NO padding
-            page.spacing = 0
-            page.window_width = None  # Full width
-            page.window_height = None  # Full height
-            page.window_maximized = True
-            page.window_resizable = True
-            page.window_min_width = None
-            page.window_min_height = None
-            
-            # Calculate scale based on screen size for fonts only
-            self.screen_scale = min(page.width / 1200 if page.width else 1.0, 1.2) if page.width else 1.0
-            
-            # Handle resize to update font scaling
-            def on_resize(e):
-                if page.width:
-                    self.screen_scale = min(page.width / 1200, 1.2)
-                if self.current_user:
-                    if self.current_view == "dashboard":
-                        self.show_dashboard(page)
-                    elif self.current_view == "materials":
-                        self.show_materials_screen(page)
-                    elif self.current_view == "accessories":
-                        self.show_accessories(page)
-            
-            page.on_resize = on_resize
-            
-            init_database()
-            self.show_login(page)
-            page.update()
-            
-        except Exception as e:
-            print(f"Error: {e}")
-            
-    def wrap_with_touch_zoom(self, content):
-        """Wrap content to enable touch pinch-to-zoom"""
-        return ft.Container(
-            content=content,
-            expand=True,
-            on_gesture=self.on_pinch_zoom,
-        )
+        self.page_ref = page
+        
+        # FULL SCREEN - NO BORDERS
+        page.title = "Store Management System"
+        page.theme_mode = ft.ThemeMode.DARK
+        page.bgcolor = self.bg_color
+        page.padding = 0
+        page.spacing = 0
+        page.window_width = None
+        page.window_height = None
+        page.window_maximized = True
+        page.window_resizable = True
+        
+        # Calculate screen scale for fonts
+        self.screen_scale = 1.0
+        if page.width:
+            self.screen_scale = min(page.width / 1200, 1.2)
+        
+        def on_resize(e):
+            if page.width:
+                self.screen_scale = min(page.width / 1200, 1.2)
+            if self.current_user and self.current_view == "dashboard":
+                self.show_dashboard(page)
+        
+        page.on_resize = on_resize
+        
+        init_database()
+        self.show_login(page)
+        page.update()
+
+    def is_mobile(self, page: ft.Page):
+        """Check if running on mobile device"""
+        return page.width < 800 if page.width else False        
+        def wrap_with_touch_zoom(self, content):
+            """Wrap content to enable touch pinch-to-zoom"""
+            return ft.Container(
+                content=content,
+                expand=True,
+                on_gesture=self.on_pinch_zoom,
+            )
 
     def on_pinch_zoom(self, e):
         """Handle pinch zoom gesture"""
@@ -335,17 +327,46 @@ class StoreApp:
             width=260,
             bgcolor=self.sidebar_color,
         )
-    
-            # ============ DASHBOARD ============
-    def show_dashboard(self, page: ft.Page):
-        """Show dashboard - FULL SCREEN, NO BORDERS, LARGER FONTS"""
-        page.controls.clear()
+    def create_bottom_nav(self, page: ft.Page):
+        """Create bottom navigation bar for mobile devices"""
         
-        # Get screen scale for fonts
-        scale = getattr(self, 'screen_scale', 1.0)
-        font_title = int(28 * scale)
-        font_normal = int(18 * scale)  # Larger
-        font_small = int(14 * scale)   # Larger
+        nav_items = [
+            (ft.icons.DASHBOARD, "Home", "dashboard"),
+            (ft.icons.INVENTORY, "Materials", "materials"),
+            (ft.icons.BUILD, "Parts", "accessories"),
+            (ft.icons.QR_CODE_SCANNER, "Scan", "barcode_scanner"),
+            (ft.icons.PEOPLE, "Users", "users"),
+            (ft.icons.SETTINGS, "Settings", "settings"),
+        ]
+        
+        def navigate(e):
+            view = nav_items[e.control.selected_index][2]
+            if view == "dashboard":
+                self.show_dashboard(page)
+            elif view == "materials":
+                self.show_materials_screen(page)
+            elif view == "accessories":
+                self.show_accessories(page)
+            elif view == "barcode_scanner":
+                self.show_barcode_scanner(page)
+            elif view == "users":
+                self.show_users(page)
+            elif view == "settings":
+                self.show_settings(page)
+        
+        return ft.NavigationBar(
+            destinations=[
+                ft.NavigationDestination(icon=icon, label=label)
+                for icon, label, _ in nav_items
+            ],
+            on_change=navigate,
+            height=65,
+            bgcolor=self.sidebar_color,
+        )
+                # ============ DASHBOARD ============
+    def show_dashboard(self, page: ft.Page):
+        """Show dashboard - MOBILE RESPONSIVE (Card-based on mobile, tables on desktop)"""
+        page.controls.clear()
         
         materials = self.dict_list(MaterialManager.get_all())
         accessories = self.dict_list(AccessoryManager.get_all())
@@ -355,225 +376,240 @@ class StoreApp:
         low_stock_materials = [m for m in materials if m.get('quantity', 0) < 10]
         low_stock_accessories = [a for a in accessories if a.get('quantity', 0) < 10]
         
-        sidebar = self.create_sidebar(page)
+        # Check if mobile
+        is_mobile_device = page.width < 800 if page.width else False
         
-        # Stats cards row
-        stats_row = ft.Row([
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("📦 Total Materials", size=font_small, color="#CCCCCC"),
-                    ft.Text(str(stats.get('total_items', 0)), size=font_title + 8, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=20, bgcolor=self.success_color, border_radius=10, expand=True,
-            ),
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("🔧 Accessories", size=font_small, color="#CCCCCC"),
-                    ft.Text(str(accessory_stats.get('total_items', 0)), size=font_title + 8, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=20, bgcolor=self.accent_color, border_radius=10, expand=True,
-            ),
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("⚠️ Low Stock", size=font_small, color="#CCCCCC"),
-                    ft.Text(str(len(low_stock_materials) + len(low_stock_accessories)), size=font_title + 8, weight=ft.FontWeight.BOLD, color=self.danger_color),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=20, bgcolor=self.warning_color, border_radius=10, expand=True,
-            ),
-        ], spacing=15, expand=True)
+        # Font sizes - larger on mobile for readability
+        if is_mobile_device:
+            font_title = 24
+            font_normal = 16
+            font_small = 14
+            padding_size = 12
+        else:
+            font_title = 28
+            font_normal = 18
+            font_small = 14
+            padding_size = 20
         
-        # Materials Table
-        materials_rows = []
-        for m in materials[:10]:
-            materials_rows.append(
-                ft.Row([
-                    ft.Text(m.get('name', 'N/A'), size=font_normal, width=180, weight=ft.FontWeight.BOLD),
-                    ft.Text(m.get('location_ids') or "N/A", size=font_small, width=120, color="#CCCCCC"),
-                    ft.Text(m.get('size') or "N/A", size=font_small, width=100),
-                    ft.Container(
-                        content=ft.Text(m.get('quality', 'Used'), size=font_small - 2, color="white"),
-                        bgcolor=self.get_quality_color(m.get('quality', 'Used')),
-                        border_radius=8,
-                        padding=ft.padding.symmetric(horizontal=10, vertical=4),
-                        width=90,
-                    ),
-                    ft.Text(str(m.get('quantity', 0)), size=font_normal, width=70, weight=ft.FontWeight.BOLD,
-                        color=self.danger_color if m.get('quantity', 0) < 10 else self.text_color),
-                ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        # Create sidebar or bottom navigation
+        if is_mobile_device:
+            # Use bottom navigation for mobile
+            nav = self.create_bottom_nav(page)
+            sidebar = None
+        else:
+            # Use sidebar for desktop
+            sidebar = self.create_sidebar(page)
+            nav = None
+        
+        # Create scrollable content
+        scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+        
+        # Header
+        scroll_content.controls.append(
+            ft.Container(
+                content=ft.Row([
+                    ft.Text("Dashboard", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Container(expand=True),
+                    ft.Text(datetime.now().strftime("%b %d"), size=font_small - 2, color="#888888"),
+                ]),
+                padding=ft.padding.only(bottom=15),
             )
+        )
         
-        if not materials_rows:
-            materials_rows.append(ft.Text("No materials found", size=font_normal, color="#888888"))
+        # Stats Cards - 3 in a row, wrap on mobile
+        stats_row = ft.Row(
+            [
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("📦", size=font_normal),
+                        ft.Text(str(stats.get('total_items', 0)), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
+                        ft.Text("Materials", size=font_small - 2, color="#CCCCCC"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                    padding=12, bgcolor=self.success_color, border_radius=12, expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("🔧", size=font_normal),
+                        ft.Text(str(accessory_stats.get('total_items', 0)), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
+                        ft.Text("Parts", size=font_small - 2, color="#CCCCCC"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                    padding=12, bgcolor=self.accent_color, border_radius=12, expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("⚠️", size=font_normal),
+                        ft.Text(str(len(low_stock_materials) + len(low_stock_accessories)), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                        ft.Text("Low Stock", size=font_small - 2, color="#CCCCCC"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                    padding=12, bgcolor=self.warning_color, border_radius=12, expand=True,
+                ),
+            ],
+            spacing=12,
+        )
+        scroll_content.controls.append(stats_row)
+        scroll_content.controls.append(ft.Container(height=15))
         
-        materials_table = ft.Column([
+        # ========== RECENT MATERIALS (Card-based for mobile) ==========
+        scroll_content.controls.append(
             ft.Row([
-                ft.Text("Materials", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Text("📦 Recent Materials", size=font_normal, weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
                 ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)),
-            ]),
-            ft.Divider(height=1, color="#3C3C3C"),
-            ft.Container(height=10),
-            ft.Row([
-                ft.Text("Name", size=font_small, weight=ft.FontWeight.BOLD, width=180),
-                ft.Text("Location", size=font_small, weight=ft.FontWeight.BOLD, width=120),
-                ft.Text("Size", size=font_small, weight=ft.FontWeight.BOLD, width=100),
-                ft.Text("Quality", size=font_small, weight=ft.FontWeight.BOLD, width=90),
-                ft.Text("Stock", size=font_small, weight=ft.FontWeight.BOLD, width=70),
-            ], alignment=ft.MainAxisAlignment.START),
-        ] + materials_rows, spacing=10, scroll=ft.ScrollMode.AUTO, height=350)
-        
-        left_panel = ft.Container(
-            content=materials_table,
-            padding=15,
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
+            ])
         )
+        scroll_content.controls.append(ft.Divider())
         
-        # Accessories Table
-        accessories_rows = []
-        for a in accessories[:10]:
-            accessories_rows.append(
-                ft.Row([
-                    ft.Text(a.get('name', 'N/A'), size=font_normal, width=180, weight=ft.FontWeight.BOLD),
-                    ft.Text(str(a.get('quantity', 0)), size=font_normal, width=70, weight=ft.FontWeight.BOLD,
-                        color=self.danger_color if a.get('quantity', 0) < 10 else self.text_color),
-                    ft.Container(
-                        content=ft.Text(a.get('quality', 'Used'), size=font_small - 2, color="white"),
-                        bgcolor=self.get_quality_color(a.get('quality', 'Used')),
-                        border_radius=8,
-                        padding=ft.padding.symmetric(horizontal=10, vertical=4),
-                        width=90,
-                    ),
-                    ft.Text("View", size=font_small, color=self.accent_color, width=60),
-                ], alignment=ft.MainAxisAlignment.START)
-            )
+        if materials:
+            for m in materials[:5]:
+                scroll_content.controls.append(
+                    ft.Card(
+                        content=ft.Container(
+                            content=ft.Column([
+                                ft.Row([
+                                    ft.Text(m.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD, expand=True),
+                                    ft.Text(f"Qty: {m.get('quantity', 0)}", size=font_normal, weight=ft.FontWeight.BOLD,
+                                        color=self.danger_color if m.get('quantity', 0) < 10 else self.text_color),
+                                ]),
+                                ft.Row([
+                                    ft.Text(m.get('location_ids', 'N/A'), size=font_small - 1, color="#888888", expand=True),
+                                    ft.Container(
+                                        content=ft.Text(m.get('quality', 'Used'), size=font_small - 2, color="white"),
+                                        bgcolor=self.get_quality_color(m.get('quality', 'Used')),
+                                        border_radius=10,
+                                        padding=ft.padding.symmetric(horizontal=10, vertical=3),
+                                    ),
+                                ]),
+                            ]),
+                            padding=12,
+                        ),
+                        elevation=2,
+                        margin=ft.margin.only(bottom=8),
+                    )
+                )
+        else:
+            scroll_content.controls.append(ft.Text("No materials found", size=font_small, color="#888888"))
         
-        if not accessories_rows:
-            accessories_rows.append(ft.Text("No accessories found", size=font_normal, color="#888888"))
+        scroll_content.controls.append(ft.Container(height=15))
         
-        accessories_table = ft.Column([
+        # ========== RECENT ACCESSORIES (Card-based for mobile) ==========
+        scroll_content.controls.append(
             ft.Row([
-                ft.Text("Accessories & Parts", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Text("🔧 Recent Accessories", size=font_normal, weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
                 ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)),
-            ]),
-            ft.Divider(height=1, color="#3C3C3C"),
-            ft.Container(height=10),
+            ])
+        )
+        scroll_content.controls.append(ft.Divider())
+        
+        if accessories:
+            for a in accessories[:5]:
+                location = a.get('location') or a.get('location_ids') or 'N/A'
+                scroll_content.controls.append(
+                    ft.Card(
+                        content=ft.Container(
+                            content=ft.Column([
+                                ft.Row([
+                                    ft.Text(a.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD, expand=True),
+                                    ft.Text(f"Qty: {a.get('quantity', 0)}", size=font_normal, weight=ft.FontWeight.BOLD,
+                                        color=self.danger_color if a.get('quantity', 0) < 10 else self.text_color),
+                                ]),
+                                ft.Row([
+                                    ft.Text(location, size=font_small - 1, color="#888888", expand=True),
+                                    ft.Container(
+                                        content=ft.Text(a.get('quality', 'Used'), size=font_small - 2, color="white"),
+                                        bgcolor=self.get_quality_color(a.get('quality', 'Used')),
+                                        border_radius=10,
+                                        padding=ft.padding.symmetric(horizontal=10, vertical=3),
+                                    ),
+                                ]),
+                            ]),
+                            padding=12,
+                        ),
+                        elevation=2,
+                        margin=ft.margin.only(bottom=8),
+                    )
+                )
+        else:
+            scroll_content.controls.append(ft.Text("No accessories found", size=font_small, color="#888888"))
+        
+        scroll_content.controls.append(ft.Container(height=15))
+        
+        # ========== LOW STOCK ALERTS ==========
+        if low_stock_materials or low_stock_accessories:
+            scroll_content.controls.append(
+                ft.Row([
+                    ft.Icon(ft.icons.WARNING_AMBER, color="#FF9800", size=20),
+                    ft.Text("Low Stock Alerts", size=font_normal, weight=ft.FontWeight.BOLD, color="#FF9800"),
+                    ft.Container(expand=True),
+                    ft.Text(f"{len(low_stock_materials) + len(low_stock_accessories)}", size=font_small, color="#888888"),
+                ])
+            )
+            scroll_content.controls.append(ft.Divider())
+            
+            for m in low_stock_materials[:4]:
+                scroll_content.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Container(width=4, height=35, bgcolor=self.danger_color, border_radius=2),
+                            ft.Container(width=10),
+                            ft.Text("📦", size=font_small),
+                            ft.Container(width=8),
+                            ft.Text(m.get('name', 'Unknown')[:20], size=font_small, expand=True),
+                            ft.Text(f"Stock: {m.get('quantity', 0)}", size=font_small, color=self.danger_color, weight=ft.FontWeight.BOLD),
+                        ]),
+                        padding=10,
+                        bgcolor="#3C2121",
+                        border_radius=8,
+                        margin=ft.margin.only(bottom=6),
+                    )
+                )
+            
+            for a in low_stock_accessories[:4]:
+                scroll_content.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Container(width=4, height=35, bgcolor=self.danger_color, border_radius=2),
+                            ft.Container(width=10),
+                            ft.Text("🔧", size=font_small),
+                            ft.Container(width=8),
+                            ft.Text(a.get('name', 'Unknown')[:20], size=font_small, expand=True),
+                            ft.Text(f"Stock: {a.get('quantity', 0)}", size=font_small, color=self.danger_color, weight=ft.FontWeight.BOLD),
+                        ]),
+                        padding=10,
+                        bgcolor="#3C2121",
+                        border_radius=8,
+                        margin=ft.margin.only(bottom=6),
+                    )
+                )
+            
+            scroll_content.controls.append(ft.Container(height=10))
+        
+        # ========== QUICK ACTIONS ==========
+        scroll_content.controls.append(
             ft.Row([
-                ft.Text("Part Name", size=font_small, weight=ft.FontWeight.BOLD, width=180),
-                ft.Text("Qty", size=font_small, weight=ft.FontWeight.BOLD, width=70),
-                ft.Text("Quality", size=font_small, weight=ft.FontWeight.BOLD, width=90),
-                ft.Text("Notes", size=font_small, weight=ft.FontWeight.BOLD, width=60),
-            ], alignment=ft.MainAxisAlignment.START),
-        ] + accessories_rows, spacing=10, scroll=ft.ScrollMode.AUTO, height=350)
-        
-        right_panel = ft.Container(
-            content=accessories_table,
-            padding=15,
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
+                ft.ElevatedButton("📥 Import", on_click=lambda e: None, expand=True, style=ft.ButtonStyle(bgcolor=self.accent_color)),
+                ft.ElevatedButton("📤 Export", on_click=lambda e: None, expand=True, style=ft.ButtonStyle(bgcolor=self.warning_color)),
+                ft.ElevatedButton("⚙️ Settings", on_click=lambda e: self.show_settings(page), expand=True),
+            ], spacing=10)
         )
         
-        middle_row = ft.Row([left_panel, right_panel], spacing=15, expand=True, height=420)
+        scroll_content.controls.append(ft.Container(height=20))
         
-        # Low Stock Panel
-        low_stock_items = []
-        for m in low_stock_materials[:8]:
-            low_stock_items.append(
-                ft.Row([
-                    ft.Text("📦", size=font_normal, width=40),
-                    ft.Text(m.get('name', 'Unknown')[:25], size=font_normal, expand=True),
-                    ft.Text(f"Stock: {m.get('quantity', 0)}", size=font_normal, color=self.danger_color, weight=ft.FontWeight.BOLD),
-                ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        # Main container
+        main_container = ft.Container(content=scroll_content, expand=True, padding=padding_size)
+        
+        # Layout based on device
+        if is_mobile_device and nav:
+            # Mobile: Bottom navigation + content
+            page.add(
+                ft.Column([
+                    main_container,
+                    nav,
+                ], spacing=0, expand=True)
             )
-        for a in low_stock_accessories[:8]:
-            low_stock_items.append(
-                ft.Row([
-                    ft.Text("🔧", size=font_normal, width=40),
-                    ft.Text(a.get('name', 'Unknown')[:25], size=font_normal, expand=True),
-                    ft.Text(f"Stock: {a.get('quantity', 0)}", size=font_normal, color=self.danger_color, weight=ft.FontWeight.BOLD),
-                ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-            )
-        
-        low_stock_panel = ft.Container(
-            content=ft.Column([
-                ft.Row([
-                    ft.Text("⚠️ Low Stock Items", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ft.Container(expand=True),
-                    ft.Text(f"Total: {len(low_stock_materials) + len(low_stock_accessories)} items", size=font_small, color="#888888"),
-                ]),
-                ft.Divider(),
-                ft.Column(low_stock_items, spacing=8, scroll=ft.ScrollMode.AUTO, height=180),
-            ], spacing=10),
-            padding=15,
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
-        )
-        
-        # Import/Export Panel
-        import_panel = ft.Container(
-            content=ft.Column([
-                ft.Text("📁 Import/Export", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ft.Divider(),
-                ft.Row([
-                    ft.ElevatedButton("📥 Import", on_click=lambda e: None, expand=True),
-                    ft.ElevatedButton("📤 Export", on_click=lambda e: None, expand=True),
-                ], spacing=10),
-                ft.Text("CSV format supported", size=font_small, color="#888888"),
-            ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=15,
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
-        )
-        
-        # Users Panel
-        users = self.dict_list(UserManager.get_all())
-        users_panel = ft.Container(
-            content=ft.Column([
-                ft.Row([
-                    ft.Text("👥 Users", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ft.Container(expand=True),
-                    ft.TextButton("Manage", on_click=lambda e: self.show_users(page)),
-                ]),
-                ft.Divider(),
-            ] + [
-                ft.Row([
-                    ft.Text(u.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD, width=120),
-                    ft.Text(u.get('role', 'user'), size=font_small, color="#4CAF50", width=80),
-                    ft.Text("Active", size=font_small, color="#4CAF50"),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN) for u in users[:5]
-            ] + [ft.Container(expand=True)],
-                spacing=10,
-            ),
-            padding=15,
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
-        )
-        
-        bottom_row = ft.Row([low_stock_panel, import_panel, users_panel], spacing=15, expand=True, height=280)
-        
-        # Main content
-        main_content = ft.Container(
-            content=ft.Column([
-                ft.Text("Dashboard", size=font_title + 6, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ft.Container(height=10),
-                stats_row,
-                ft.Container(height=20),
-                middle_row,
-                ft.Container(height=20),
-                bottom_row,
-            ], spacing=5, expand=True),
-            expand=True,
-            padding=20,
-        )
-        
-        layout = ft.Row([sidebar, main_content], spacing=0, expand=True)
-        page.add(layout)
+        else:
+            # Desktop: Sidebar + content
+            page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
         
         self.current_view = "dashboard"
         page.update()
