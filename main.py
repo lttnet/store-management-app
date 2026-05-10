@@ -31,7 +31,36 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 logo_path = os.path.join(BASE_DIR, 'images', 'Logo-store.png')
 background_path = os.path.join(BASE_DIR, 'images', 'backgound_storemgt.png')
 
-
+class ScaleHelper:
+    """Automatically scales desktop layout to fit any screen"""
+    
+    DESKTOP_WIDTH = 1600
+    DESKTOP_HEIGHT = 900
+    
+    def __init__(self, page: ft.Page):
+        self.page = page
+        self.scale = 1.0
+        self.update_scale()
+    
+    def update_scale(self):
+        """Calculate scale factor based on current window size"""
+        if self.page.width and self.page.height:
+            scale_w = self.page.width / self.DESKTOP_WIDTH
+            scale_h = self.page.height / self.DESKTOP_HEIGHT
+            # Use the smaller scale to ensure everything fits
+            self.scale = min(scale_w, scale_h, 1.0)  # Max scale 1.0, never enlarge beyond original
+        else:
+            self.scale = 1.0
+    
+    def get_scaled_size(self, original_size):
+        """Get scaled size for dimensions"""
+        return original_size * self.scale
+    
+    def get_scaled_font(self, original_size):
+        """Get scaled font size (minimum 8px)"""
+        scaled = int(original_size * self.scale)
+        return max(scaled, 8)
+    
 class StoreApp:
     def __init__(self):
         self.current_user = None
@@ -109,38 +138,84 @@ class StoreApp:
             self.show_accessories(page)
         page.update()
     
-    # ============ MAIN ============
+        # ============ MAIN ============
     def main(self, page: ft.Page):
         try:
             self.page_ref = page
+            
+            # Initialize scale helper
+            self.scale_helper = ScaleHelper(page)
+            
+            # Make app full screen on mobile, original size on desktop
+            if self.scale_helper.scale < 0.9:
+                # Mobile: full screen
+                page.window_width = None
+                page.window_height = None
+                page.window_maximized = True
+                page.window_min_width = None
+                page.window_min_height = None
+            else:
+                # Desktop: original size
+                page.window_width = 1600
+                page.window_height = 900
+                page.window_min_width = 1200
+                page.window_min_height = 700
             
             page.title = "Store Management System"
             page.theme_mode = ft.ThemeMode.DARK
             page.bgcolor = self.bg_color
             page.padding = 0
             page.spacing = 0
-            page.window_width = 1600
-            page.window_height = 900
-            page.window_min_width = 1200
-            page.window_min_height = 700
             
-            def on_keyboard(e):
-                if e.ctrl:
-                    if e.key == "+" or e.key == "=":
-                        self.zoom_in(page)
-                    elif e.key == "-":
-                        self.zoom_out(page)
-                    elif e.key == "0":
-                        self.reset_zoom(page)
-            page.on_keyboard_event = on_keyboard
+            # Handle resize to update scale
+            def on_resize(e):
+                if self.scale_helper:
+                    self.scale_helper.update_scale()
+                if self.current_user:
+                    if self.current_view == "dashboard":
+                        self.show_dashboard(page)
+                    elif self.current_view == "materials":
+                        self.show_materials_screen(page)
+                    elif self.current_view == "accessories":
+                        self.show_accessories(page)
+                    elif self.current_view == "inventory":
+                        self.show_inventory(page)
+                    elif self.current_view == "users":
+                        self.show_users(page)
+                    elif self.current_view == "settings":
+                        self.show_settings(page)
+                    elif self.current_view == "barcode_scanner":
+                        self.show_barcode_scanner(page)
+            
+            page.on_resize = on_resize
             
             init_database()
             self.show_login(page)
             page.update()
+            
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error in main: {e}")
+            import traceback
             traceback.print_exc()
-    
+            
+    def wrap_with_touch_zoom(self, content):
+        """Wrap content to enable touch pinch-to-zoom"""
+        return ft.Container(
+            content=content,
+            expand=True,
+            on_gesture=self.on_pinch_zoom,
+        )
+
+    def on_pinch_zoom(self, e):
+        """Handle pinch zoom gesture"""
+        if e.type == ft.GestureType.PAN_UPDATE:
+            # Detect pinch (when two fingers)
+            if e.scale != 1.0:
+                new_zoom = self.zoom_level * e.scale
+                new_zoom = max(0.5, min(new_zoom, 3.0))
+                if new_zoom != self.zoom_level:
+                    self.zoom_level = new_zoom
+                    self.apply_zoom_to_current_view(e.control.page)
     # ============ LOGIN ============
     def show_login(self, page: ft.Page):
         page.controls.clear()
@@ -280,48 +355,54 @@ class StoreApp:
             bgcolor=self.sidebar_color,
         )
     
-        # ============ DASHBOARD ============
+            # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
+        """Show dashboard - automatically scales to fit screen"""
         page.controls.clear()
         
         materials = self.dict_list(MaterialManager.get_all())
         accessories = self.dict_list(AccessoryManager.get_all())
         stats = MaterialManager.get_stats()
         accessory_stats = AccessoryManager.get_stats()
-        low_stock = self.dict_list(MaterialManager.get_low_stock(10))
         
-        # Add these lines - they were missing!
         low_stock_materials = [m for m in materials if m.get('quantity', 0) < 10]
         low_stock_accessories = [a for a in accessories if a.get('quantity', 0) < 10]
         
         sidebar = self.create_sidebar(page)
         
-        # Stats cards row
-        stats_row = ft.Row([
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("📦 Total Materials", size=14, color="#CCCCCC"),
-                    ft.Text(str(stats.get('total_items', 0)), size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=20, bgcolor=self.success_color, border_radius=10, expand=True,
-            ),
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("🔧 Accessories", size=14, color="#CCCCCC"),
-                    ft.Text(str(accessory_stats.get('total_items', 0)), size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=20, bgcolor=self.accent_color, border_radius=10, expand=True,
-            ),
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("📄 Export Records", size=14, color="#CCCCCC"),
-                    ft.Text("120", size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-                padding=20, bgcolor=self.warning_color, border_radius=10, expand=True,
-            ),
-        ], spacing=15, expand=True)
+        # Get scale factor
+        scale = self.scale_helper.scale if self.scale_helper else 1.0
         
-        # Materials Table Panel
+        # Stats cards row - scaled
+        stats_row = ft.Row(
+            [
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("📦 Total Materials", size=14, color="#CCCCCC"),
+                        ft.Text(str(stats.get('total_items', 0)), size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                    padding=20, bgcolor=self.success_color, border_radius=10, expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("🔧 Accessories", size=14, color="#CCCCCC"),
+                        ft.Text(str(accessory_stats.get('total_items', 0)), size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                    padding=20, bgcolor=self.accent_color, border_radius=10, expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("📄 Export Records", size=14, color="#CCCCCC"),
+                        ft.Text("120", size=36, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                    padding=20, bgcolor=self.warning_color, border_radius=10, expand=True,
+                ),
+            ],
+            spacing=15,
+            expand=True,
+        )
+        
+        # Materials Table Panel (simplified)
         materials_rows = []
         for m in materials[:10]:
             materials_rows.append(
@@ -349,7 +430,7 @@ class StoreApp:
                 ft.Container(expand=True),
                 ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)),
             ]),
-            ft.Divider(height=1, color="#3C3C3C"),
+            ft.Divider(),
             ft.Container(height=5),
             ft.Row([
                 ft.Text("Name", size=10, weight=ft.FontWeight.BOLD, width=140),
@@ -360,15 +441,9 @@ class StoreApp:
             ], alignment=ft.MainAxisAlignment.START),
         ] + materials_rows, spacing=6, scroll=ft.ScrollMode.AUTO, height=300)
         
-        left_panel = ft.Container(
-            content=materials_table,
-            padding=12,
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
-        )
+        left_panel = ft.Container(content=materials_table, padding=12, bgcolor=self.card_color, border_radius=10, expand=True)
         
-        # Accessories Table Panel
+        # Accessories Table Panel (simplified)
         accessories_rows = []
         for a in accessories[:10]:
             accessories_rows.append(
@@ -395,7 +470,7 @@ class StoreApp:
                 ft.Container(expand=True),
                 ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)),
             ]),
-            ft.Divider(height=1, color="#3C3C3C"),
+            ft.Divider(),
             ft.Container(height=5),
             ft.Row([
                 ft.Text("Part Name", size=10, weight=ft.FontWeight.BOLD, width=140),
@@ -405,93 +480,47 @@ class StoreApp:
             ], alignment=ft.MainAxisAlignment.START),
         ] + accessories_rows, spacing=6, scroll=ft.ScrollMode.AUTO, height=300)
         
-        right_panel = ft.Container(
-            content=accessories_table,
-            padding=12,
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
-        )
+        right_panel = ft.Container(content=accessories_table, padding=12, bgcolor=self.card_color, border_radius=10, expand=True)
         
-        # Middle row
         middle_row = ft.Row([left_panel, right_panel], spacing=15, expand=True, height=380)
         
-        # Low Stock Panel - Now using the defined variables
-        low_stock_items = []
+        # Low Stock Panel
+        low_stock_rows = []
         for m in low_stock_materials[:10]:
-            low_stock_items.append(
-                ft.Row([
-                    ft.Text("📦", size=14, width=35),
-                    ft.Text(m.get('name', 'Unknown')[:20], size=12),
-                    ft.Text(f"Stock: {m.get('quantity', 0)}", size=12, color=self.danger_color),
-                ], alignment=ft.MainAxisAlignment.START)
-            )
+            low_stock_rows.append(ft.Row([ft.Text("📦", size=14), ft.Text(m.get('name', 'Unknown')[:20], size=12, width=150), ft.Text(f"Stock: {m.get('quantity', 0)}", size=12, color=self.danger_color)]))
         for a in low_stock_accessories[:10]:
-            low_stock_items.append(
-                ft.Row([
-                    ft.Text("🔧", size=14, width=35),
-                    ft.Text(a.get('name', 'Unknown')[:20], size=12),
-                    ft.Text(f"Stock: {a.get('quantity', 0)}", size=12, color=self.danger_color),
-                ], alignment=ft.MainAxisAlignment.START)
-            )
-        
-        if not low_stock_items:
-            low_stock_items.append(ft.Text("No low stock items", size=12, color="#888888"))
+            low_stock_rows.append(ft.Row([ft.Text("🔧", size=14), ft.Text(a.get('name', 'Unknown')[:20], size=12, width=150), ft.Text(f"Stock: {a.get('quantity', 0)}", size=12, color=self.danger_color)]))
         
         low_stock_panel = ft.Container(
             content=ft.Column([
-                ft.Row([
-                    ft.Text("⚠️ Low Stock Items", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ft.Container(expand=True),
-                    ft.Text(f"Total: {len(low_stock_materials) + len(low_stock_accessories)} items", size=11, color="#888888"),
-                ]),
+                ft.Row([ft.Text("⚠️ Low Stock Items", size=16, weight=ft.FontWeight.BOLD), ft.Container(expand=True), ft.Text(f"Total: {len(low_stock_materials) + len(low_stock_accessories)} items", size=11, color="#888888")]),
                 ft.Divider(),
-                ft.Column(low_stock_items, spacing=5, scroll=ft.ScrollMode.AUTO),
-            ], spacing=8),
-            padding=12,
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
+                ft.Column(low_stock_rows, spacing=5, scroll=ft.ScrollMode.AUTO, height=200),
+            ]),
+            padding=12, bgcolor=self.card_color, border_radius=10, expand=True,
         )
         
-        # Import/Export Panel
         import_panel = ft.Container(
             content=ft.Column([
-                ft.Text("📁 Import/Export", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Text("📁 Import/Export", size=16, weight=ft.FontWeight.BOLD),
                 ft.Divider(),
-                ft.Row([
-                    ft.ElevatedButton("Import", on_click=lambda e: None),
-                    ft.ElevatedButton("Export", on_click=lambda e: None),
-                ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                ft.Row([ft.ElevatedButton("Import", on_click=lambda e: None), ft.ElevatedButton("Export", on_click=lambda e: None)], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
                 ft.Text("CSV format", size=10, color="#888888"),
-            ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=15,
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
+            ]),
+            padding=15, bgcolor=self.card_color, border_radius=10, expand=True,
         )
         
-        # Users Panel
         users = self.dict_list(UserManager.get_all())
         users_panel = ft.Container(
             content=ft.Column([
-                ft.Text("👥 Users", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Text("👥 Users", size=16, weight=ft.FontWeight.BOLD),
                 ft.Divider(),
-            ] + [
-                ft.Row([
-                    ft.Text(u.get('name', 'N/A'), size=12, width=100),
-                    ft.Text(u.get('role', 'user'), size=11, color="#4CAF50"),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN) for u in users[:5]
-            ] + [ft.Container(expand=True)],
+            ] + [ft.Row([ft.Text(u.get('name', 'N/A'), size=12, width=100), ft.Text(u.get('role', 'user'), size=11, color="#4CAF50")], alignment=ft.MainAxisAlignment.SPACE_BETWEEN) for u in users[:5]] + [ft.Container(expand=True)],
                 spacing=8,
             ),
-            padding=15,
-            bgcolor=self.card_color,
-            border_radius=10,
-            expand=True,
+            padding=15, bgcolor=self.card_color, border_radius=10, expand=True,
         )
         
-        # Bottom panels row
         bottom_row = ft.Row([low_stock_panel, import_panel, users_panel], spacing=15, expand=True, height=260)
         
         # Main content
@@ -504,18 +533,29 @@ class StoreApp:
                 middle_row,
                 ft.Container(height=15),
                 bottom_row,
-            ], spacing=5, expand=True),
+            ], expand=True),
             expand=True,
             padding=20,
         )
         
+        # Create layout
         layout = ft.Row([sidebar, main_content], spacing=0, expand=True)
         
-        if self.zoom_level != 1.0:
-            page.add(ft.Container(content=layout, scale=ft.Scale(self.zoom_level), expand=True, alignment=ft.alignment.center))
+        # Apply scaling based on screen size
+        if scale < 0.95:
+            # Scale down for small screens
+            scaled_layout = ft.Container(
+                content=layout,
+                scale=ft.Scale(scale),
+                expand=True,
+                alignment=ft.alignment.center,
+            )
+            page.add(scaled_layout)
         else:
+            # Show at normal size for large screens
             page.add(layout)
         
+        self.current_view = "dashboard"
         page.update()
     
     def show_materials_screen(self, page: ft.Page):
@@ -712,6 +752,7 @@ class StoreApp:
         
         self.current_view = "materials"
         page.update()
+    
     def create_detail_panel(self, material, page):
         """Create detail panel for selected material"""
         if not material:
@@ -1113,7 +1154,7 @@ class StoreApp:
             self.accessory_detail_panel.content = self.create_accessory_detail_panel(None, page)
         
         page.update()
-        
+
     def create_accessory_detail_panel(self, accessory, page):
         """Create detail panel for selected accessory"""
         if not accessory:
@@ -1156,7 +1197,669 @@ class StoreApp:
                                 style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color), expand=True),
             ], spacing=10),
         ], spacing=10, scroll=ft.ScrollMode.AUTO, height=450)
+    
+    def show_barcode_dialog(self, page: ft.Page, item):
+        """Show barcode dialog for material or accessory with real barcode image"""
+        barcode_text = item.get('barcode_value') or item.get('item_code', 'N/A')
+        item_name = item.get('name', 'Item')
+        item_type = "Material" if 'location_ids' in item else "Accessory"
+        
+        # Create real barcode image URL using barcode.tec-it.com (free API)
+        barcode_image_url = f"https://barcode.tec-it.com/barcode.ashx?data={barcode_text}&code=Code128&dpi=120&height=80"
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        def print_barcode(e):
+            """Open print dialog in browser"""
+            import webbrowser
+            import tempfile
+            
+            # Create HTML content for printing
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Barcode - {barcode_text}</title>
+                <style>
+                    body {{
+                        text-align: center;
+                        padding: 50px;
+                        font-family: Arial, sans-serif;
+                    }}
+                    .container {{
+                        border: 2px solid #1976D2;
+                        border-radius: 15px;
+                        padding: 20px;
+                        max-width: 400px;
+                        margin: 0 auto;
+                    }}
+                    .title {{
+                        font-size: 20px;
+                        font-weight: bold;
+                        color: #1976D2;
+                        margin-bottom: 10px;
+                    }}
+                    .item-name {{
+                        font-size: 16px;
+                        font-weight: bold;
+                        color: #333;
+                        margin-bottom: 15px;
+                    }}
+                    .item-type {{
+                        font-size: 12px;
+                        color: #666;
+                        margin-bottom: 20px;
+                    }}
+                    .barcode-img {{
+                        max-width: 100%;
+                        height: auto;
+                        margin: 10px 0;
+                    }}
+                    .number {{
+                        font-size: 18px;
+                        font-weight: bold;
+                        margin-top: 10px;
+                        letter-spacing: 2px;
+                    }}
+                    @media print {{
+                        .no-print {{ display: none; }}
+                        .container {{
+                            border: none;
+                        }}
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="title">PRODUCT BARCODE</div>
+                    <div class="item-name">{item_name}</div>
+                    <div class="item-type">{item_type}</div>
+                    <img class="barcode-img" src="{barcode_image_url}" alt="Barcode">
+                    <div class="number">{barcode_text}</div>
+                </div>
+                <div class="no-print" style="margin-top: 30px;">
+                    <button onclick="window.print()" style="padding: 10px 20px; font-size: 14px; background: #1976D2; color: white; border: none; border-radius: 5px; cursor: pointer;">🖨️ Print Barcode</button>
+                    <button onclick="window.close()" style="padding: 10px 20px; font-size: 14px; margin-left: 10px; background: #666; color: white; border: none; border-radius: 5px; cursor: pointer;">Close</button>
+                </div>
+                <script>
+                    setTimeout(function() {{
+                        window.print();
+                    }}, 500);
+                </script>
+            </body>
+            </html>
+            """
+            
+            temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8')
+            temp_file.write(html_content)
+            temp_file.close()
+            
+            webbrowser.open(f'file://{temp_file.name}')
+            close_dialog(e)
+        
+        # Create barcode display for dialog
+        barcode_display = ft.Container(
+            content=ft.Column([
+                ft.Text("📦 " + item_type, size=12, color="#888888"),
+                ft.Text(item_name, size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Container(height=10),
+                ft.Image(src=barcode_image_url, width=350, height=100, fit=ft.ImageFit.CONTAIN),
+                ft.Text(barcode_text, size=18, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                ft.Text("Scan this barcode with your camera", size=10, color="#888888"),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+            padding=20,
+            bgcolor="#1E1E1E",
+            border_radius=15,
+        )
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text(f"Barcode - {item_name[:30]}", size=18, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                content=barcode_display,
+                width=400,
+                height=320,
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=close_dialog),
+                ft.FilledButton("🖨️ Print", on_click=print_barcode, style=ft.ButtonStyle(bgcolor=self.accent_color)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
 
+    def open_add_accessory_modal(self, page: ft.Page):
+        """Open modal for adding accessory with barcode generation"""
+        
+        import random
+        import string
+        import os
+        import shutil
+        from datetime import datetime
+        
+        def generate_barcode():
+            """Generate a unique numeric barcode"""
+            prefix = "890"
+            random_numbers = ''.join(random.choices(string.digits, k=9))
+            barcode_without_checksum = prefix + random_numbers
+            total = 0
+            for i, digit in enumerate(barcode_without_checksum):
+                if i % 2 == 0:
+                    total += int(digit) * 1
+                else:
+                    total += int(digit) * 3
+            checksum = (10 - (total % 10)) % 10
+            return barcode_without_checksum + str(checksum)
+        
+        # Create images folder if not exists
+        images_folder = "images"
+        if not os.path.exists(images_folder):
+            os.makedirs(images_folder)
+        
+        name_field = ft.TextField(label="Name *", width=380, bgcolor=self.card_color)
+        barcode_field = ft.TextField(
+            label="Barcode (13 digits)", 
+            width=380, 
+            bgcolor=self.card_color, 
+            read_only=True,
+        )
+        quantity_field = ft.TextField(label="Quantity", width=380, bgcolor=self.card_color, value="0")
+        price_field = ft.TextField(label="Price", width=380, bgcolor=self.card_color, value="0.00")
+        
+        quality_field = ft.Dropdown(
+            label="Quality *", 
+            width=380,
+            options=[
+                ft.dropdown.Option("New"),
+                ft.dropdown.Option("Used"),
+                ft.dropdown.Option("Damaged"),
+                ft.dropdown.Option("Repaired"),
+            ],
+            value="New",
+            bgcolor=self.card_color,
+        )
+        
+        location_field = ft.TextField(label="Location", width=380, bgcolor=self.card_color)
+        notes_field = ft.TextField(
+            label="Notes", 
+            width=380, 
+            bgcolor=self.card_color, 
+            multiline=True, 
+            min_lines=3,
+            max_lines=5,
+        )
+        
+        # Image preview
+        image_preview = ft.Container(
+            content=ft.Column([
+                ft.Text("📷", size=50),
+                ft.Text("No Image", size=12, color="#888888"),
+                ft.Text("Click 'Upload Image' to select", size=9, color="#888888"),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+            width=180,
+            height=150,
+            bgcolor="#2C2C2C",
+            border_radius=8,
+        )
+        
+        selected_temp_image = None
+        
+        # File picker for image upload
+        def on_image_picked(e: ft.FilePickerResultEvent):
+            nonlocal selected_temp_image
+            if e.files:
+                file = e.files[0]
+                selected_temp_image = file.path
+                try:
+                    image_preview.content = ft.Column([
+                        ft.Image(src=selected_temp_image, width=160, height=120, fit=ft.ImageFit.CONTAIN),
+                        ft.Text(file.name[:25] + "..." if len(file.name) > 25 else file.name, size=9, color=self.accent_color),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
+                    page.update()
+                except:
+                    pass
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Image selected: {file.name}"), bgcolor=self.success_color)
+                page.snack_bar.open = True
+                page.update()
+        
+        image_picker = ft.FilePicker(on_result=on_image_picked)
+        page.overlay.append(image_picker)
+        
+        def upload_image(e):
+            image_picker.pick_files(
+                allow_multiple=False,
+                allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"],
+                dialog_title="Select an Image"
+            )
+        
+        upload_btn = ft.FilledButton("📁 Upload Image", on_click=upload_image, icon="cloud_upload",
+                                    style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
+        
+        def save_uploaded_image():
+            """Save the uploaded image to images folder"""
+            if selected_temp_image and os.path.exists(selected_temp_image):
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                file_ext = os.path.splitext(selected_temp_image)[1]
+                new_filename = f"accessory_{timestamp}{file_ext}"
+                new_path = os.path.join(images_folder, new_filename)
+                shutil.copy2(selected_temp_image, new_path)
+                return new_path
+            return None
+        
+        # Initialize with a generated barcode
+        current_barcode = generate_barcode()
+        barcode_field.value = current_barcode
+        
+        def regenerate_barcode(e):
+            nonlocal current_barcode
+            current_barcode = generate_barcode()
+            barcode_field.value = current_barcode
+            page.update()
+        
+        regenerate_btn = ft.TextButton("🔄 Generate New Barcode", on_click=regenerate_barcode)
+        
+        def close_modal(e):
+            page.overlay.clear()
+            page.update()
+        
+        def save_accessory(e):
+            name = name_field.value
+            if not name:
+                page.snack_bar = ft.SnackBar(ft.Text("Please enter a name!"), bgcolor="red")
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            barcode_value = barcode_field.value
+            
+            # Parse price
+            try:
+                price = float(price_field.value) if price_field.value else 0.0
+            except ValueError:
+                price = 0.0
+            
+            # Parse quantity
+            try:
+                quantity = int(quantity_field.value) if quantity_field.value else 0
+            except ValueError:
+                quantity = 0
+            
+            # Save uploaded image if exists
+            saved_image_path = save_uploaded_image() if selected_temp_image else None
+            
+            data = {
+                'name': name,
+                'item_code': barcode_value,
+                'quantity': quantity,
+                'price': price,
+                'quality': quality_field.value,
+                'location': location_field.value,
+                'image_path': saved_image_path,
+                'notes': notes_field.value,
+                'barcode_value': barcode_value,
+            }
+            
+            from managers.accessory_manager import AccessoryManager
+            result = AccessoryManager.create(data)
+            
+            if result:
+                page.overlay.clear()
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Added accessory: {name} | Barcode: {barcode_value}"), 
+                    bgcolor=self.success_color
+                )
+                page.snack_bar.open = True
+                self.show_accessories(page)
+            else:
+                page.snack_bar = ft.SnackBar(ft.Text("Error: Barcode already exists!"), bgcolor="red")
+                page.snack_bar.open = True
+                page.update()
+        
+        # Form layout
+        form_column = ft.Column([
+            name_field,
+            barcode_field,
+            ft.Row([regenerate_btn], alignment=ft.MainAxisAlignment.START),
+            quantity_field,
+            price_field,
+            quality_field,
+            location_field,
+            upload_btn,
+            image_preview,
+            notes_field,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=600)
+        
+        modal = ft.Container(
+            content=ft.Card(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text("➕ Add New Accessory", size=18, weight=ft.FontWeight.BOLD),
+                        ft.Divider(),
+                        form_column,
+                        ft.Divider(),
+                        ft.Row([
+                            ft.TextButton("Cancel", on_click=close_modal),
+                            ft.FilledButton("Save Accessory", on_click=save_accessory, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                        ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                    ], spacing=10),
+                    padding=20,
+                    width=520,
+                ),
+            ),
+            expand=True,
+            bgcolor="#80000000",
+        )
+        
+        page.overlay.append(modal)
+        page.update()  
+    
+    def convert_size_to_length(self, size_text):
+        """Convert size text like '34 1/2' or '34.5' to decimal"""
+        if not size_text:
+            return None
+        
+        size_text = size_text.strip()
+        
+        try:
+            return float(size_text)
+        except ValueError:
+            pass
+        
+        if '/' in size_text:
+            parts = size_text.split('/')
+            try:
+                if ' ' in parts[0]:
+                    whole, num = parts[0].split()
+                    return float(whole) + (float(num) / float(parts[1]))
+                else:
+                    return float(parts[0]) / float(parts[1])
+            except:
+                pass
+        
+        return None
+
+    def open_add_modal(self, page: ft.Page):
+        """Open a modal overlay for adding material with barcode generation"""
+        
+        import random
+        import string
+        import os
+        import shutil
+        from datetime import datetime
+        
+        def generate_barcode():
+            """Generate a unique 13-digit barcode"""
+            prefix = "890"
+            random_numbers = ''.join(random.choices(string.digits, k=9))
+            barcode_without_checksum = prefix + random_numbers
+            total = 0
+            for i, digit in enumerate(barcode_without_checksum):
+                if i % 2 == 0:
+                    total += int(digit) * 1
+                else:
+                    total += int(digit) * 3
+            checksum = (10 - (total % 10)) % 10
+            return barcode_without_checksum + str(checksum)
+        
+        # Create images folder if not exists
+        images_folder = "images"
+        if not os.path.exists(images_folder):
+            os.makedirs(images_folder)
+            print(f"Created images folder: {images_folder}")
+        
+        # Form fields
+        name_field = ft.TextField(label="Name *", width=380, bgcolor=self.card_color)
+        
+        barcode_field = ft.TextField(
+            label="Barcode (13 digits)", 
+            width=380, 
+            bgcolor=self.card_color, 
+            hint_text="Auto-generated 13-digit barcode",
+            read_only=True,
+        )
+        
+        quantity_field = ft.TextField(label="Quantity", width=380, bgcolor=self.card_color, value="0")
+        
+        size_field = ft.TextField(
+            label="Size", 
+            width=380, 
+            bgcolor=self.card_color, 
+            hint_text="e.g., 34 1/2\" or 24.5",
+        )
+        
+        length_field = ft.TextField(
+            label="Length (auto-calculated)", 
+            width=380, 
+            bgcolor=self.card_color, 
+            read_only=True,
+            hint_text="Will auto-convert from Size",
+        )
+        
+        quality_field = ft.Dropdown(
+            label="Quality *", 
+            width=380,
+            options=[
+                ft.dropdown.Option("New"),
+                ft.dropdown.Option("Used"),
+                ft.dropdown.Option("Damaged"),
+                ft.dropdown.Option("Repaired"),
+            ],
+            value="New",
+            bgcolor=self.card_color,
+        )
+        
+        location_field = ft.TextField(
+            label="Location", 
+            width=380, 
+            bgcolor=self.card_color, 
+            hint_text="e.g., Warehouse A, Shelf B1"
+        )
+        
+        color_field = ft.TextField(
+            label="Colors", 
+            width=380, 
+            bgcolor=self.card_color, 
+            hint_text="e.g., Red, Blue, Green (comma separated)"
+        )
+        
+        notes_field = ft.TextField(
+            label="Notes", 
+            width=380, 
+            bgcolor=self.card_color, 
+            multiline=True,
+            min_lines=3,
+            max_lines=5,
+            hint_text="Enter any additional notes here...",
+        )
+        
+        # Image preview
+        image_preview = ft.Container(
+            content=ft.Column([
+                ft.Text("📷", size=50),
+                ft.Text("No Image", size=12, color="#888888"),
+                ft.Text("Click 'Upload Image' to select", size=9, color="#888888"),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+            width=180,
+            height=150,
+            bgcolor="#2C2C2C",
+            border_radius=8,
+        )
+        
+        selected_temp_image = None
+        
+        # File picker for image upload
+        def on_image_picked(e: ft.FilePickerResultEvent):
+            nonlocal selected_temp_image
+            if e.files:
+                file = e.files[0]
+                selected_temp_image = file.path
+                print(f"Image selected: {selected_temp_image}")
+                try:
+                    image_preview.content = ft.Column([
+                        ft.Image(src=selected_temp_image, width=160, height=120, fit=ft.ImageFit.CONTAIN),
+                        ft.Text(file.name[:25] + "..." if len(file.name) > 25 else file.name, size=9, color=self.accent_color),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
+                    page.update()
+                except Exception as ex:
+                    print(f"Preview error: {ex}")
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Image selected: {file.name}"), bgcolor=self.success_color)
+                page.snack_bar.open = True
+                page.update()
+        
+        image_picker = ft.FilePicker(on_result=on_image_picked)
+        page.overlay.append(image_picker)
+        
+        def upload_image(e):
+            image_picker.pick_files(
+                allow_multiple=False,
+                allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"],
+                dialog_title="Select an Image"
+            )
+        
+        upload_btn = ft.FilledButton("📁 Upload Image", on_click=upload_image, icon="cloud_upload",
+                                    style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
+        
+        def save_uploaded_image():
+            """Save the uploaded image to images folder and return the path"""
+            if selected_temp_image and os.path.exists(selected_temp_image):
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                file_ext = os.path.splitext(selected_temp_image)[1]
+                new_filename = f"material_{timestamp}{file_ext}"
+                new_path = os.path.join(images_folder, new_filename)
+                shutil.copy2(selected_temp_image, new_path)
+                print(f"Image saved to: {new_path}")
+                return new_path
+            return None
+        
+        # Initialize with a generated barcode
+        current_barcode = generate_barcode()
+        barcode_field.value = current_barcode
+        
+        def regenerate_barcode(e):
+            nonlocal current_barcode
+            current_barcode = generate_barcode()
+            barcode_field.value = current_barcode
+            page.update()
+        
+        regenerate_btn = ft.TextButton("🔄 Generate New Barcode", on_click=regenerate_barcode)
+        
+        def update_length(e):
+            size_value = size_field.value
+            if size_value:
+                converted = self.convert_size_to_length(size_value)
+                if converted is not None:
+                    length_field.value = str(converted)
+                else:
+                    length_field.value = ""
+            else:
+                length_field.value = ""
+            page.update()
+        
+        size_field.on_change = update_length
+        
+        def close_modal(e):
+            page.overlay.clear()
+            page.update()
+        
+        def save_material(e):
+            name = name_field.value
+            if not name:
+                page.snack_bar = ft.SnackBar(ft.Text("Please enter a name!"), bgcolor="red")
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            if not quality_field.value:
+                page.snack_bar = ft.SnackBar(ft.Text("Please select a quality!"), bgcolor="red")
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            barcode_value = barcode_field.value
+            quantity = int(quantity_field.value) if quantity_field.value and quantity_field.value.isdigit() else 0
+            
+            size_value = size_field.value
+            length_value = None
+            if size_value:
+                length_value = self.convert_size_to_length(size_value)
+            
+            # Save uploaded image if exists
+            saved_image_path = save_uploaded_image() if selected_temp_image else None
+            print(f"Saving material with image_path: {saved_image_path}")
+            
+            data = {
+                'name': name,
+                'item_code': barcode_value,
+                'quantity': quantity,
+                'size': size_value,
+                'length': length_value,
+                'quality': quality_field.value,
+                'location_ids': location_field.value,
+                'colors': color_field.value,
+                'notes': notes_field.value,
+                'barcode_value': barcode_value,
+                'barcode_path': "",
+                'image_path': saved_image_path,
+            }
+            
+            result = MaterialManager.create(data)
+            
+            if result:
+                page.overlay.clear()
+                quality_color = self.get_quality_color(quality_field.value)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Added: {name} | Barcode: {barcode_value}"),
+                    bgcolor=quality_color,
+                )
+                page.snack_bar.open = True
+                self.show_materials_screen(page)
+            else:
+                page.snack_bar = ft.SnackBar(ft.Text("Error: Barcode already exists!"), bgcolor="red")
+                page.snack_bar.open = True
+                page.update()
+        
+        form_column = ft.Column([
+            name_field,
+            barcode_field,
+            ft.Row([regenerate_btn], alignment=ft.MainAxisAlignment.START),
+            quantity_field,
+            size_field,
+            length_field,
+            quality_field,
+            location_field,
+            color_field,
+            upload_btn,
+            image_preview,
+            notes_field,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=650)
+        
+        modal = ft.Container(
+            content=ft.Card(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text("➕ Add New Material", size=18, weight=ft.FontWeight.BOLD),
+                        ft.Divider(),
+                        form_column,
+                        ft.Divider(),
+                        ft.Row([
+                            ft.TextButton("Cancel", on_click=close_modal),
+                            ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                        ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                    ], spacing=10),
+                    padding=20,
+                    width=520,
+                ),
+            ),
+            expand=True,
+            bgcolor="#80000000",
+        )
+        
+        page.overlay.append(modal)
+        page.update()
     # ============ STUB METHODS ============
     def show_barcode_scanner(self, page: ft.Page):
         page.controls.clear()
