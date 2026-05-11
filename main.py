@@ -3689,21 +3689,607 @@ class StoreApp:
         page.update()
     
     def show_inventory(self, page: ft.Page):
+        """Show inventory screen - MOBILE OPTIMIZED (Card-based)"""
         page.controls.clear()
-        sidebar = self.create_sidebar(page)
-        page.add(ft.Row([sidebar, ft.Text("Inventory - Coming Soon", size=30)], expand=True))
+        
+        # Check if mobile
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Font sizes
+        if is_mobile:
+            font_title = 24
+            font_normal = 16
+            font_small = 14
+            padding_size = 12
+        else:
+            font_title = 28
+            font_normal = 18
+            font_small = 14
+            padding_size = 20
+        
+        # Navigation
+        if is_mobile:
+            nav = self.create_bottom_nav(page)
+            sidebar = None
+        else:
+            sidebar = self.create_sidebar(page)
+            nav = None
+        
+        # Get data
+        materials = self.dict_list(MaterialManager.get_all())
+        accessories = self.dict_list(AccessoryManager.get_all())
+        
+        # Create combined inventory list
+        inventory_items = []
+        for m in materials:
+            inventory_items.append({
+                'type': '📦',
+                'type_name': 'Material',
+                'name': m.get('name', 'N/A'),
+                'code': m.get('item_code', 'N/A'),
+                'quantity': m.get('quantity', 0),
+                'quality': m.get('quality', 'Used'),
+                'location': m.get('location_ids', 'N/A'),
+            })
+        
+        for a in accessories:
+            location = a.get('location') or a.get('location_ids') or 'N/A'
+            inventory_items.append({
+                'type': '🔧',
+                'type_name': 'Accessory',
+                'name': a.get('name', 'N/A'),
+                'code': a.get('item_code', 'N/A'),
+                'quantity': a.get('quantity', 0),
+                'quality': a.get('quality', 'Used'),
+                'location': location,
+            })
+        
+        inventory_items.sort(key=lambda x: x['name'])
+        
+        # Calculate stats
+        total_items = len(inventory_items)
+        total_stock = sum(i.get('quantity', 0) for i in inventory_items)
+        low_items = [i for i in inventory_items if i.get('quantity', 0) < 10]
+        
+        # Create scrollable content
+        scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+        
+        # Header
+        scroll_content.controls.append(
+            ft.Text("Inventory Management", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color)
+        )
+        scroll_content.controls.append(ft.Container(height=15))
+        
+        # Stats cards
+        stats_row = ft.Row([
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("📦 Total Items", size=font_small, color="#CCCCCC"),
+                    ft.Text(str(total_items), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Text(f"Materials: {len(materials)} | Parts: {len(accessories)}", size=font_small - 2, color="#888888"),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                padding=12, bgcolor=self.accent_color, border_radius=10, expand=True,
+            ),
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("📊 Total Stock", size=font_small, color="#CCCCCC"),
+                    ft.Text(str(total_stock), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Text("Units in inventory", size=font_small - 2, color="#888888"),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                padding=12, bgcolor=self.success_color, border_radius=10, expand=True,
+            ),
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("⚠️ Low Stock", size=font_small, color="#CCCCCC"),
+                    ft.Text(str(len(low_items)), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                    ft.Text("Below 10 units", size=font_small - 2, color="#888888"),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                padding=12, bgcolor=self.warning_color, border_radius=10, expand=True,
+            ),
+        ], spacing=12)
+        scroll_content.controls.append(stats_row)
+        scroll_content.controls.append(ft.Container(height=15))
+        
+        # Search field
+        search_field = ft.TextField(
+            hint_text="Search inventory...",
+            width=page.width - 60 if is_mobile else 400,
+            bgcolor=self.card_color,
+            border_color=self.accent_color,
+            text_size=font_small,
+            prefix_icon=ft.icons.SEARCH,
+        )
+        scroll_content.controls.append(search_field)
+        scroll_content.controls.append(ft.Container(height=10))
+        
+        # Filter row
+        filter_type = ft.Dropdown(
+            label="Type",
+            width=120,
+            options=[
+                ft.dropdown.Option("All", "All Items"),
+                ft.dropdown.Option("Material", "📦 Materials"),
+                ft.dropdown.Option("Accessory", "🔧 Accessories"),
+            ],
+            value="All",
+            bgcolor=self.card_color,
+            text_size=font_small,
+        )
+        
+        filter_quality = ft.Dropdown(
+            label="Quality",
+            width=120,
+            options=[
+                ft.dropdown.Option("All", "All Qualities"),
+                ft.dropdown.Option("New", "🟢 New"),
+                ft.dropdown.Option("Used", "🟠 Used"),
+                ft.dropdown.Option("Damaged", "🔴 Damaged"),
+                ft.dropdown.Option("Repaired", "🔵 Repaired"),
+            ],
+            value="All",
+            bgcolor=self.card_color,
+            text_size=font_small,
+        )
+        
+        filter_row = ft.Row([filter_type, filter_quality], spacing=10)
+        scroll_content.controls.append(filter_row)
+        scroll_content.controls.append(ft.Container(height=15))
+        
+        # Inventory list (cards)
+        inventory_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
+        
+        def update_inventory_display():
+            inventory_container.controls.clear()
+            
+            # Apply filters
+            filtered = inventory_items.copy()
+            
+            # Type filter
+            if filter_type.value != "All":
+                filtered = [i for i in filtered if i['type_name'] == filter_type.value]
+            
+            # Quality filter
+            if filter_quality.value != "All":
+                filtered = [i for i in filtered if i['quality'] == filter_quality.value]
+            
+            # Search filter
+            search_query = search_field.value.lower() if search_field.value else ""
+            if search_query:
+                filtered = [i for i in filtered if search_query in i['name'].lower() or search_query in i['code'].lower()]
+            
+            # Show count
+            filter_count = ft.Text(f"Showing {len(filtered)} of {len(inventory_items)} items", size=font_small - 2, color="#888888")
+            
+            # Clear and add header
+            if len(inventory_container.controls) > 0 and isinstance(inventory_container.controls[0], ft.Text):
+                inventory_container.controls[0].value = f"Showing {len(filtered)} of {len(inventory_items)} items"
+            else:
+                inventory_container.controls.insert(0, filter_count)
+            
+            for item in filtered:
+                card_content = ft.Column([
+                    ft.Row([
+                        ft.Text(item['type'], size=font_normal + 2),
+                        ft.Text(item['name'], size=font_normal, weight=ft.FontWeight.BOLD, expand=True),
+                        ft.Text(f"Qty: {item['quantity']}", size=font_normal, weight=ft.FontWeight.BOLD,
+                            color=self.danger_color if item['quantity'] < 10 else self.text_color),
+                    ]),
+                    ft.Row([
+                        ft.Text(item['code'], size=font_small - 2, color="#888888", expand=True),
+                        ft.Container(
+                            content=ft.Text(item['quality'], size=font_small - 2, color="white"),
+                            bgcolor=self.get_quality_color(item['quality']),
+                            border_radius=10,
+                            padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                        ),
+                    ]),
+                    ft.Row([
+                        ft.Text(f"📍 {item['location']}", size=font_small - 2, color="#888888", expand=True),
+                        ft.Text(item['type_name'], size=font_small - 2, color=self.accent_color),
+                    ]),
+                ], spacing=6)
+                
+                card = ft.Card(
+                    content=ft.Container(content=card_content, padding=12),
+                    elevation=1,
+                )
+                
+                inventory_container.controls.append(card)
+            
+            page.update()
+        
+        # Event handlers
+        def on_search(e):
+            update_inventory_display()
+        
+        def on_filter_change(e):
+            update_inventory_display()
+        
+        search_field.on_change = on_search
+        filter_type.on_change = on_filter_change
+        filter_quality.on_change = on_filter_change
+        
+        # Initial load
+        update_inventory_display()
+        
+        scroll_content.controls.append(inventory_container)
+        scroll_content.controls.append(ft.Container(height=80))
+        
+        main_container = ft.Container(content=scroll_content, expand=True, padding=padding_size)
+        
+        # Layout
+        if is_mobile and nav:
+            page.add(ft.Column([main_container, nav], spacing=0, expand=True))
+        else:
+            page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
+        
+        self.current_view = "inventory"
         page.update()
     
     def show_users(self, page: ft.Page):
+        """Show users screen - MOBILE OPTIMIZED (Card-based)"""
         page.controls.clear()
-        sidebar = self.create_sidebar(page)
-        page.add(ft.Row([sidebar, ft.Text("Users - Coming Soon", size=30)], expand=True))
+        
+        # Check if mobile
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Font sizes
+        if is_mobile:
+            font_title = 24
+            font_normal = 16
+            font_small = 14
+            padding_size = 12
+        else:
+            font_title = 28
+            font_normal = 18
+            font_small = 14
+            padding_size = 20
+        
+        # Navigation
+        if is_mobile:
+            nav = self.create_bottom_nav(page)
+            sidebar = None
+        else:
+            sidebar = self.create_sidebar(page)
+            nav = None
+        
+        # Get data
+        users = self.dict_list(UserManager.get_all())
+        is_admin = self.current_user.get('role') == 'admin' if self.current_user else False
+        
+        # Calculate stats
+        admin_count = len([u for u in users if u.get('role') == 'admin'])
+        manager_count = len([u for u in users if u.get('role') == 'manager'])
+        user_count = len([u for u in users if u.get('role') == 'user'])
+        
+        # Create scrollable content
+        scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+        
+        # Header
+        scroll_content.controls.append(
+            ft.Row([
+                ft.Text("Users Management", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Container(expand=True),
+                ft.IconButton(
+                    icon=ft.icons.ADD,
+                    icon_size=28,
+                    icon_color=self.success_color,
+                    on_click=lambda e: self.open_add_user_modal(page),
+                    visible=is_admin,
+                ),
+            ])
+        )
+        scroll_content.controls.append(ft.Container(height=15))
+        
+        # Stats cards
+        stats_row = ft.Row([
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("👥 Total", size=font_small, color="#CCCCCC"),
+                    ft.Text(str(len(users)), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                padding=12, bgcolor=self.accent_color, border_radius=10, expand=True,
+            ),
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("👑 Admins", size=font_small, color="#CCCCCC"),
+                    ft.Text(str(admin_count), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                padding=12, bgcolor=self.danger_color, border_radius=10, expand=True,
+            ),
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("📊 Managers", size=font_small, color="#CCCCCC"),
+                    ft.Text(str(manager_count), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                padding=12, bgcolor=self.warning_color, border_radius=10, expand=True,
+            ),
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("👤 Users", size=font_small, color="#CCCCCC"),
+                    ft.Text(str(user_count), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                padding=12, bgcolor=self.success_color, border_radius=10, expand=True,
+            ),
+        ], spacing=10)
+        scroll_content.controls.append(stats_row)
+        scroll_content.controls.append(ft.Container(height=15))
+        
+        # Users list (cards)
+        users_container = ft.Column(spacing=10)
+        
+        for u in users:
+            role = u.get('role', 'user')
+            if role == 'admin':
+                role_display = "👑 ADMIN"
+                role_color = self.danger_color
+            elif role == 'manager':
+                role_display = "📊 MANAGER"
+                role_color = self.warning_color
+            else:
+                role_display = "👤 USER"
+                role_color = self.success_color
+            
+            created_date = str(u.get('created_at', ''))[:10] if u.get('created_at') else 'N/A'
+            
+            card_content = ft.Column([
+                ft.Row([
+                    ft.CircleAvatar(
+                        content=ft.Text(u.get('name', 'U')[0].upper(), size=14),
+                        radius=22,
+                        bgcolor=self.accent_color,
+                    ),
+                    ft.Column([
+                        ft.Text(u.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD),
+                        ft.Text(u.get('email', 'N/A'), size=font_small - 2, color="#888888"),
+                    ], spacing=2, expand=True),
+                    ft.Container(
+                        content=ft.Text(role_display, size=font_small - 2, color="white"),
+                        bgcolor=role_color,
+                        border_radius=12,
+                        padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                    ),
+                ]),
+                ft.Row([
+                    ft.Text(f"📅 Joined: {created_date}", size=font_small - 2, color="#888888", expand=True),
+                    ft.Row([
+                        ft.IconButton(
+                            icon=ft.icons.EDIT,
+                            icon_size=20,
+                            icon_color=self.accent_color,
+                            on_click=lambda e, uid=u.get('id'): self.open_edit_user_modal(page, uid),
+                            visible=is_admin,
+                        ),
+                        ft.IconButton(
+                            icon=ft.icons.DELETE,
+                            icon_size=20,
+                            icon_color=self.danger_color,
+                            on_click=lambda e, uid=u.get('id'): self.open_delete_user_modal(page, uid, u.get('name')),
+                            visible=is_admin and u.get('id') != self.current_user.get('id'),
+                        ),
+                    ], spacing=0),
+                ]),
+            ], spacing=8)
+            
+            card = ft.Card(
+                content=ft.Container(content=card_content, padding=12),
+                elevation=1,
+                margin=ft.margin.only(bottom=8),
+            )
+            users_container.controls.append(card)
+        
+        scroll_content.controls.append(users_container)
+        scroll_content.controls.append(ft.Container(height=80))
+        
+        main_container = ft.Container(content=scroll_content, expand=True, padding=padding_size)
+        
+        # Layout
+        if is_mobile and nav:
+            page.add(ft.Column([main_container, nav], spacing=0, expand=True))
+        else:
+            page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
+        
+        self.current_view = "users"
         page.update()
     
     def show_settings(self, page: ft.Page):
+        """Show settings screen - MOBILE OPTIMIZED (Card-based)"""
         page.controls.clear()
-        sidebar = self.create_sidebar(page)
-        page.add(ft.Row([sidebar, ft.Text("Settings - Coming Soon", size=30)], expand=True))
+        
+        # Check if mobile
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Font sizes
+        if is_mobile:
+            font_title = 24
+            font_normal = 16
+            font_small = 14
+            padding_size = 12
+        else:
+            font_title = 28
+            font_normal = 18
+            font_small = 14
+            padding_size = 20
+        
+        # Navigation
+        if is_mobile:
+            nav = self.create_bottom_nav(page)
+            sidebar = None
+        else:
+            sidebar = self.create_sidebar(page)
+            nav = None
+        
+        current_user = self.current_user
+        
+        # Create scrollable content
+        scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+        
+        # Header
+        scroll_content.controls.append(
+            ft.Row([
+                ft.Text("Settings", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Container(expand=True),
+            ])
+        )
+        scroll_content.controls.append(ft.Container(height=15))
+        
+        # ========== PROFILE SECTION ==========
+        profile_section = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("👤 Profile", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                    ft.Divider(),
+                    ft.Row([
+                        ft.CircleAvatar(
+                            content=ft.Text(current_user.get('name', 'U')[0].upper(), size=18),
+                            radius=35,
+                            bgcolor=self.accent_color,
+                        ),
+                        ft.Column([
+                            ft.Text(current_user.get('name', 'User'), size=font_normal, weight=ft.FontWeight.BOLD),
+                            ft.Text(current_user.get('email', 'N/A'), size=font_small - 1, color="#888888"),
+                            ft.Text(f"Role: {current_user.get('role', 'user').upper()}", size=font_small - 2, 
+                                color=self.success_color if current_user.get('role') == 'admin' else self.warning_color),
+                        ], spacing=3, expand=True),
+                    ], spacing=12),
+                    ft.ElevatedButton("Edit Profile", on_click=lambda e: None, style=ft.ButtonStyle(bgcolor=self.accent_color)),
+                ], spacing=12),
+                padding=15,
+            ),
+            elevation=1,
+            margin=ft.margin.only(bottom=12),
+        )
+        scroll_content.controls.append(profile_section)
+        
+        # ========== SECURITY SECTION ==========
+        security_section = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("🔐 Security", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                    ft.Divider(),
+                    ft.ListTile(
+                        leading=ft.Icon(ft.icons.LOCK, color=self.accent_color),
+                        title=ft.Text("Change Password"),
+                        trailing=ft.Icon(ft.icons.CHEVRON_RIGHT),
+                        on_click=lambda e: None,
+                    ),
+                    ft.ListTile(
+                        leading=ft.Icon(ft.icons.SHIELD, color=self.accent_color),
+                        title=ft.Text("Two-Factor Authentication"),
+                        trailing=ft.Switch(value=False, on_change=lambda e: None),
+                    ),
+                ], spacing=8),
+                padding=15,
+            ),
+            elevation=1,
+            margin=ft.margin.only(bottom=12),
+        )
+        scroll_content.controls.append(security_section)
+        
+        # ========== APPEARANCE SECTION ==========
+        appearance_section = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("🎨 Appearance", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                    ft.Divider(),
+                    ft.ListTile(
+                        leading=ft.Icon(ft.icons.DARK_MODE, color=self.accent_color),
+                        title=ft.Text("Dark Mode"),
+                        trailing=ft.Switch(value=True, on_change=lambda e: None),
+                    ),
+                    ft.Text("Accent Color", size=font_small, weight=ft.FontWeight.BOLD),
+                    ft.Row([
+                        ft.Container(width=35, height=35, bgcolor="#1976D2", border_radius=18, ink=True),
+                        ft.Container(width=35, height=35, bgcolor="#4CAF50", border_radius=18, ink=True),
+                        ft.Container(width=35, height=35, bgcolor="#9C27B0", border_radius=18, ink=True),
+                        ft.Container(width=35, height=35, bgcolor="#FF9800", border_radius=18, ink=True),
+                    ], spacing=12),
+                ], spacing=12),
+                padding=15,
+            ),
+            elevation=1,
+            margin=ft.margin.only(bottom=12),
+        )
+        scroll_content.controls.append(appearance_section)
+        
+        # ========== DATABASE SECTION ==========
+        # Get database size
+        db_size = "N/A"
+        try:
+            if os.path.exists("store_management.db"):
+                size_bytes = os.path.getsize("store_management.db")
+                if size_bytes < 1024:
+                    db_size = f"{size_bytes} B"
+                elif size_bytes < 1024 * 1024:
+                    db_size = f"{size_bytes / 1024:.1f} KB"
+                else:
+                    db_size = f"{size_bytes / (1024 * 1024):.1f} MB"
+        except:
+            db_size = "N/A"
+        
+        database_section = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("💾 Database", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                    ft.Divider(),
+                    ft.Row([
+                        ft.Icon(ft.icons.STORAGE, size=30, color=self.accent_color),
+                        ft.Column([
+                            ft.Text("Database Size", size=font_small, color="#888888"),
+                            ft.Text(db_size, size=font_normal, weight=ft.FontWeight.BOLD),
+                        ], spacing=2),
+                    ], spacing=12),
+                    ft.Row([
+                        ft.ElevatedButton("📥 Backup", on_click=lambda e: None, expand=True),
+                        ft.ElevatedButton("🔄 Restore", on_click=lambda e: None, expand=True),
+                    ], spacing=10),
+                    ft.ElevatedButton("📊 Export All Data", on_click=lambda e: None, expand=True, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                    ft.Container(height=5),
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Icon(ft.icons.WARNING, size=18, color=self.danger_color),
+                            ft.Text("Reset All Data", size=font_small, color=self.danger_color, expand=True),
+                            ft.OutlinedButton("Reset", on_click=lambda e: None, style=ft.ButtonStyle(color=self.danger_color)),
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        padding=10,
+                        bgcolor="#3C2121",
+                        border_radius=8,
+                    ),
+                ], spacing=12),
+                padding=15,
+            ),
+            elevation=1,
+            margin=ft.margin.only(bottom=12),
+        )
+        scroll_content.controls.append(database_section)
+        
+        # ========== ABOUT SECTION ==========
+        about_section = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("ℹ️ About", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                    ft.Divider(),
+                    ft.Text("Store Management System", size=font_normal, weight=ft.FontWeight.BOLD),
+                    ft.Text("Version 1.0.0", size=font_small - 1, color="#888888"),
+                    ft.Text("© 2024 Your Company", size=font_small - 2, color="#888888"),
+                ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=15,
+            ),
+            elevation=1,
+        )
+        scroll_content.controls.append(about_section)
+        
+        scroll_content.controls.append(ft.Container(height=80))
+        
+        main_container = ft.Container(content=scroll_content, expand=True, padding=padding_size)
+        
+        # Layout
+        if is_mobile and nav:
+            page.add(ft.Column([main_container, nav], spacing=0, expand=True))
+        else:
+            page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
+        
+        self.current_view = "settings"
         page.update()
 
 
