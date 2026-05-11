@@ -2450,7 +2450,7 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Open a modal overlay for adding material with image upload and database save"""
+        """Open a modal overlay for adding material with WORKING image upload"""
         
         import random
         import string
@@ -2459,7 +2459,6 @@ class StoreApp:
         from datetime import datetime
         
         def generate_barcode():
-            """Generate a unique 13-digit barcode"""
             prefix = "890"
             random_numbers = ''.join(random.choices(string.digits, k=9))
             barcode_without_checksum = prefix + random_numbers
@@ -2476,6 +2475,7 @@ class StoreApp:
         images_folder = "images"
         if not os.path.exists(images_folder):
             os.makedirs(images_folder)
+            print(f"Created images folder: {images_folder}")
         
         # Form fields
         name_field = ft.TextField(label="Name *", width=380, bgcolor=self.card_color)
@@ -2546,6 +2546,7 @@ class StoreApp:
             content=ft.Column([
                 ft.Text("📷", size=50),
                 ft.Text("No Image", size=12, color="#888888"),
+                ft.Text("Click 'Upload Image' to select", size=9, color="#888888"),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
             width=180,
             height=150,
@@ -2554,17 +2555,22 @@ class StoreApp:
         )
         
         selected_temp_image = None
+        selected_file_name = None
         
         # File picker for image upload
         def on_image_picked(e: ft.FilePickerResultEvent):
-            nonlocal selected_temp_image
+            nonlocal selected_temp_image, selected_file_name
             if e.files:
                 file = e.files[0]
                 selected_temp_image = file.path
+                selected_file_name = file.name
+                print(f"Image selected: {selected_temp_image}")
                 try:
+                    # Create a temporary preview
                     image_preview.content = ft.Column([
                         ft.Image(src=selected_temp_image, width=160, height=120, fit=ft.ImageFit.CONTAIN),
                         ft.Text(file.name[:25] + "..." if len(file.name) > 25 else file.name, size=9, color=self.accent_color),
+                        ft.Text("Click 'Save' to save image", size=8, color="#888888"),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
                     page.update()
                 except Exception as ex:
@@ -2587,16 +2593,18 @@ class StoreApp:
                                     style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
         
         def save_uploaded_image():
+            """Save the uploaded image to images folder and return the path"""
             if selected_temp_image and os.path.exists(selected_temp_image):
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 file_ext = os.path.splitext(selected_temp_image)[1]
                 new_filename = f"material_{timestamp}{file_ext}"
                 new_path = os.path.join(images_folder, new_filename)
                 shutil.copy2(selected_temp_image, new_path)
+                print(f"Image saved to: {new_path}")
                 return new_path
             return None
         
-        # Initialize with generated barcode
+        # Initialize with a barcode
         current_barcode = generate_barcode()
         barcode_field.value = current_barcode
         
@@ -2648,7 +2656,9 @@ class StoreApp:
             if size_value:
                 length_value = self.convert_size_to_length(size_value)
             
+            # Save uploaded image if exists
             saved_image_path = save_uploaded_image() if selected_temp_image else None
+            print(f"Saving material with image_path: {saved_image_path}")
             
             data = {
                 'name': name,
@@ -2669,11 +2679,10 @@ class StoreApp:
             if result:
                 page.overlay.clear()
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✓ Added: {name}"),
+                    ft.Text(f"✓ Added: {name} with image"),
                     bgcolor=self.success_color,
                 )
                 page.snack_bar.open = True
-                # Refresh the materials screen
                 self.show_materials_screen(page)
             else:
                 page.snack_bar = ft.SnackBar(ft.Text("Error: Barcode already exists!"), bgcolor="red")
@@ -2718,7 +2727,7 @@ class StoreApp:
         
         page.overlay.append(modal)
         page.update()
-        # ============ STUB METHODS ============
+            # ============ STUB METHODS ============
     
     def open_edit_modal(self, page: ft.Page, material_id):
         """Open edit modal"""
@@ -3689,7 +3698,7 @@ class StoreApp:
         page.update()
     
     def show_inventory(self, page: ft.Page):
-        """Show inventory screen - MOBILE OPTIMIZED (Card-based)"""
+        """Show advanced inventory management screen with bulk operations"""
         page.controls.clear()
         
         # Check if mobile
@@ -3723,44 +3732,67 @@ class StoreApp:
         inventory_items = []
         for m in materials:
             inventory_items.append({
-                'type': '📦',
+                'id': m.get('id'),
+                'type': 'material',
+                'type_icon': '📦',
                 'type_name': 'Material',
                 'name': m.get('name', 'N/A'),
                 'code': m.get('item_code', 'N/A'),
                 'quantity': m.get('quantity', 0),
                 'quality': m.get('quality', 'Used'),
                 'location': m.get('location_ids', 'N/A'),
+                'size': m.get('size', 'N/A'),
+                'last_updated': m.get('updated_at', m.get('created_at', '')),
             })
         
         for a in accessories:
             location = a.get('location') or a.get('location_ids') or 'N/A'
             inventory_items.append({
-                'type': '🔧',
+                'id': a.get('id'),
+                'type': 'accessory',
+                'type_icon': '🔧',
                 'type_name': 'Accessory',
                 'name': a.get('name', 'N/A'),
                 'code': a.get('item_code', 'N/A'),
                 'quantity': a.get('quantity', 0),
                 'quality': a.get('quality', 'Used'),
                 'location': location,
+                'price': a.get('price', 0),
+                'last_updated': a.get('updated_at', a.get('created_at', '')),
             })
         
         inventory_items.sort(key=lambda x: x['name'])
         
-        # Calculate stats
+        # Calculate advanced stats
         total_items = len(inventory_items)
         total_stock = sum(i.get('quantity', 0) for i in inventory_items)
-        low_items = [i for i in inventory_items if i.get('quantity', 0) < 10]
+        low_stock_items = [i for i in inventory_items if i.get('quantity', 0) < 10]
+        critical_stock = [i for i in inventory_items if i.get('quantity', 0) < 5]
+        total_value = sum(i.get('quantity', 0) * (i.get('price', 0) if i.get('price') else 10) for i in inventory_items)
+        
+        # Store current filtered items for export
+        self.current_filtered_items = inventory_items.copy()
         
         # Create scrollable content
         scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
         
-        # Header
+        # Header with title and refresh button
         scroll_content.controls.append(
-            ft.Text("Inventory Management", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color)
+            ft.Row([
+                ft.Text("Inventory Management", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
+                ft.Container(expand=True),
+                ft.IconButton(
+                    icon=ft.icons.REFRESH,
+                    icon_size=24,
+                    icon_color=self.accent_color,
+                    on_click=lambda e: self.show_inventory(page),
+                    tooltip="Refresh",
+                ),
+            ])
         )
         scroll_content.controls.append(ft.Container(height=15))
         
-        # Stats cards
+        # ========== STATS CARDS ROW 1 ==========
         stats_row = ft.Row([
             ft.Container(
                 content=ft.Column([
@@ -3780,43 +3812,111 @@ class StoreApp:
             ),
             ft.Container(
                 content=ft.Column([
-                    ft.Text("⚠️ Low Stock", size=font_small, color="#CCCCCC"),
-                    ft.Text(str(len(low_items)), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.danger_color),
-                    ft.Text("Below 10 units", size=font_small - 2, color="#888888"),
+                    ft.Text("💰 Total Value", size=font_small, color="#CCCCCC"),
+                    ft.Text(f"${total_value:,.0f}", size=font_title + 2, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Text("Inventory worth", size=font_small - 2, color="#888888"),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
-                padding=12, bgcolor=self.warning_color, border_radius=10, expand=True,
+                padding=12, bgcolor="#9C27B0", border_radius=10, expand=True,
             ),
         ], spacing=12)
         scroll_content.controls.append(stats_row)
-        scroll_content.controls.append(ft.Container(height=15))
-        
-        # Search field
-        search_field = ft.TextField(
-            hint_text="Search inventory...",
-            width=page.width - 60 if is_mobile else 400,
-            bgcolor=self.card_color,
-            border_color=self.accent_color,
-            text_size=font_small,
-            prefix_icon=ft.icons.SEARCH,
-        )
-        scroll_content.controls.append(search_field)
         scroll_content.controls.append(ft.Container(height=10))
         
-        # Filter row
-        filter_type = ft.Dropdown(
+        # ========== STATS CARDS ROW 2 ==========
+        stats_row2 = ft.Row([
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.WARNING, size=20, color=self.warning_color),
+                    ft.Column([
+                        ft.Text("Low Stock", size=font_small, color="#CCCCCC"),
+                        ft.Text(str(len(low_stock_items)), size=font_title + 2, weight=ft.FontWeight.BOLD, color=self.warning_color),
+                    ], spacing=2),
+                ], spacing=8),
+                padding=10, bgcolor=self.card_color, border_radius=10, expand=True,
+            ),
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.ERROR, size=20, color=self.danger_color),
+                    ft.Column([
+                        ft.Text("Critical Stock", size=font_small, color="#CCCCCC"),
+                        ft.Text(str(len(critical_stock)), size=font_title + 2, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                    ], spacing=2),
+                ], spacing=8),
+                padding=10, bgcolor=self.card_color, border_radius=10, expand=True,
+            ),
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.BAR_CHART, size=20, color=self.accent_color),
+                    ft.Column([
+                        ft.Text("Categories", size=font_small, color="#CCCCCC"),
+                        ft.Text(f"{len(set(i['type_name'] for i in inventory_items))}", size=font_title + 2, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                    ], spacing=2),
+                ], spacing=8),
+                padding=10, bgcolor=self.card_color, border_radius=10, expand=True,
+            ),
+        ], spacing=12)
+        scroll_content.controls.append(stats_row2)
+        scroll_content.controls.append(ft.Container(height=15))
+        
+        # ========== EXPORT BUTTONS SECTION ==========
+        export_container = ft.Container(
+            content=ft.Column([
+                ft.Text("📁 Export Options", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                ft.Row([
+                    ft.ElevatedButton(
+                        "📊 Export CSV",
+                        on_click=lambda e: self.export_inventory_csv(page),
+                        icon=ft.icons.TABLE_CHART,
+                        style=ft.ButtonStyle(bgcolor=self.accent_color),
+                        expand=True,
+                    ),
+                    ft.ElevatedButton(
+                        "📄 Export PDF",
+                        on_click=lambda e: self.export_inventory_pdf(page),
+                        icon=ft.icons.PICTURE_AS_PDF,
+                        style=ft.ButtonStyle(bgcolor=self.warning_color),
+                        expand=True,
+                    ),
+                ], spacing=10),
+                ft.Row([
+                    ft.ElevatedButton(
+                        "⚠️ Low Stock PDF",
+                        on_click=lambda e: self.export_low_stock_pdf(page),
+                        icon=ft.icons.WARNING,
+                        style=ft.ButtonStyle(bgcolor=self.danger_color),
+                        expand=True,
+                    ),
+                    ft.ElevatedButton(
+                        "⚡ Quick Adjust",
+                        on_click=lambda e: self.quick_adjust_stock(page, inventory_items),
+                        icon=ft.icons.BOLT,
+                        style=ft.ButtonStyle(bgcolor=self.warning_color),
+                        expand=True,
+                    ),
+                ], spacing=10),
+            ], spacing=10),
+            padding=12,
+            bgcolor=self.card_color,
+            border_radius=10,
+            margin=ft.margin.only(bottom=15),
+        )
+        scroll_content.controls.append(export_container)
+        
+        # ========== FILTERS SECTION ==========
+        type_filter = ft.Dropdown(
             label="Type",
             width=120,
             options=[
                 ft.dropdown.Option("All", "All Items"),
-                ft.dropdown.Option("Material", "📦 Materials"),
-                ft.dropdown.Option("Accessory", "🔧 Accessories"),
+                ft.dropdown.Option("material", "📦 Materials"),
+                ft.dropdown.Option("accessory", "🔧 Accessories"),
             ],
             value="All",
             bgcolor=self.card_color,
             text_size=font_small,
         )
         
-        filter_quality = ft.Dropdown(
+        quality_filter = ft.Dropdown(
             label="Quality",
             width=120,
             options=[
@@ -3831,12 +3931,44 @@ class StoreApp:
             text_size=font_small,
         )
         
-        filter_row = ft.Row([filter_type, filter_quality], spacing=10)
-        scroll_content.controls.append(filter_row)
-        scroll_content.controls.append(ft.Container(height=15))
+        stock_filter = ft.Dropdown(
+            label="Stock Status",
+            width=140,
+            options=[
+                ft.dropdown.Option("All", "All Stock"),
+                ft.dropdown.Option("Low", "⚠️ Low Stock (<10)"),
+                ft.dropdown.Option("Critical", "🔥 Critical (<5)"),
+                ft.dropdown.Option("Normal", "✅ Normal (≥10)"),
+            ],
+            value="All",
+            bgcolor=self.card_color,
+            text_size=font_small,
+        )
         
-        # Inventory list (cards)
-        inventory_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
+        search_input = ft.TextField(
+            hint_text="Search by name or code...",
+            expand=True,
+            bgcolor=self.card_color,
+            prefix_icon=ft.icons.SEARCH,
+        )
+        
+        filter_card = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("🔍 Filters", size=font_normal, weight=ft.FontWeight.BOLD),
+                    ft.Divider(),
+                    ft.Row([type_filter, quality_filter, stock_filter], spacing=10, wrap=True),
+                    ft.Row([search_input, ft.OutlinedButton("Reset", on_click=lambda e: reset_filters())], spacing=10),
+                ], spacing=10),
+                padding=12,
+            ),
+            elevation=1,
+            margin=ft.margin.only(bottom=12),
+        )
+        scroll_content.controls.append(filter_card)
+        
+        # ========== INVENTORY LIST ==========
+        inventory_container = ft.Column(spacing=8)
         
         def update_inventory_display():
             inventory_container.controls.clear()
@@ -3844,70 +3976,126 @@ class StoreApp:
             # Apply filters
             filtered = inventory_items.copy()
             
-            # Type filter
-            if filter_type.value != "All":
-                filtered = [i for i in filtered if i['type_name'] == filter_type.value]
+            if type_filter.value != "All":
+                filtered = [i for i in filtered if i['type'] == type_filter.value]
+            if quality_filter.value != "All":
+                filtered = [i for i in filtered if i['quality'] == quality_filter.value]
+            if stock_filter.value != "All":
+                if stock_filter.value == "Low":
+                    filtered = [i for i in filtered if i['quantity'] < 10]
+                elif stock_filter.value == "Critical":
+                    filtered = [i for i in filtered if i['quantity'] < 5]
+                elif stock_filter.value == "Normal":
+                    filtered = [i for i in filtered if i['quantity'] >= 10]
             
-            # Quality filter
-            if filter_quality.value != "All":
-                filtered = [i for i in filtered if i['quality'] == filter_quality.value]
-            
-            # Search filter
-            search_query = search_field.value.lower() if search_field.value else ""
+            search_query = search_input.value.lower() if search_input.value else ""
             if search_query:
                 filtered = [i for i in filtered if search_query in i['name'].lower() or search_query in i['code'].lower()]
             
+            # Store filtered items for export
+            self.current_filtered_items = filtered
+            
             # Show count
-            filter_count = ft.Text(f"Showing {len(filtered)} of {len(inventory_items)} items", size=font_small - 2, color="#888888")
+            count_text = ft.Text(f"Showing {len(filtered)} of {len(inventory_items)} items", size=font_small - 1, color="#888888")
+            inventory_container.controls.append(count_text)
             
-            # Clear and add header
-            if len(inventory_container.controls) > 0 and isinstance(inventory_container.controls[0], ft.Text):
-                inventory_container.controls[0].value = f"Showing {len(filtered)} of {len(inventory_items)} items"
-            else:
-                inventory_container.controls.insert(0, filter_count)
-            
-            for item in filtered:
+            for item in filtered[:100]:
+                # Determine stock status
+                if item['quantity'] < 5:
+                    stock_color = self.danger_color
+                    stock_status = "🔥 CRITICAL"
+                elif item['quantity'] < 10:
+                    stock_color = self.warning_color
+                    stock_status = "⚠️ LOW"
+                else:
+                    stock_color = self.success_color
+                    stock_status = "✅ OK"
+                
+                # Stock percentage
+                stock_percentage = min(item['quantity'] / 50 * 100, 100)
+                
                 card_content = ft.Column([
                     ft.Row([
-                        ft.Text(item['type'], size=font_normal + 2),
-                        ft.Text(item['name'], size=font_normal, weight=ft.FontWeight.BOLD, expand=True),
-                        ft.Text(f"Qty: {item['quantity']}", size=font_normal, weight=ft.FontWeight.BOLD,
-                            color=self.danger_color if item['quantity'] < 10 else self.text_color),
+                        ft.Text(item['type_icon'], size=font_normal + 4),
+                        ft.Column([
+                            ft.Text(item['name'], size=font_normal, weight=ft.FontWeight.BOLD),
+                            ft.Text(item['code'], size=font_small - 2, color="#888888"),
+                        ], spacing=2, expand=True),
+                        ft.Column([
+                            ft.Text(f"{item['quantity']} units", size=font_normal, weight=ft.FontWeight.BOLD, color=stock_color),
+                            ft.Text(stock_status, size=font_small - 2, color=stock_color),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=2),
                     ]),
+                    ft.ProgressBar(value=stock_percentage / 100, color=stock_color, bgcolor="#3C3C3C", height=6),
                     ft.Row([
-                        ft.Text(item['code'], size=font_small - 2, color="#888888", expand=True),
+                        ft.Text(f"📍 {item['location']}", size=font_small - 1, color="#888888", expand=True),
                         ft.Container(
                             content=ft.Text(item['quality'], size=font_small - 2, color="white"),
                             bgcolor=self.get_quality_color(item['quality']),
-                            border_radius=10,
+                            border_radius=8,
                             padding=ft.padding.symmetric(horizontal=8, vertical=2),
                         ),
                     ]),
                     ft.Row([
-                        ft.Text(f"📍 {item['location']}", size=font_small - 2, color="#888888", expand=True),
-                        ft.Text(item['type_name'], size=font_small - 2, color=self.accent_color),
-                    ]),
+                        ft.IconButton(
+                            icon=ft.icons.ADD_CIRCLE,
+                            icon_size=20,
+                            icon_color=self.success_color,
+                            on_click=lambda e, it=item: self.quick_stock_change(page, it, '+'),
+                            tooltip="Add Stock +1",
+                        ),
+                        ft.IconButton(
+                            icon=ft.icons.REMOVE_CIRCLE,
+                            icon_size=20,
+                            icon_color=self.danger_color,
+                            on_click=lambda e, it=item: self.quick_stock_change(page, it, '-'),
+                            tooltip="Remove Stock -1",
+                        ),
+                        ft.IconButton(
+                            icon=ft.icons.EDIT,
+                            icon_size=20,
+                            icon_color=self.accent_color,
+                            on_click=lambda e, it=item: self.edit_inventory_item(page, it),
+                            tooltip="Edit Item",
+                        ),
+                        ft.IconButton(
+                            icon=ft.icons.QR_CODE,
+                            icon_size=20,
+                            icon_color=self.warning_color,
+                            on_click=lambda e, it=item: self.show_barcode_dialog(page, it),
+                            tooltip="Show Barcode",
+                        ),
+                        ft.IconButton(
+                            icon=ft.icons.DELETE,
+                            icon_size=20,
+                            icon_color=self.danger_color,
+                            on_click=lambda e, it=item: self.delete_inventory_item(page, it),
+                            tooltip="Delete",
+                        ),
+                    ], spacing=0),
                 ], spacing=6)
                 
                 card = ft.Card(
                     content=ft.Container(content=card_content, padding=12),
                     elevation=1,
+                    margin=ft.margin.only(bottom=4),
                 )
-                
                 inventory_container.controls.append(card)
             
             page.update()
         
-        # Event handlers
-        def on_search(e):
+        def reset_filters():
+            type_filter.value = "All"
+            quality_filter.value = "All"
+            stock_filter.value = "All"
+            search_input.value = ""
             update_inventory_display()
         
-        def on_filter_change(e):
-            update_inventory_display()
-        
-        search_field.on_change = on_search
-        filter_type.on_change = on_filter_change
-        filter_quality.on_change = on_filter_change
+        # Connect events
+        type_filter.on_change = lambda e: update_inventory_display()
+        quality_filter.on_change = lambda e: update_inventory_display()
+        stock_filter.on_change = lambda e: update_inventory_display()
+        search_input.on_change = lambda e: update_inventory_display()
         
         # Initial load
         update_inventory_display()
@@ -3925,9 +4113,453 @@ class StoreApp:
         
         self.current_view = "inventory"
         page.update()
-    
+
+    def export_inventory_csv(self, page: ft.Page):
+        """Export current filtered inventory items to CSV"""
+        import csv
+        from datetime import datetime
+        
+        try:
+            export_dir = "exports"
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = os.path.join(export_dir, f"inventory_export_{timestamp}.csv")
+            
+            items = getattr(self, 'current_filtered_items', [])
+            
+            with open(filename, 'w', newline='', encoding='utf-8-sig') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Type', 'Name', 'Code', 'Quantity', 'Quality', 'Location', 'Stock Status'])
+                
+                for item in items:
+                    if item['quantity'] < 5:
+                        stock_status = "Critical"
+                    elif item['quantity'] < 10:
+                        stock_status = "Low"
+                    else:
+                        stock_status = "Normal"
+                    
+                    writer.writerow([
+                        item['type_name'],
+                        item['name'],
+                        item['code'],
+                        item['quantity'],
+                        item['quality'],
+                        item['location'],
+                        stock_status,
+                    ])
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Exported {len(items)} items to {filename}"),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ Export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+
+    def export_inventory_pdf(self, page: ft.Page):
+        """Export current filtered inventory items to PDF"""
+        from datetime import datetime
+        
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import landscape, A4
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER
+            
+            export_dir = "exports"
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = os.path.join(export_dir, f"inventory_report_{timestamp}.pdf")
+            
+            items = getattr(self, 'current_filtered_items', [])
+            
+            doc = SimpleDocTemplate(filename, pagesize=landscape(A4), 
+                                    rightMargin=30, leftMargin=30,
+                                    topMargin=40, bottomMargin=30)
+            
+            styles = getSampleStyleSheet()
+            story = []
+            
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=20,
+                textColor=colors.HexColor('#1976D2'),
+                alignment=TA_CENTER,
+                spaceAfter=20
+            )
+            
+            story.append(Paragraph("Store Management System - Inventory Report", title_style))
+            story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", 
+                                styles['Normal']))
+            story.append(Spacer(1, 20))
+            
+            total_items = len(items)
+            total_quantity = sum(i.get('quantity', 0) for i in items)
+            low_stock = len([i for i in items if i.get('quantity', 0) < 10])
+            critical_stock = len([i for i in items if i.get('quantity', 0) < 5])
+            
+            summary_data = [
+                ['Total Items', str(total_items)],
+                ['Total Quantity', str(total_quantity)],
+                ['Low Stock Items', str(low_stock)],
+                ['Critical Stock', str(critical_stock)],
+            ]
+            
+            summary_table = Table(summary_data, colWidths=[120, 80])
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1976D2')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+            ]))
+            story.append(summary_table)
+            story.append(Spacer(1, 20))
+            
+            table_data = [['#', 'Type', 'Name', 'Code', 'Quantity', 'Quality', 'Location', 'Status']]
+            
+            for i, item in enumerate(items[:200], 1):
+                if item['quantity'] < 5:
+                    status = "Critical"
+                elif item['quantity'] < 10:
+                    status = "Low"
+                else:
+                    status = "Normal"
+                
+                table_data.append([
+                    str(i),
+                    item['type_name'],
+                    item['name'],
+                    item['code'],
+                    str(item['quantity']),
+                    item['quality'],
+                    item['location'],
+                    status,
+                ])
+            
+            table = Table(table_data, colWidths=[30, 60, 100, 70, 45, 60, 80, 50])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3C3C3C')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
+            ]))
+            
+            story.append(table)
+            doc.build(story)
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ PDF exported to {filename}"),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except ImportError:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("Please install reportlab: pip install reportlab"),
+                bgcolor=self.danger_color,
+                duration=5000
+            )
+            page.snack_bar.open = True
+            page.update()
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ PDF export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+
+    def export_low_stock_pdf(self, page: ft.Page):
+        """Export low stock items to PDF"""
+        from datetime import datetime
+        
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER
+            
+            export_dir = "exports"
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = os.path.join(export_dir, f"low_stock_report_{timestamp}.pdf")
+            
+            items = getattr(self, 'current_filtered_items', [])
+            low_stock_items = [i for i in items if i.get('quantity', 0) < 10]
+            
+            doc = SimpleDocTemplate(filename, pagesize=A4, 
+                                    rightMargin=30, leftMargin=30,
+                                    topMargin=30, bottomMargin=20)
+            
+            styles = getSampleStyleSheet()
+            story = []
+            
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=20,
+                textColor=colors.HexColor('#F44336'),
+                alignment=TA_CENTER,
+                spaceAfter=20
+            )
+            
+            story.append(Paragraph("Low Stock Report", title_style))
+            story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", 
+                                styles['Normal']))
+            story.append(Spacer(1, 20))
+            
+            table_data = [['#', 'Type', 'Name', 'Code', 'Current Stock', 'Quality', 'Location']]
+            
+            for i, item in enumerate(low_stock_items, 1):
+                table_data.append([
+                    str(i),
+                    item['type_name'],
+                    item['name'],
+                    item['code'],
+                    str(item['quantity']),
+                    item['quality'],
+                    item['location'],
+                ])
+            
+            table = Table(table_data, colWidths=[30, 50, 100, 70, 45, 60, 80])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F44336')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
+            ]))
+            
+            story.append(table)
+            doc.build(story)
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Low stock PDF exported to {filename}"),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except ImportError:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("Please install reportlab: pip install reportlab"),
+                bgcolor=self.danger_color,
+                duration=5000
+            )
+            page.snack_bar.open = True
+            page.update()
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ Export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+    def quick_adjust_stock(self, page: ft.Page, inventory_items):
+        """Quickly adjust stock quantity from the quick adjustment panel"""
+        
+        def apply_adjustment(e):
+            item_id = item_dropdown.value
+            adjustment = adjustment_field.value.strip()
+            
+            if not item_id:
+                page.snack_bar = ft.SnackBar(ft.Text("Please select an item!"), bgcolor=self.danger_color)
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            if not adjustment:
+                page.snack_bar = ft.SnackBar(ft.Text("Please enter adjustment amount!"), bgcolor=self.danger_color)
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            try:
+                adj = int(adjustment)
+                
+                # Find item by ID
+                item = MaterialManager.get_by_id(int(item_id))
+                item_type = 'material'
+                if not item:
+                    item = AccessoryManager.get_by_id(int(item_id))
+                    item_type = 'accessory'
+                
+                if not item:
+                    page.snack_bar = ft.SnackBar(ft.Text("Item not found!"), bgcolor=self.danger_color)
+                    page.snack_bar.open = True
+                    page.update()
+                    return
+                
+                current_qty = item.get('quantity', 0)
+                new_qty = current_qty + adj
+                if new_qty < 0:
+                    new_qty = 0
+                
+                update_data = {'quantity': new_qty}
+                
+                if item_type == 'material':
+                    MaterialManager.update(int(item_id), update_data)
+                else:
+                    AccessoryManager.update(int(item_id), update_data)
+                
+                page.dialog.open = False
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Stock updated: {item.get('name')} from {current_qty} to {new_qty}"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                self.show_inventory(page)
+                
+            except ValueError:
+                page.snack_bar = ft.SnackBar(ft.Text("❌ Invalid adjustment value! Use numbers like +10 or -5"), bgcolor=self.danger_color)
+                page.snack_bar.open = True
+                page.update()
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        # Build dropdown options
+        dropdown_options = []
+        for item in inventory_items[:50]:
+            dropdown_options.append(ft.dropdown.Option(
+                str(item['id']), 
+                f"{item['type_icon']} {item['name']} (Stock: {item['quantity']})"
+            ))
+        
+        item_dropdown = ft.Dropdown(
+            label="Select Item",
+            width=350,
+            options=dropdown_options,
+            bgcolor=self.card_color,
+        )
+        
+        adjustment_field = ft.TextField(
+            label="Adjustment Amount",
+            width=200,
+            hint_text="+10 or -5",
+            bgcolor=self.card_color,
+        )
+        
+        dialog_content = ft.Column([
+            ft.Text("Quick Stock Adjustment", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            item_dropdown,
+            adjustment_field,
+            ft.Text("Example: +10 to add 10 units, -5 to remove 5 units", size=11, color="#888888"),
+            ft.Container(height=10),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Apply Adjustment", on_click=apply_adjustment, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=12)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Quick Stock Adjustment"),
+            content=ft.Container(content=dialog_content, width=450, height=380, padding=15),
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def quick_stock_change(self, page: ft.Page, item, operation):
+        """Quick add or remove 1 unit from stock"""
+        current_qty = item.get('quantity', 0)
+        if operation == '+':
+            new_qty = current_qty + 1
+        else:
+            new_qty = max(current_qty - 1, 0)
+        
+        update_data = {'quantity': new_qty}
+        
+        if item['type'] == 'material':
+            MaterialManager.update(item['id'], update_data)
+        else:
+            AccessoryManager.update(item['id'], update_data)
+        
+        page.snack_bar = ft.SnackBar(
+            ft.Text(f"✓ {'Added' if operation == '+' else 'Removed'} 1 unit. New quantity: {new_qty}"),
+            bgcolor=self.success_color,
+            duration=1500
+        )
+        page.snack_bar.open = True
+        self.show_inventory(page)
+
+    def edit_inventory_item(self, page: ft.Page, item):
+        """Edit inventory item"""
+        if item['type'] == 'material':
+            self.open_edit_modal(page, item['id'])
+        else:
+            self.open_edit_accessory_modal(page, item['id'])
+
+    def delete_inventory_item(self, page: ft.Page, item):
+        """Delete inventory item with confirmation"""
+        def confirm_delete(e):
+            if item['type'] == 'material':
+                MaterialManager.delete(item['id'])
+            else:
+                AccessoryManager.delete(item['id'])
+            
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Deleted: {item['name']}"),
+                bgcolor=self.danger_color,
+                duration=2000
+            )
+            page.snack_bar.open = True
+            self.show_inventory(page)
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Confirm Delete", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
+            content=ft.Text(f"Delete '{item['name']}'? This cannot be undone.", size=14),
+            actions=[
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Delete", on_click=confirm_delete, style=ft.ButtonStyle(bgcolor=self.danger_color)),
+            ],
+        )
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def reset_inventory_filters(self, page: ft.Page):
+        """Reset all inventory filters"""
+        self.show_inventory(page)
     def show_users(self, page: ft.Page):
-        """Show users screen - MOBILE OPTIMIZED (Card-based)"""
+        """Show users screen - FULL CRUD with role-based permissions"""
         page.controls.clear()
         
         # Check if mobile
@@ -3953,9 +4585,12 @@ class StoreApp:
             sidebar = self.create_sidebar(page)
             nav = None
         
-        # Get data
-        users = self.dict_list(UserManager.get_all())
+        # Get current user info
+        current_user_id = self.current_user.get('id') if self.current_user else None
         is_admin = self.current_user.get('role') == 'admin' if self.current_user else False
+        
+        # Get all users
+        users = self.dict_list(UserManager.get_all())
         
         # Calculate stats
         admin_count = len([u for u in users if u.get('role') == 'admin'])
@@ -3971,11 +4606,12 @@ class StoreApp:
                 ft.Text("Users Management", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
                 ft.Container(expand=True),
                 ft.IconButton(
-                    icon=ft.icons.ADD,
+                    icon=ft.icons.ADD_CIRCLE,
                     icon_size=28,
                     icon_color=self.success_color,
                     on_click=lambda e: self.open_add_user_modal(page),
                     visible=is_admin,
+                    tooltip="Add New User",
                 ),
             ])
         )
@@ -4015,71 +4651,108 @@ class StoreApp:
         scroll_content.controls.append(stats_row)
         scroll_content.controls.append(ft.Container(height=15))
         
-        # Users list (cards)
+        # Search field
+        search_field = ft.TextField(
+            hint_text="Search users...",
+            width=page.width - 60 if is_mobile else 300,
+            bgcolor=self.card_color,
+            border_color=self.accent_color,
+            text_size=font_small,
+            prefix_icon=ft.icons.SEARCH,
+        )
+        scroll_content.controls.append(search_field)
+        scroll_content.controls.append(ft.Container(height=15))
+        
+        # Users list container
         users_container = ft.Column(spacing=10)
-        
-        for u in users:
-            role = u.get('role', 'user')
-            if role == 'admin':
-                role_display = "👑 ADMIN"
-                role_color = self.danger_color
-            elif role == 'manager':
-                role_display = "📊 MANAGER"
-                role_color = self.warning_color
-            else:
-                role_display = "👤 USER"
-                role_color = self.success_color
-            
-            created_date = str(u.get('created_at', ''))[:10] if u.get('created_at') else 'N/A'
-            
-            card_content = ft.Column([
-                ft.Row([
-                    ft.CircleAvatar(
-                        content=ft.Text(u.get('name', 'U')[0].upper(), size=14),
-                        radius=22,
-                        bgcolor=self.accent_color,
-                    ),
-                    ft.Column([
-                        ft.Text(u.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD),
-                        ft.Text(u.get('email', 'N/A'), size=font_small - 2, color="#888888"),
-                    ], spacing=2, expand=True),
-                    ft.Container(
-                        content=ft.Text(role_display, size=font_small - 2, color="white"),
-                        bgcolor=role_color,
-                        border_radius=12,
-                        padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                    ),
-                ]),
-                ft.Row([
-                    ft.Text(f"📅 Joined: {created_date}", size=font_small - 2, color="#888888", expand=True),
-                    ft.Row([
-                        ft.IconButton(
-                            icon=ft.icons.EDIT,
-                            icon_size=20,
-                            icon_color=self.accent_color,
-                            on_click=lambda e, uid=u.get('id'): self.open_edit_user_modal(page, uid),
-                            visible=is_admin,
-                        ),
-                        ft.IconButton(
-                            icon=ft.icons.DELETE,
-                            icon_size=20,
-                            icon_color=self.danger_color,
-                            on_click=lambda e, uid=u.get('id'): self.open_delete_user_modal(page, uid, u.get('name')),
-                            visible=is_admin and u.get('id') != self.current_user.get('id'),
-                        ),
-                    ], spacing=0),
-                ]),
-            ], spacing=8)
-            
-            card = ft.Card(
-                content=ft.Container(content=card_content, padding=12),
-                elevation=1,
-                margin=ft.margin.only(bottom=8),
-            )
-            users_container.controls.append(card)
-        
         scroll_content.controls.append(users_container)
         scroll_content.controls.append(ft.Container(height=80))
+        
+        def refresh_users_list():
+            users_container.controls.clear()
+            
+            # Get fresh user data
+            all_users = self.dict_list(UserManager.get_all())
+            
+            # Apply search filter
+            search_query = search_field.value.lower() if search_field.value else ""
+            if search_query:
+                all_users = [u for u in all_users if search_query in u.get('name', '').lower() or search_query in u.get('email', '').lower()]
+            
+            for u in all_users:
+                role = u.get('role', 'user')
+                if role == 'admin':
+                    role_display = "👑 ADMIN"
+                    role_color = self.danger_color
+                elif role == 'manager':
+                    role_display = "📊 MANAGER"
+                    role_color = self.warning_color
+                else:
+                    role_display = "👤 USER"
+                    role_color = self.success_color
+                
+                created_date = str(u.get('created_at', ''))[:10] if u.get('created_at') else 'N/A'
+                can_edit = is_admin or u.get('id') == current_user_id
+                can_delete = is_admin and u.get('id') != current_user_id
+                
+                card_content = ft.Column([
+                    ft.Row([
+                        ft.CircleAvatar(
+                            content=ft.Text(u.get('name', 'U')[0].upper(), size=14),
+                            radius=22,
+                            bgcolor=self.accent_color,
+                        ),
+                        ft.Column([
+                            ft.Text(u.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD),
+                            ft.Text(u.get('email', 'N/A'), size=font_small - 2, color="#888888"),
+                        ], spacing=2, expand=True),
+                        ft.Container(
+                            content=ft.Text(role_display, size=font_small - 2, color="white"),
+                            bgcolor=role_color,
+                            border_radius=12,
+                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                        ),
+                    ]),
+                    ft.Row([
+                        ft.Text(f"📅 Joined: {created_date}", size=font_small - 2, color="#888888", expand=True),
+                        ft.Row([
+                            ft.IconButton(
+                                icon=ft.icons.EDIT,
+                                icon_size=20,
+                                icon_color=self.accent_color,
+                                on_click=lambda e, uid=u.get('id'): self.open_edit_user_modal(page, uid),
+                                visible=can_edit,
+                                tooltip="Edit User",
+                            ),
+                            ft.IconButton(
+                                icon=ft.icons.DELETE,
+                                icon_size=20,
+                                icon_color=self.danger_color,
+                                on_click=lambda e, uid=u.get('id'), name=u.get('name'): self.open_delete_user_modal(page, uid, name),
+                                visible=can_delete,
+                                tooltip="Delete User",
+                            ),
+                        ], spacing=0),
+                    ]),
+                ], spacing=8)
+                
+                card = ft.Card(
+                    content=ft.Container(content=card_content, padding=12),
+                    elevation=1,
+                    margin=ft.margin.only(bottom=8),
+                )
+                users_container.controls.append(card)
+            
+            page.update()
+        
+        # Event handlers
+        def on_search(e):
+            refresh_users_list()
+        
+        search_field.on_change = on_search
+        
+        # Initial load
+        refresh_users_list()
         
         main_container = ft.Container(content=scroll_content, expand=True, padding=padding_size)
         
@@ -4092,8 +4765,337 @@ class StoreApp:
         self.current_view = "users"
         page.update()
     
+    def open_add_user_modal(self, page: ft.Page):
+        """Open modal for adding new user"""
+        
+        name_field = ft.TextField(label="Full Name *", width=350, bgcolor=self.card_color)
+        email_field = ft.TextField(label="Email *", width=350, bgcolor=self.card_color)
+        password_field = ft.TextField(label="Password *", width=350, bgcolor=self.card_color, password=True, can_reveal_password=True)
+        confirm_password_field = ft.TextField(label="Confirm Password *", width=350, bgcolor=self.card_color, password=True, can_reveal_password=True)
+        
+        role_field = ft.Dropdown(
+            label="Role *",
+            width=350,
+            options=[
+                ft.dropdown.Option("user", "👤 Regular User"),
+                ft.dropdown.Option("manager", "📊 Manager"),
+                ft.dropdown.Option("admin", "👑 Administrator"),
+            ],
+            value="user",
+            bgcolor=self.card_color,
+        )
+        
+        status_text = ft.Text("", size=12, color="#888888")
+        
+        def close_modal(e):
+            page.overlay.clear()
+            page.update()
+        
+        def save_user(e):
+            # Validation
+            if not name_field.value:
+                status_text.value = "❌ Please enter name!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            if not email_field.value:
+                status_text.value = "❌ Please enter email!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            if not password_field.value:
+                status_text.value = "❌ Please enter password!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            if password_field.value != confirm_password_field.value:
+                status_text.value = "❌ Passwords do not match!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            if len(password_field.value) < 4:
+                status_text.value = "❌ Password must be at least 4 characters!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            # Create user
+            result = UserManager.create(
+                name=name_field.value,
+                email=email_field.value,
+                password=password_field.value,
+                role=role_field.value
+            )
+            
+            if result:
+                page.overlay.clear()
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ User {name_field.value} added!"), bgcolor=self.success_color)
+                page.snack_bar.open = True
+                self.show_users(page)
+            else:
+                status_text.value = "❌ Error: Email already exists!"
+                status_text.color = self.danger_color
+                page.update()
+        
+        modal = ft.Container(
+            content=ft.Card(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text("Add New User", size=18, weight=ft.FontWeight.BOLD),
+                        ft.Divider(),
+                        ft.Column([
+                            name_field,
+                            email_field,
+                            password_field,
+                            confirm_password_field,
+                            role_field,
+                            status_text,
+                        ], spacing=12),
+                        ft.Divider(),
+                        ft.Row([
+                            ft.TextButton("Cancel", on_click=close_modal),
+                            ft.FilledButton("Create User", on_click=save_user, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                        ], alignment=ft.MainAxisAlignment.END, spacing=10),
+                    ], spacing=10),
+                    padding=20,
+                    width=450,
+                ),
+            ),
+            expand=True,
+            bgcolor="#80000000",
+        )
+        
+        page.overlay.append(modal)
+        page.update()
+    def open_edit_user_modal(self, page: ft.Page, user_id):
+        """Open modal for editing user with password reset"""
+        
+        # Find user by ID
+        users = self.dict_list(UserManager.get_all())
+        user_dict = None
+        for u in users:
+            if u.get('id') == user_id:
+                user_dict = u
+                break
+        
+        if not user_dict:
+            page.snack_bar = ft.SnackBar(ft.Text("User not found!"), bgcolor="red")
+            page.snack_bar.open = True
+            page.update()
+            return
+        
+        is_current_user = user_dict.get('id') == self.current_user.get('id')
+        is_admin = self.current_user.get('role') == 'admin'
+        
+        name_field = ft.TextField(label="Full Name", value=user_dict.get('name', ''), width=380, bgcolor=self.card_color)
+        email_field = ft.TextField(label="Email", value=user_dict.get('email', ''), width=380, bgcolor=self.card_color, read_only=True)
+        
+        role_field = ft.Dropdown(
+            label="Role", 
+            width=380,
+            options=[
+                ft.dropdown.Option("user", "👤 Regular User"),
+                ft.dropdown.Option("manager", "📊 Manager"),
+                ft.dropdown.Option("admin", "👑 Administrator")
+            ], 
+            value=user_dict.get('role', 'user'), 
+            bgcolor=self.card_color, 
+            disabled=not is_admin or is_current_user
+        )
+        
+        # Password reset fields (optional)
+        password_field = ft.TextField(
+            label="New Password (leave blank to keep current)", 
+            width=380, 
+            bgcolor=self.card_color, 
+            password=True, 
+            can_reveal_password=True,
+        )
+        
+        confirm_password_field = ft.TextField(
+            label="Confirm New Password", 
+            width=380, 
+            bgcolor=self.card_color, 
+            password=True, 
+            can_reveal_password=True,
+        )
+        
+        status_text = ft.Text("", size=12, color="#888888")
+        
+        def close_modal(e):
+            page.overlay.clear()
+            page.update()
+        
+        def update_user(e):
+            new_password = password_field.value
+            
+            # Validate password if provided
+            if new_password:
+                if new_password != confirm_password_field.value:
+                    status_text.value = "❌ Passwords do not match!"
+                    status_text.color = self.danger_color
+                    page.update()
+                    return
+                if len(new_password) < 4:
+                    status_text.value = "❌ Password must be at least 4 characters!"
+                    status_text.color = self.danger_color
+                    page.update()
+                    return
+            
+            import sqlite3
+            import hashlib
+            from database import DB_PATH
+            
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                
+                if new_password:
+                    # Hash the new password
+                    hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
+                    cursor.execute(
+                        "UPDATE users SET name = ?, role = ?, password_hash = ? WHERE id = ?",
+                        (name_field.value, role_field.value, hashed_password, user_dict.get('id'))
+                    )
+                else:
+                    cursor.execute(
+                        "UPDATE users SET name = ?, role = ? WHERE id = ?",
+                        (name_field.value, role_field.value, user_dict.get('id'))
+                    )
+                conn.commit()
+                result = cursor.rowcount > 0
+                conn.close()
+                
+            except Exception as ex:
+                print(f"Update error: {ex}")
+                result = False
+            
+            if result:
+                page.overlay.clear()
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ User {name_field.value} updated successfully!"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                # Update current user info if editing self
+                if is_current_user:
+                    self.current_user['name'] = name_field.value
+                    self.current_user['role'] = role_field.value
+                self.show_users(page)
+            else:
+                status_text.value = "❌ Error updating user!"
+                status_text.color = self.danger_color
+                page.update()
+        
+        modal = ft.Container(
+            content=ft.Card(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text(f"✏️ Edit User: {user_dict.get('name')}", size=18, weight=ft.FontWeight.BOLD),
+                        ft.Divider(),
+                        ft.Column([
+                            name_field,
+                            email_field,
+                            role_field,
+                            ft.Divider(),
+                            ft.Text("Reset Password (Optional)", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                            password_field,
+                            confirm_password_field,
+                            status_text,
+                        ], spacing=12),
+                        ft.Divider(),
+                        ft.Row([
+                            ft.TextButton("Cancel", on_click=close_modal),
+                            ft.FilledButton("Update User", on_click=update_user, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                        ], alignment=ft.MainAxisAlignment.END, spacing=10),
+                    ], spacing=10),
+                    padding=20,
+                    width=450,
+                ),
+            ),
+            expand=True,
+            bgcolor="#80000000",
+        )
+        
+        page.overlay.append(modal)
+        page.update()
+    def open_delete_user_modal(self, page: ft.Page, user_id, user_name):
+        """Open modal for delete confirmation"""
+        
+        def close_modal(e):
+            page.overlay.clear()
+            page.update()
+        
+        def confirm_delete(e):
+            import sqlite3
+            from database import DB_PATH
+            
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+                conn.commit()
+                result = cursor.rowcount > 0
+                conn.close()
+                
+                if result:
+                    page.overlay.clear()
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✓ User '{user_name}' deleted successfully!"),
+                        bgcolor=self.success_color,
+                        duration=3000
+                    )
+                    page.snack_bar.open = True
+                    self.show_users(page)
+                else:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("❌ Error: Could not delete user!"),
+                        bgcolor=self.danger_color,
+                        duration=3000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+            except Exception as ex:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"❌ Error: {str(ex)}"),
+                    bgcolor=self.danger_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                page.update()
+        
+        modal = ft.Container(
+            content=ft.Card(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text("🗑️ Confirm Delete", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                        ft.Divider(),
+                        ft.Container(height=10),
+                        ft.Text(f"Are you sure you want to delete:", size=13, color="#CCCCCC"),
+                        ft.Text(f"'{user_name}'?", size=16, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                        ft.Container(height=10),
+                        ft.Text("This action cannot be undone.", size=12, color="#888888"),
+                        ft.Container(height=10),
+                        ft.Divider(),
+                        ft.Row([
+                            ft.TextButton("Cancel", on_click=close_modal),
+                            ft.FilledButton("Yes, Delete", on_click=confirm_delete, style=ft.ButtonStyle(bgcolor=self.danger_color)),
+                        ], alignment=ft.MainAxisAlignment.END, spacing=10),
+                    ], spacing=5),
+                    padding=20,
+                    width=400,
+                ),
+            ),
+            expand=True,
+            bgcolor="#80000000",
+        )
+        
+        page.overlay.append(modal)
+        page.update()
+
     def show_settings(self, page: ft.Page):
-        """Show settings screen - MOBILE OPTIMIZED (Card-based)"""
+        """Show settings screen - COMPLETE WORKING VERSION"""
         page.controls.clear()
         
         # Check if mobile
@@ -4120,6 +5122,7 @@ class StoreApp:
             nav = None
         
         current_user = self.current_user
+        is_admin = current_user.get('role') == 'admin' if current_user else False
         
         # Create scrollable content
         scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
@@ -4134,7 +5137,7 @@ class StoreApp:
         scroll_content.controls.append(ft.Container(height=15))
         
         # ========== PROFILE SECTION ==========
-        profile_section = ft.Card(
+        profile_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
                     ft.Text("👤 Profile", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
@@ -4146,23 +5149,27 @@ class StoreApp:
                             bgcolor=self.accent_color,
                         ),
                         ft.Column([
-                            ft.Text(current_user.get('name', 'User'), size=font_normal, weight=ft.FontWeight.BOLD),
+                            ft.Text(current_user.get('name', 'User'), size=font_normal + 2, weight=ft.FontWeight.BOLD),
                             ft.Text(current_user.get('email', 'N/A'), size=font_small - 1, color="#888888"),
                             ft.Text(f"Role: {current_user.get('role', 'user').upper()}", size=font_small - 2, 
                                 color=self.success_color if current_user.get('role') == 'admin' else self.warning_color),
                         ], spacing=3, expand=True),
                     ], spacing=12),
-                    ft.ElevatedButton("Edit Profile", on_click=lambda e: None, style=ft.ButtonStyle(bgcolor=self.accent_color)),
+                    ft.ElevatedButton(
+                        "✏️ Edit Profile", 
+                        on_click=lambda e: self.edit_profile_dialog(page),
+                        style=ft.ButtonStyle(bgcolor=self.accent_color),
+                    ),
                 ], spacing=12),
                 padding=15,
             ),
-            elevation=1,
+            elevation=2,
             margin=ft.margin.only(bottom=12),
         )
-        scroll_content.controls.append(profile_section)
+        scroll_content.controls.append(profile_card)
         
         # ========== SECURITY SECTION ==========
-        security_section = ft.Card(
+        security_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
                     ft.Text("🔐 Security", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
@@ -4171,23 +5178,23 @@ class StoreApp:
                         leading=ft.Icon(ft.icons.LOCK, color=self.accent_color),
                         title=ft.Text("Change Password"),
                         trailing=ft.Icon(ft.icons.CHEVRON_RIGHT),
-                        on_click=lambda e: None,
+                        on_click=lambda e: self.change_password_dialog(page),
                     ),
                     ft.ListTile(
                         leading=ft.Icon(ft.icons.SHIELD, color=self.accent_color),
                         title=ft.Text("Two-Factor Authentication"),
-                        trailing=ft.Switch(value=False, on_change=lambda e: None),
+                        trailing=ft.Switch(value=False, on_change=lambda e: self.toggle_2fa(page, e)),
                     ),
                 ], spacing=8),
                 padding=15,
             ),
-            elevation=1,
+            elevation=2,
             margin=ft.margin.only(bottom=12),
         )
-        scroll_content.controls.append(security_section)
+        scroll_content.controls.append(security_card)
         
         # ========== APPEARANCE SECTION ==========
-        appearance_section = ft.Card(
+        appearance_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
                     ft.Text("🎨 Appearance", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
@@ -4195,22 +5202,37 @@ class StoreApp:
                     ft.ListTile(
                         leading=ft.Icon(ft.icons.DARK_MODE, color=self.accent_color),
                         title=ft.Text("Dark Mode"),
-                        trailing=ft.Switch(value=True, on_change=lambda e: None),
+                        trailing=ft.Switch(value=True, on_change=lambda e: self.toggle_theme(page, e)),
                     ),
                     ft.Text("Accent Color", size=font_small, weight=ft.FontWeight.BOLD),
                     ft.Row([
-                        ft.Container(width=35, height=35, bgcolor="#1976D2", border_radius=18, ink=True),
-                        ft.Container(width=35, height=35, bgcolor="#4CAF50", border_radius=18, ink=True),
-                        ft.Container(width=35, height=35, bgcolor="#9C27B0", border_radius=18, ink=True),
-                        ft.Container(width=35, height=35, bgcolor="#FF9800", border_radius=18, ink=True),
+                        ft.Container(width=35, height=35, bgcolor="#1976D2", border_radius=18, ink=True,
+                                    on_click=lambda e: self.change_accent_color(page, "#1976D2")),
+                        ft.Container(width=35, height=35, bgcolor="#4CAF50", border_radius=18, ink=True,
+                                    on_click=lambda e: self.change_accent_color(page, "#4CAF50")),
+                        ft.Container(width=35, height=35, bgcolor="#9C27B0", border_radius=18, ink=True,
+                                    on_click=lambda e: self.change_accent_color(page, "#9C27B0")),
+                        ft.Container(width=35, height=35, bgcolor="#FF9800", border_radius=18, ink=True,
+                                    on_click=lambda e: self.change_accent_color(page, "#FF9800")),
+                        ft.Container(width=35, height=35, bgcolor="#E91E63", border_radius=18, ink=True,
+                                    on_click=lambda e: self.change_accent_color(page, "#E91E63")),
+                        ft.Container(width=35, height=35, bgcolor="#00BCD4", border_radius=18, ink=True,
+                                    on_click=lambda e: self.change_accent_color(page, "#00BCD4")),
                     ], spacing=12),
+                    ft.Container(height=5),
+                    ft.Text("Font Size", size=font_small, weight=ft.FontWeight.BOLD),
+                    ft.Row([
+                        ft.ElevatedButton("Small", on_click=lambda e: self.change_font_size(page, "small"), expand=True),
+                        ft.ElevatedButton("Medium", on_click=lambda e: self.change_font_size(page, "medium"), expand=True),
+                        ft.ElevatedButton("Large", on_click=lambda e: self.change_font_size(page, "large"), expand=True),
+                    ], spacing=10),
                 ], spacing=12),
                 padding=15,
             ),
-            elevation=1,
+            elevation=2,
             margin=ft.margin.only(bottom=12),
         )
-        scroll_content.controls.append(appearance_section)
+        scroll_content.controls.append(appearance_card)
         
         # ========== DATABASE SECTION ==========
         # Get database size
@@ -4227,7 +5249,7 @@ class StoreApp:
         except:
             db_size = "N/A"
         
-        database_section = ft.Card(
+        database_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
                     ft.Text("💾 Database", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
@@ -4238,46 +5260,70 @@ class StoreApp:
                             ft.Text("Database Size", size=font_small, color="#888888"),
                             ft.Text(db_size, size=font_normal, weight=ft.FontWeight.BOLD),
                         ], spacing=2),
+                        ft.Container(expand=True),
+                        ft.IconButton(icon=ft.icons.REFRESH, icon_size=20, on_click=lambda e: self.show_settings(page)),
                     ], spacing=12),
                     ft.Row([
-                        ft.ElevatedButton("📥 Backup", on_click=lambda e: None, expand=True),
-                        ft.ElevatedButton("🔄 Restore", on_click=lambda e: None, expand=True),
+                        ft.ElevatedButton(
+                            "📥 Backup", 
+                            on_click=lambda e: self.backup_database(page), 
+                            expand=True,
+                        ),
+                        ft.ElevatedButton(
+                            "🔄 Restore", 
+                            on_click=lambda e: self.restore_database(page), 
+                            expand=True,
+                        ),
                     ], spacing=10),
-                    ft.ElevatedButton("📊 Export All Data", on_click=lambda e: None, expand=True, style=ft.ButtonStyle(bgcolor=self.success_color)),
-                    ft.Container(height=5),
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Icon(ft.icons.WARNING, size=18, color=self.danger_color),
-                            ft.Text("Reset All Data", size=font_small, color=self.danger_color, expand=True),
-                            ft.OutlinedButton("Reset", on_click=lambda e: None, style=ft.ButtonStyle(color=self.danger_color)),
-                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                        padding=10,
-                        bgcolor="#3C2121",
-                        border_radius=8,
+                    ft.Row([
+                        ft.OutlinedButton(
+                            "📁 View Backups", 
+                            on_click=lambda e: self.show_backup_list(page), 
+                            expand=True,
+                        ),
+                        ft.ElevatedButton(
+                            "⚠️ Reset", 
+                            on_click=lambda e: self.reset_database_confirm(page), 
+                            expand=True,
+                            style=ft.ButtonStyle(bgcolor=self.danger_color),
+                        ),
+                    ], spacing=10),
+                    ft.ElevatedButton(
+                        "📊 Export All Data", 
+                        on_click=lambda e: self.export_all_data(page), 
+                        expand=True,
+                        style=ft.ButtonStyle(bgcolor=self.success_color),
                     ),
                 ], spacing=12),
                 padding=15,
             ),
-            elevation=1,
+            elevation=2,
             margin=ft.margin.only(bottom=12),
         )
-        scroll_content.controls.append(database_section)
+        scroll_content.controls.append(database_card)
         
         # ========== ABOUT SECTION ==========
-        about_section = ft.Card(
+        about_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
                     ft.Text("ℹ️ About", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
                     ft.Divider(),
-                    ft.Text("Store Management System", size=font_normal, weight=ft.FontWeight.BOLD),
+                    ft.Text("Store Management System", size=font_normal + 2, weight=ft.FontWeight.BOLD),
                     ft.Text("Version 1.0.0", size=font_small - 1, color="#888888"),
                     ft.Text("© 2024 Your Company", size=font_small - 2, color="#888888"),
-                ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Container(height=10),
+                    ft.Row([
+                        ft.IconButton(icon=ft.icons.PRIVACY_TIP, icon_size=20, on_click=lambda e: None, tooltip="Privacy Policy"),
+                        ft.IconButton(icon=ft.icons.HELP, icon_size=20, on_click=lambda e: None, tooltip="Help"),
+                        ft.IconButton(icon=ft.icons.FEEDBACK, icon_size=20, on_click=lambda e: None, tooltip="Send Feedback"),
+                        ft.IconButton(icon=ft.icons.SHARE, icon_size=20, on_click=lambda e: None, tooltip="Share App"),
+                    ], spacing=20, alignment=ft.MainAxisAlignment.CENTER),
+                ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=15,
             ),
-            elevation=1,
+            elevation=2,
         )
-        scroll_content.controls.append(about_section)
+        scroll_content.controls.append(about_card)
         
         scroll_content.controls.append(ft.Container(height=80))
         
@@ -4292,6 +5338,637 @@ class StoreApp:
         self.current_view = "settings"
         page.update()
 
+    def edit_profile_dialog(self, page: ft.Page):
+        """Open dialog to edit user profile"""
+        
+        current_user = self.current_user
+        
+        name_field = ft.TextField(label="Full Name", value=current_user.get('name', ''), width=300, bgcolor=self.card_color)
+        email_field = ft.TextField(label="Email", value=current_user.get('email', ''), width=300, bgcolor=self.card_color, read_only=True)
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        def save_profile(e):
+            new_name = name_field.value.strip()
+            if not new_name:
+                page.snack_bar = ft.SnackBar(ft.Text("Name cannot be empty!"), bgcolor=self.danger_color)
+                page.snack_bar.open = True
+                return
+            
+            import sqlite3
+            from database import DB_PATH
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET name = ? WHERE id = ?", (new_name, current_user['id']))
+            conn.commit()
+            conn.close()
+            
+            self.current_user['name'] = new_name
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(ft.Text("✓ Profile updated!"), bgcolor=self.success_color)
+            page.snack_bar.open = True
+            self.show_settings(page)
+            page.update()
+        
+        dialog_content = ft.Column([
+            ft.Text("Edit Profile", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            name_field,
+            email_field,
+            ft.Container(height=10),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Save", on_click=save_profile, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=12)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Edit Profile"),
+            content=ft.Container(content=dialog_content, width=400, height=300, padding=15),
+        )
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def change_password_dialog(self, page: ft.Page):
+        """Open dialog to change password"""
+        
+        import hashlib
+        
+        current_password = ft.TextField(label="Current Password", password=True, width=300, bgcolor=self.card_color)
+        new_password = ft.TextField(label="New Password", password=True, width=300, bgcolor=self.card_color)
+        confirm_password = ft.TextField(label="Confirm Password", password=True, width=300, bgcolor=self.card_color)
+        status_text = ft.Text("", size=12, color="#888888")
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        def update_password(e):
+            current = current_password.value
+            new = new_password.value
+            confirm = confirm_password.value
+            
+            if not current or not new or not confirm:
+                status_text.value = "❌ Please fill all fields"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            if new != confirm:
+                status_text.value = "❌ New passwords do not match"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            if len(new) < 4:
+                status_text.value = "❌ Password must be at least 4 characters"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            # Verify current password
+            import sqlite3
+            from database import DB_PATH
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            current_hash = hashlib.sha256(current.encode()).hexdigest()
+            cursor.execute("SELECT id FROM users WHERE id = ? AND password_hash = ?", 
+                        (self.current_user['id'], current_hash))
+            if not cursor.fetchone():
+                status_text.value = "❌ Current password is incorrect"
+                status_text.color = self.danger_color
+                conn.close()
+                page.update()
+                return
+            
+            # Update password
+            new_hash = hashlib.sha256(new.encode()).hexdigest()
+            cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, self.current_user['id']))
+            conn.commit()
+            conn.close()
+            
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(ft.Text("✓ Password changed successfully!"), bgcolor=self.success_color)
+            page.snack_bar.open = True
+            page.update()
+        
+        dialog_content = ft.Column([
+            ft.Text("Change Password", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            current_password,
+            new_password,
+            confirm_password,
+            status_text,
+            ft.Container(height=10),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Update Password", on_click=update_password, style=ft.ButtonStyle(bgcolor=self.warning_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=12)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Change Password"),
+            content=ft.Container(content=dialog_content, width=400, height=420, padding=15),
+        )
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def toggle_theme(self, page: ft.Page, e):
+        """Toggle between dark and light theme"""
+        if e.control.value:
+            page.theme_mode = ft.ThemeMode.DARK
+            page.bgcolor = self.bg_color
+        else:
+            page.theme_mode = ft.ThemeMode.LIGHT
+            page.bgcolor = "#F5F5F5"
+        page.update()
+
+    def toggle_2fa(self, page: ft.Page, e):
+        """Toggle two-factor authentication"""
+        if e.control.value:
+            page.snack_bar = ft.SnackBar(ft.Text("2FA enabled - Feature coming soon"), bgcolor=self.accent_color)
+        else:
+            page.snack_bar = ft.SnackBar(ft.Text("2FA disabled"), bgcolor=self.warning_color)
+        page.snack_bar.open = True
+        page.update()
+
+    def change_accent_color(self, page: ft.Page, color):
+        """Change app accent color"""
+        self.accent_color = color
+        page.snack_bar = ft.SnackBar(ft.Text(f"Accent color changed"), bgcolor=color)
+        page.snack_bar.open = True
+        self.show_settings(page)
+
+    def change_font_size(self, page: ft.Page, size):
+        """Change font size preference"""
+        if size == "small":
+            self.font_scale = 0.8
+        elif size == "large":
+            self.font_scale = 1.2
+        else:
+            self.font_scale = 1.0
+        
+        page.snack_bar = ft.SnackBar(ft.Text(f"Font size changed to {size}"), bgcolor=self.accent_color)
+        page.snack_bar.open = True
+        self.show_settings(page)
+
+    def backup_database(self, page: ft.Page):
+        """Backup database to file"""
+        import shutil
+        from datetime import datetime
+        import os
+        
+        try:
+            # Get the absolute path to the database
+            db_path = os.path.abspath("store_management.db")
+            
+            # Create backups folder if not exists
+            backup_dir = os.path.abspath("backups")
+            if not os.path.exists(backup_dir):
+                os.makedirs(backup_dir)
+                print(f"Created backups folder: {backup_dir}")
+            
+            # Check if database exists
+            if not os.path.exists(db_path):
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("❌ Database file not found!"),
+                    bgcolor=self.danger_color,
+                    duration=4000
+                )
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            # Create backup filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_name = f"backup_{timestamp}.db"
+            backup_path = os.path.join(backup_dir, backup_name)
+            
+            # Copy database file
+            shutil.copy2(db_path, backup_path)
+            
+            # Get file size for display
+            file_size = os.path.getsize(backup_path)
+            if file_size < 1024:
+                size_str = f"{file_size} B"
+            elif file_size < 1024 * 1024:
+                size_str = f"{file_size / 1024:.1f} KB"
+            else:
+                size_str = f"{file_size / (1024 * 1024):.1f} MB"
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Database backed up to: {backup_name} ({size_str})"),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            # Refresh settings to show updated backup list
+            self.show_settings(page)
+            
+        except Exception as e:
+            print(f"Backup error: {e}")
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ Backup failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+    def restore_database(self, page: ft.Page):
+        """Restore database from backup - shows dialog with available backups"""
+        import os
+        from datetime import datetime
+        
+        # Get available backups
+        backup_dir = os.path.abspath("backups")
+        backups = []
+        
+        if os.path.exists(backup_dir):
+            backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
+            backups.sort(reverse=True)  # Newest first
+        
+        if not backups:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("❌ No backups found. Create a backup first."),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            return
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        def confirm_restore(e):
+            import shutil
+            
+            selected_backup = backup_dropdown.value
+            if not selected_backup:
+                page.snack_bar = ft.SnackBar(ft.Text("Please select a backup file"), bgcolor=self.danger_color)
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            try:
+                backup_path = os.path.join(backup_dir, selected_backup)
+                db_path = os.path.abspath("store_management.db")
+                
+                # Create a backup of current database before restore (just in case)
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                pre_restore_backup = os.path.join(backup_dir, f"before_restore_{timestamp}.db")
+                shutil.copy2(db_path, pre_restore_backup)
+                
+                # Restore the selected backup
+                shutil.copy2(backup_path, db_path)
+                
+                page.dialog.open = False
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Database restored from {selected_backup}. Pre-restore backup saved."),
+                    bgcolor=self.success_color,
+                    duration=5000
+                )
+                page.snack_bar.open = True
+                page.update()
+                
+                # Refresh the current view
+                self.show_settings(page)
+                
+            except Exception as e:
+                page.dialog.open = False
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"❌ Restore failed: {str(e)}"),
+                    bgcolor=self.danger_color,
+                    duration=4000
+                )
+                page.snack_bar.open = True
+                page.update()
+        
+        def on_backup_select(e):
+            selected = backup_dropdown.value
+            if selected:
+                backup_path = os.path.join(backup_dir, selected)
+                size_bytes = os.path.getsize(backup_path)
+                if size_bytes < 1024:
+                    size_str = f"{size_bytes} B"
+                elif size_bytes < 1024 * 1024:
+                    size_str = f"{size_bytes / 1024:.1f} KB"
+                else:
+                    size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+                
+                # Update info text
+                info_text.value = f"Size: {size_str} | Date: {selected.replace('backup_', '').replace('.db', '')}"
+                page.update()
+        
+        # Create dropdown with backup files
+        backup_dropdown = ft.Dropdown(
+            label="Select Backup File",
+            width=350,
+            options=[ft.dropdown.Option(b, f"📁 {b}") for b in backups],
+            bgcolor=self.card_color,
+        )
+        backup_dropdown.on_change = on_backup_select
+        
+        info_text = ft.Text("Select a backup to restore", size=12, color="#888888")
+        
+        dialog_content = ft.Column([
+            ft.Text("⚠️ Restore Database", size=18, weight=ft.FontWeight.BOLD, color=self.warning_color),
+            ft.Divider(),
+            ft.Text("Select a backup file to restore:", size=14),
+            backup_dropdown,
+            info_text,
+            ft.Container(height=5),
+            ft.Text("⚠️ This will OVERWRITE your current data!", size=12, color=self.danger_color),
+            ft.Text("A backup of your current data will be created before restore.", size=11, color="#888888"),
+            ft.Container(height=10),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Restore Database", on_click=confirm_restore, style=ft.ButtonStyle(bgcolor=self.danger_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=12)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Restore Database"),
+            content=ft.Container(content=dialog_content, width=450, height=400, padding=15),
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+    # Add after the backup/restore buttons
+    def show_backup_list(self, page: ft.Page):
+        """Show list of available backups"""
+        import os
+        
+        backup_dir = os.path.abspath("backups")
+        backups = []
+        
+        if os.path.exists(backup_dir):
+            backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
+            backups.sort(reverse=True)
+        
+        if not backups:
+            page.snack_bar = ft.SnackBar(ft.Text("No backups found"), bgcolor=self.danger_color)
+            page.snack_bar.open = True
+            page.update()
+            return
+        
+        def close_backup_dialog(e):
+            backup_dialog.open = False
+            page.update()
+        
+        def delete_backup(e, backup_file):
+            import os
+            backup_path = os.path.join(backup_dir, backup_file)
+            try:
+                os.remove(backup_path)
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Deleted: {backup_file}"), bgcolor=self.success_color)
+                page.snack_bar.open = True
+                backup_dialog.open = False
+                self.show_settings(page)
+            except Exception as ex:
+                page.snack_bar = ft.SnackBar(ft.Text(f"❌ Delete failed: {str(ex)}"), bgcolor=self.danger_color)
+                page.snack_bar.open = True
+            page.update()
+        
+        # Create backup list
+        backup_list = ft.Column(spacing=8)
+        for backup in backups[:20]:
+            backup_path = os.path.join(backup_dir, backup)
+            size_bytes = os.path.getsize(backup_path)
+            if size_bytes < 1024:
+                size_str = f"{size_bytes} B"
+            elif size_bytes < 1024 * 1024:
+                size_str = f"{size_bytes / 1024:.1f} KB"
+            else:
+                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+            
+            # Extract date from filename
+            date_str = backup.replace('backup_', '').replace('.db', '')
+            
+            backup_list.controls.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.icons.FILE_PRESENT, size=20, color=self.accent_color),
+                        ft.Column([
+                            ft.Text(backup, size=12, weight=ft.FontWeight.BOLD),
+                            ft.Text(f"Size: {size_str} | Date: {date_str}", size=10, color="#888888"),
+                        ], spacing=2, expand=True),
+                        ft.IconButton(icon=ft.icons.DELETE, icon_size=18, icon_color=self.danger_color,
+                                    on_click=lambda e, b=backup: delete_backup(e, b)),
+                    ]),
+                    padding=10,
+                    bgcolor="#2C2C2C",
+                    border_radius=6,
+                )
+            )
+        
+        backup_dialog_content = ft.Column([
+            ft.Text("📁 Available Backups", size=16, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            ft.Text(f"Total: {len(backups)} backups", size=11, color="#888888"),
+            ft.Container(content=backup_list, height=350, scroll=ft.ScrollMode.AUTO),
+            ft.Container(height=10),
+            ft.Row([
+                ft.TextButton("Close", on_click=close_backup_dialog, expand=True),
+            ]),
+        ], spacing=10)
+        
+        backup_dialog = ft.AlertDialog(
+            title=ft.Text("Backup Manager"),
+            content=ft.Container(content=backup_dialog_content, width=500, height=500, padding=15),
+        )
+        
+        page.dialog = backup_dialog
+        backup_dialog.open = True
+        page.update()
+    def reset_database_confirm(self, page: ft.Page):
+        """Confirm and reset database"""
+        
+        def confirm_reset(e):
+            import sqlite3
+            from database import DB_PATH
+            
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                
+                # Clear all tables
+                cursor.execute("DELETE FROM materials")
+                cursor.execute("DELETE FROM accessories")
+                # Keep admin user (id=1), delete other users
+                cursor.execute("DELETE FROM users WHERE id > 1")
+                
+                conn.commit()
+                conn.close()
+                
+                page.dialog.open = False
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("✓ Database reset successfully! Please restart the app."),
+                    bgcolor=self.success_color,
+                    duration=5000
+                )
+                page.snack_bar.open = True
+                page.update()
+                
+            except Exception as ex:
+                page.dialog.open = False
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"❌ Reset failed: {str(ex)}"),
+                    bgcolor=self.danger_color,
+                    duration=4000
+                )
+                page.snack_bar.open = True
+                page.update()
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        dialog_content = ft.Column([
+            ft.Text("⚠️ Reset Database", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
+            ft.Divider(),
+            ft.Text("This will delete ALL data including:", size=14),
+            ft.Text("• All materials", size=13),
+            ft.Text("• All accessories", size=13),
+            ft.Text("• All users (except admin)", size=13),
+            ft.Text("This action CANNOT be undone!", size=14, color=self.danger_color, weight=ft.FontWeight.BOLD),
+            ft.Container(height=10),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Yes, Reset All Data", on_click=confirm_reset, style=ft.ButtonStyle(bgcolor=self.danger_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=10)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Reset Database"),
+            content=ft.Container(content=dialog_content, width=400, height=380, padding=15),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+    def export_all_data(self, page: ft.Page):
+        """Export all data to CSV files"""
+        import csv
+        from datetime import datetime
+        
+        try:
+            export_dir = "exports"
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Export materials
+            materials = self.dict_list(MaterialManager.get_all())
+            if materials:
+                materials_file = os.path.join(export_dir, f"materials_{timestamp}.csv")
+                with open(materials_file, 'w', newline='', encoding='utf-8-sig') as f:
+                    writer = csv.DictWriter(f, fieldnames=materials[0].keys())
+                    writer.writeheader()
+                    writer.writerows(materials)
+            
+            # Export accessories
+            accessories = self.dict_list(AccessoryManager.get_all())
+            if accessories:
+                accessories_file = os.path.join(export_dir, f"accessories_{timestamp}.csv")
+                with open(accessories_file, 'w', newline='', encoding='utf-8-sig') as f:
+                    writer = csv.DictWriter(f, fieldnames=accessories[0].keys())
+                    writer.writeheader()
+                    writer.writerows(accessories)
+            
+            # Export users
+            users = self.dict_list(UserManager.get_all())
+            if users:
+                users_file = os.path.join(export_dir, f"users_{timestamp}.csv")
+                with open(users_file, 'w', newline='', encoding='utf-8-sig') as f:
+                    writer = csv.DictWriter(f, fieldnames=users[0].keys())
+                    writer.writeheader()
+                    writer.writerows(users)
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ All data exported to {export_dir}/"),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ Export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+
+    def reset_database_confirm(self, page: ft.Page):
+        """Confirm and reset database"""
+        
+        def confirm_reset(e):
+            import sqlite3
+            from database import DB_PATH
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Clear all tables
+            cursor.execute("DELETE FROM materials")
+            cursor.execute("DELETE FROM accessories")
+            cursor.execute("DELETE FROM users WHERE role != 'admin'")  # Keep admin user
+            cursor.execute("DELETE FROM backups")
+            
+            conn.commit()
+            conn.close()
+            
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(
+                ft.Text("✓ Database reset. Please restart the app."),
+                bgcolor=self.success_color,
+                duration=5000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        dialog_content = ft.Column([
+            ft.Text("⚠️ Reset Database", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
+            ft.Divider(),
+            ft.Text("This will delete ALL data including:", size=14),
+            ft.Text("• All materials", size=13),
+            ft.Text("• All accessories", size=13),
+            ft.Text("• All users (except admin)", size=13),
+            ft.Text("This action CANNOT be undone!", size=14, color=self.danger_color),
+            ft.Container(height=10),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Yes, Reset", on_click=confirm_reset, style=ft.ButtonStyle(bgcolor=self.danger_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=10)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Reset Database"),
+            content=ft.Container(content=dialog_content, width=400, height=380, padding=15),
+        )
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
 
 if __name__ == "__main__":
     app = StoreApp()
