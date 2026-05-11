@@ -3698,7 +3698,7 @@ class StoreApp:
         page.update()
     
     def show_inventory(self, page: ft.Page):
-        """Show advanced inventory management screen with bulk operations"""
+        """Show advanced inventory management screen with mobile navigation"""
         page.controls.clear()
         
         # Check if mobile
@@ -3716,7 +3716,7 @@ class StoreApp:
             font_small = 14
             padding_size = 20
         
-        # Navigation
+        # Navigation - IMPORTANT: Add this for mobile
         if is_mobile:
             nav = self.create_bottom_nav(page)
             sidebar = None
@@ -3763,7 +3763,7 @@ class StoreApp:
         
         inventory_items.sort(key=lambda x: x['name'])
         
-        # Calculate advanced stats
+        # Calculate stats
         total_items = len(inventory_items)
         total_stock = sum(i.get('quantity', 0) for i in inventory_items)
         low_stock_items = [i for i in inventory_items if i.get('quantity', 0) < 10]
@@ -3776,7 +3776,7 @@ class StoreApp:
         # Create scrollable content
         scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
         
-        # Header with title and refresh button
+        # Header
         scroll_content.controls.append(
             ft.Row([
                 ft.Text("Inventory Management", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
@@ -3792,7 +3792,7 @@ class StoreApp:
         )
         scroll_content.controls.append(ft.Container(height=15))
         
-        # ========== STATS CARDS ROW 1 ==========
+        # Stats cards
         stats_row = ft.Row([
             ft.Container(
                 content=ft.Column([
@@ -3822,7 +3822,7 @@ class StoreApp:
         scroll_content.controls.append(stats_row)
         scroll_content.controls.append(ft.Container(height=10))
         
-        # ========== STATS CARDS ROW 2 ==========
+        # Second row stats
         stats_row2 = ft.Row([
             ft.Container(
                 content=ft.Row([
@@ -3858,51 +3858,31 @@ class StoreApp:
         scroll_content.controls.append(stats_row2)
         scroll_content.controls.append(ft.Container(height=15))
         
-        # ========== EXPORT BUTTONS SECTION ==========
-        export_container = ft.Container(
-            content=ft.Column([
-                ft.Text("📁 Export Options", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
-                ft.Row([
-                    ft.ElevatedButton(
-                        "📊 Export CSV",
-                        on_click=lambda e: self.export_inventory_csv(page),
-                        icon=ft.icons.TABLE_CHART,
-                        style=ft.ButtonStyle(bgcolor=self.accent_color),
-                        expand=True,
-                    ),
-                    ft.ElevatedButton(
-                        "📄 Export PDF",
-                        on_click=lambda e: self.export_inventory_pdf(page),
-                        icon=ft.icons.PICTURE_AS_PDF,
-                        style=ft.ButtonStyle(bgcolor=self.warning_color),
-                        expand=True,
-                    ),
-                ], spacing=10),
-                ft.Row([
-                    ft.ElevatedButton(
-                        "⚠️ Low Stock PDF",
-                        on_click=lambda e: self.export_low_stock_pdf(page),
-                        icon=ft.icons.WARNING,
-                        style=ft.ButtonStyle(bgcolor=self.danger_color),
-                        expand=True,
-                    ),
-                    ft.ElevatedButton(
-                        "⚡ Quick Adjust",
-                        on_click=lambda e: self.quick_adjust_stock(page, inventory_items),
-                        icon=ft.icons.BOLT,
-                        style=ft.ButtonStyle(bgcolor=self.warning_color),
-                        expand=True,
-                    ),
-                ], spacing=10),
-            ], spacing=10),
-            padding=12,
-            bgcolor=self.card_color,
-            border_radius=10,
-            margin=ft.margin.only(bottom=15),
-        )
-        scroll_content.controls.append(export_container)
+        # Export buttons
+        export_row = ft.Row([
+            ft.ElevatedButton("📊 Export CSV", on_click=lambda e: self.export_inventory_csv(page), expand=True,
+                            style=ft.ButtonStyle(bgcolor=self.accent_color)),
+            ft.ElevatedButton("📄 Export PDF", on_click=lambda e: self.export_inventory_pdf(page), expand=True,
+                            style=ft.ButtonStyle(bgcolor=self.warning_color)),
+            ft.ElevatedButton("⚠️ Low Stock PDF", on_click=lambda e: self.export_low_stock_pdf(page), expand=True,
+                            style=ft.ButtonStyle(bgcolor=self.danger_color)),
+        ], spacing=10)
+        scroll_content.controls.append(export_row)
+        scroll_content.controls.append(ft.Container(height=15))
         
-        # ========== FILTERS SECTION ==========
+        # Quick adjust button
+        quick_adj_btn = ft.ElevatedButton(
+            "⚡ Quick Stock Adjustment", 
+            on_click=lambda e: self.quick_adjust_stock(page, inventory_items),
+            style=ft.ButtonStyle(bgcolor=self.warning_color),
+        )
+        scroll_content.controls.append(quick_adj_btn)
+        scroll_content.controls.append(ft.Container(height=15))
+        
+        # Filters
+        scroll_content.controls.append(ft.Text("🔍 Filters", size=font_normal, weight=ft.FontWeight.BOLD))
+        scroll_content.controls.append(ft.Container(height=5))
+        
         type_filter = ft.Dropdown(
             label="Type",
             width=120,
@@ -3913,7 +3893,6 @@ class StoreApp:
             ],
             value="All",
             bgcolor=self.card_color,
-            text_size=font_small,
         )
         
         quality_filter = ft.Dropdown(
@@ -3928,7 +3907,6 @@ class StoreApp:
             ],
             value="All",
             bgcolor=self.card_color,
-            text_size=font_small,
         )
         
         stock_filter = ft.Dropdown(
@@ -3942,7 +3920,6 @@ class StoreApp:
             ],
             value="All",
             bgcolor=self.card_color,
-            text_size=font_small,
         )
         
         search_input = ft.TextField(
@@ -3952,28 +3929,16 @@ class StoreApp:
             prefix_icon=ft.icons.SEARCH,
         )
         
-        filter_card = ft.Card(
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Text("🔍 Filters", size=font_normal, weight=ft.FontWeight.BOLD),
-                    ft.Divider(),
-                    ft.Row([type_filter, quality_filter, stock_filter], spacing=10, wrap=True),
-                    ft.Row([search_input, ft.OutlinedButton("Reset", on_click=lambda e: reset_filters())], spacing=10),
-                ], spacing=10),
-                padding=12,
-            ),
-            elevation=1,
-            margin=ft.margin.only(bottom=12),
-        )
-        scroll_content.controls.append(filter_card)
+        scroll_content.controls.append(ft.Row([type_filter, quality_filter, stock_filter], spacing=10, wrap=True))
+        scroll_content.controls.append(ft.Row([search_input, ft.OutlinedButton("Reset", on_click=lambda e: self.show_inventory(page))], spacing=10))
+        scroll_content.controls.append(ft.Container(height=15))
         
-        # ========== INVENTORY LIST ==========
+        # Inventory list
         inventory_container = ft.Column(spacing=8)
         
         def update_inventory_display():
             inventory_container.controls.clear()
             
-            # Apply filters
             filtered = inventory_items.copy()
             
             if type_filter.value != "All":
@@ -3992,15 +3957,11 @@ class StoreApp:
             if search_query:
                 filtered = [i for i in filtered if search_query in i['name'].lower() or search_query in i['code'].lower()]
             
-            # Store filtered items for export
             self.current_filtered_items = filtered
             
-            # Show count
-            count_text = ft.Text(f"Showing {len(filtered)} of {len(inventory_items)} items", size=font_small - 1, color="#888888")
-            inventory_container.controls.append(count_text)
+            inventory_container.controls.append(ft.Text(f"Showing {len(filtered)} of {len(inventory_items)} items", size=font_small - 1, color="#888888"))
             
             for item in filtered[:100]:
-                # Determine stock status
                 if item['quantity'] < 5:
                     stock_color = self.danger_color
                     stock_status = "🔥 CRITICAL"
@@ -4011,72 +3972,47 @@ class StoreApp:
                     stock_color = self.success_color
                     stock_status = "✅ OK"
                 
-                # Stock percentage
                 stock_percentage = min(item['quantity'] / 50 * 100, 100)
                 
-                card_content = ft.Column([
-                    ft.Row([
-                        ft.Text(item['type_icon'], size=font_normal + 4),
-                        ft.Column([
-                            ft.Text(item['name'], size=font_normal, weight=ft.FontWeight.BOLD),
-                            ft.Text(item['code'], size=font_small - 2, color="#888888"),
-                        ], spacing=2, expand=True),
-                        ft.Column([
-                            ft.Text(f"{item['quantity']} units", size=font_normal, weight=ft.FontWeight.BOLD, color=stock_color),
-                            ft.Text(stock_status, size=font_small - 2, color=stock_color),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=2),
-                    ]),
-                    ft.ProgressBar(value=stock_percentage / 100, color=stock_color, bgcolor="#3C3C3C", height=6),
-                    ft.Row([
-                        ft.Text(f"📍 {item['location']}", size=font_small - 1, color="#888888", expand=True),
-                        ft.Container(
-                            content=ft.Text(item['quality'], size=font_small - 2, color="white"),
-                            bgcolor=self.get_quality_color(item['quality']),
-                            border_radius=8,
-                            padding=ft.padding.symmetric(horizontal=8, vertical=2),
-                        ),
-                    ]),
-                    ft.Row([
-                        ft.IconButton(
-                            icon=ft.icons.ADD_CIRCLE,
-                            icon_size=20,
-                            icon_color=self.success_color,
-                            on_click=lambda e, it=item: self.quick_stock_change(page, it, '+'),
-                            tooltip="Add Stock +1",
-                        ),
-                        ft.IconButton(
-                            icon=ft.icons.REMOVE_CIRCLE,
-                            icon_size=20,
-                            icon_color=self.danger_color,
-                            on_click=lambda e, it=item: self.quick_stock_change(page, it, '-'),
-                            tooltip="Remove Stock -1",
-                        ),
-                        ft.IconButton(
-                            icon=ft.icons.EDIT,
-                            icon_size=20,
-                            icon_color=self.accent_color,
-                            on_click=lambda e, it=item: self.edit_inventory_item(page, it),
-                            tooltip="Edit Item",
-                        ),
-                        ft.IconButton(
-                            icon=ft.icons.QR_CODE,
-                            icon_size=20,
-                            icon_color=self.warning_color,
-                            on_click=lambda e, it=item: self.show_barcode_dialog(page, it),
-                            tooltip="Show Barcode",
-                        ),
-                        ft.IconButton(
-                            icon=ft.icons.DELETE,
-                            icon_size=20,
-                            icon_color=self.danger_color,
-                            on_click=lambda e, it=item: self.delete_inventory_item(page, it),
-                            tooltip="Delete",
-                        ),
-                    ], spacing=0),
-                ], spacing=6)
-                
                 card = ft.Card(
-                    content=ft.Container(content=card_content, padding=12),
+                    content=ft.Container(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Text(item['type_icon'], size=font_normal + 4),
+                                ft.Column([
+                                    ft.Text(item['name'], size=font_normal, weight=ft.FontWeight.BOLD),
+                                    ft.Text(item['code'], size=font_small - 2, color="#888888"),
+                                ], spacing=2, expand=True),
+                                ft.Column([
+                                    ft.Text(f"{item['quantity']} units", size=font_normal, weight=ft.FontWeight.BOLD, color=stock_color),
+                                    ft.Text(stock_status, size=font_small - 2, color=stock_color),
+                                ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=2),
+                            ]),
+                            ft.ProgressBar(value=stock_percentage / 100, color=stock_color, bgcolor="#3C3C3C", height=6),
+                            ft.Row([
+                                ft.Text(f"📍 {item['location']}", size=font_small - 1, color="#888888", expand=True),
+                                ft.Container(
+                                    content=ft.Text(item['quality'], size=font_small - 2, color="white"),
+                                    bgcolor=self.get_quality_color(item['quality']),
+                                    border_radius=8,
+                                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                                ),
+                            ]),
+                            ft.Row([
+                                ft.IconButton(icon=ft.icons.ADD_CIRCLE, icon_size=20, icon_color=self.success_color,
+                                            on_click=lambda e, it=item: self.quick_stock_change(page, it, '+')),
+                                ft.IconButton(icon=ft.icons.REMOVE_CIRCLE, icon_size=20, icon_color=self.danger_color,
+                                            on_click=lambda e, it=item: self.quick_stock_change(page, it, '-')),
+                                ft.IconButton(icon=ft.icons.EDIT, icon_size=20, icon_color=self.accent_color,
+                                            on_click=lambda e, it=item: self.edit_inventory_item(page, it)),
+                                ft.IconButton(icon=ft.icons.QR_CODE, icon_size=20, icon_color=self.warning_color,
+                                            on_click=lambda e, it=item: self.show_barcode_dialog(page, it)),
+                                ft.IconButton(icon=ft.icons.DELETE, icon_size=20, icon_color=self.danger_color,
+                                            on_click=lambda e, it=item: self.delete_inventory_item(page, it)),
+                            ], spacing=0),
+                        ], spacing=6),
+                        padding=12,
+                    ),
                     elevation=1,
                     margin=ft.margin.only(bottom=4),
                 )
@@ -4084,20 +4020,11 @@ class StoreApp:
             
             page.update()
         
-        def reset_filters():
-            type_filter.value = "All"
-            quality_filter.value = "All"
-            stock_filter.value = "All"
-            search_input.value = ""
-            update_inventory_display()
-        
-        # Connect events
         type_filter.on_change = lambda e: update_inventory_display()
         quality_filter.on_change = lambda e: update_inventory_display()
         stock_filter.on_change = lambda e: update_inventory_display()
         search_input.on_change = lambda e: update_inventory_display()
         
-        # Initial load
         update_inventory_display()
         
         scroll_content.controls.append(inventory_container)
@@ -4105,7 +4032,7 @@ class StoreApp:
         
         main_container = ft.Container(content=scroll_content, expand=True, padding=padding_size)
         
-        # Layout
+        # Layout with proper mobile navigation
         if is_mobile and nav:
             page.add(ft.Column([main_container, nav], spacing=0, expand=True))
         else:
@@ -5235,6 +5162,7 @@ class StoreApp:
         scroll_content.controls.append(appearance_card)
         
         # ========== DATABASE SECTION ==========
+# ========== DATABASE SECTION ==========
         # Get database size
         db_size = "N/A"
         try:
@@ -5248,59 +5176,60 @@ class StoreApp:
                     db_size = f"{size_bytes / (1024 * 1024):.1f} MB"
         except:
             db_size = "N/A"
-        
-        database_card = ft.Card(
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Text("💾 Database", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
-                    ft.Divider(),
-                    ft.Row([
-                        ft.Icon(ft.icons.STORAGE, size=30, color=self.accent_color),
-                        ft.Column([
-                            ft.Text("Database Size", size=font_small, color="#888888"),
-                            ft.Text(db_size, size=font_normal, weight=ft.FontWeight.BOLD),
-                        ], spacing=2),
-                        ft.Container(expand=True),
-                        ft.IconButton(icon=ft.icons.REFRESH, icon_size=20, on_click=lambda e: self.show_settings(page)),
-                    ], spacing=12),
-                    ft.Row([
-                        ft.ElevatedButton(
-                            "📥 Backup", 
-                            on_click=lambda e: self.backup_database(page), 
-                            expand=True,
-                        ),
-                        ft.ElevatedButton(
-                            "🔄 Restore", 
-                            on_click=lambda e: self.restore_database(page), 
-                            expand=True,
-                        ),
-                    ], spacing=10),
-                    ft.Row([
-                        ft.OutlinedButton(
-                            "📁 View Backups", 
-                            on_click=lambda e: self.show_backup_list(page), 
-                            expand=True,
-                        ),
-                        ft.ElevatedButton(
-                            "⚠️ Reset", 
-                            on_click=lambda e: self.reset_database_confirm(page), 
-                            expand=True,
-                            style=ft.ButtonStyle(bgcolor=self.danger_color),
-                        ),
-                    ], spacing=10),
+
+        # Use simple Container instead of Card to avoid click issues
+        database_section = ft.Container(
+            content=ft.Column([
+                ft.Text("💾 Database", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                ft.Divider(),
+                ft.Row([
+                    ft.Icon(ft.icons.STORAGE, size=30, color=self.accent_color),
+                    ft.Column([
+                        ft.Text("Database Size", size=font_small, color="#888888"),
+                        ft.Text(db_size, size=font_normal, weight=ft.FontWeight.BOLD),
+                    ], spacing=2),
+                    ft.IconButton(icon=ft.icons.REFRESH, icon_size=20, on_click=lambda e: self.show_settings(page)),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Container(height=10),
+                ft.Row([
                     ft.ElevatedButton(
-                        "📊 Export All Data", 
-                        on_click=lambda e: self.export_all_data(page), 
+                        "📥 Backup", 
+                        on_click=lambda e: self.backup_database(page), 
                         expand=True,
-                        style=ft.ButtonStyle(bgcolor=self.success_color),
+                        style=ft.ButtonStyle(bgcolor=self.accent_color),
                     ),
-                ], spacing=12),
-                padding=15,
-            ),
-            elevation=2,
+                    ft.ElevatedButton(
+                        "🔄 Restore", 
+                        on_click=lambda e: self.restore_database(page), 
+                        expand=True,
+                        style=ft.ButtonStyle(bgcolor=self.warning_color),
+                    ),
+                ], spacing=10),
+                ft.Row([
+                    ft.OutlinedButton(
+                        "📁 View Backups", 
+                        on_click=lambda e: self.show_backup_list(page), 
+                        expand=True,
+                    ),
+                    ft.ElevatedButton(
+                        "⚠️ Reset", 
+                        on_click=lambda e: self.reset_database_confirm(page), 
+                        expand=True,
+                        style=ft.ButtonStyle(bgcolor=self.danger_color),
+                    ),
+                ], spacing=10),
+                ft.ElevatedButton(
+                    "📊 Export All Data", 
+                    on_click=lambda e: self.export_all_data(page), 
+                    style=ft.ButtonStyle(bgcolor=self.success_color),
+                ),
+            ], spacing=12),
+            padding=15,
+            bgcolor=self.card_color,
+            border_radius=10,
             margin=ft.margin.only(bottom=12),
         )
-        scroll_content.controls.append(database_card)
+        scroll_content.controls.append(database_section)
         
         # ========== ABOUT SECTION ==========
         about_card = ft.Card(
@@ -5708,45 +5637,97 @@ class StoreApp:
         page.update()
     # Add after the backup/restore buttons
     def show_backup_list(self, page: ft.Page):
-        """Show list of available backups"""
+        """Show list of available backups - COMPLETE WORKING VERSION"""
         import os
+        from datetime import datetime
         
         backup_dir = os.path.abspath("backups")
         backups = []
         
+        # Check if backups folder exists and get backups
         if os.path.exists(backup_dir):
             backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
-            backups.sort(reverse=True)
+            backups.sort(reverse=True)  # Newest first
         
         if not backups:
-            page.snack_bar = ft.SnackBar(ft.Text("No backups found"), bgcolor=self.danger_color)
+            page.snack_bar = ft.SnackBar(
+                ft.Text("❌ No backups found. Create a backup first."),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
             page.snack_bar.open = True
             page.update()
             return
         
-        def close_backup_dialog(e):
-            backup_dialog.open = False
+        def close_dialog(e):
+            page.dialog.open = False
             page.update()
         
         def delete_backup(e, backup_file):
+            """Delete selected backup file"""
             import os
             backup_path = os.path.join(backup_dir, backup_file)
             try:
                 os.remove(backup_path)
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Deleted: {backup_file}"), bgcolor=self.success_color)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Deleted: {backup_file}"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
                 page.snack_bar.open = True
-                backup_dialog.open = False
-                self.show_settings(page)
+                page.dialog.open = False
+                self.show_backup_list(page)  # Refresh the list
             except Exception as ex:
-                page.snack_bar = ft.SnackBar(ft.Text(f"❌ Delete failed: {str(ex)}"), bgcolor=self.danger_color)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"❌ Delete failed: {str(ex)}"),
+                    bgcolor=self.danger_color,
+                    duration=3000
+                )
                 page.snack_bar.open = True
             page.update()
         
-        # Create backup list
-        backup_list = ft.Column(spacing=8)
-        for backup in backups[:20]:
+        def restore_backup(e, backup_file):
+            """Restore selected backup"""
+            import shutil
+            
+            try:
+                backup_path = os.path.join(backup_dir, backup_file)
+                db_path = os.path.abspath("store_management.db")
+                
+                # Create a backup of current database before restore
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                pre_restore_backup = os.path.join(backup_dir, f"before_restore_{timestamp}.db")
+                shutil.copy2(db_path, pre_restore_backup)
+                
+                # Restore the selected backup
+                shutil.copy2(backup_path, db_path)
+                
+                page.dialog.open = False
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Database restored from {backup_file}"),
+                    bgcolor=self.success_color,
+                    duration=4000
+                )
+                page.snack_bar.open = True
+                self.show_settings(page)
+                
+            except Exception as ex:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"❌ Restore failed: {str(ex)}"),
+                    bgcolor=self.danger_color,
+                    duration=4000
+                )
+                page.snack_bar.open = True
+            page.update()
+        
+        # Create backup list UI
+        backup_list = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, height=400)
+        
+        for backup in backups[:30]:
             backup_path = os.path.join(backup_dir, backup)
             size_bytes = os.path.getsize(backup_path)
+            
+            # Format file size
             if size_bytes < 1024:
                 size_str = f"{size_bytes} B"
             elif size_bytes < 1024 * 1024:
@@ -5756,43 +5737,64 @@ class StoreApp:
             
             # Extract date from filename
             date_str = backup.replace('backup_', '').replace('.db', '')
+            # Format date to be more readable
+            if len(date_str) == 15:
+                formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {date_str[9:11]}:{date_str[11:13]}:{date_str[13:15]}"
+            else:
+                formatted_date = date_str
             
             backup_list.controls.append(
                 ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.icons.FILE_PRESENT, size=20, color=self.accent_color),
+                        ft.Icon(ft.icons.FILE_PRESENT, size=24, color=self.accent_color),
                         ft.Column([
-                            ft.Text(backup, size=12, weight=ft.FontWeight.BOLD),
-                            ft.Text(f"Size: {size_str} | Date: {date_str}", size=10, color="#888888"),
+                            ft.Text(backup, size=13, weight=ft.FontWeight.BOLD),
+                            ft.Text(f"Size: {size_str} | Created: {formatted_date}", size=10, color="#888888"),
                         ], spacing=2, expand=True),
-                        ft.IconButton(icon=ft.icons.DELETE, icon_size=18, icon_color=self.danger_color,
-                                    on_click=lambda e, b=backup: delete_backup(e, b)),
+                        ft.IconButton(
+                            icon=ft.icons.RESTORE,
+                            icon_size=20,
+                            icon_color=self.success_color,
+                            on_click=lambda e, b=backup: restore_backup(e, b),
+                            tooltip="Restore",
+                        ),
+                        ft.IconButton(
+                            icon=ft.icons.DELETE,
+                            icon_size=20,
+                            icon_color=self.danger_color,
+                            on_click=lambda e, b=backup: delete_backup(e, b),
+                            tooltip="Delete",
+                        ),
                     ]),
                     padding=10,
                     bgcolor="#2C2C2C",
-                    border_radius=6,
+                    border_radius=8,
                 )
             )
         
-        backup_dialog_content = ft.Column([
-            ft.Text("📁 Available Backups", size=16, weight=ft.FontWeight.BOLD),
+        # Add header with backup count
+        header_text = ft.Text(f"📁 Available Backups ({len(backups)})", size=16, weight=ft.FontWeight.BOLD)
+        
+        dialog_content = ft.Column([
+            header_text,
             ft.Divider(),
-            ft.Text(f"Total: {len(backups)} backups", size=11, color="#888888"),
-            ft.Container(content=backup_list, height=350, scroll=ft.ScrollMode.AUTO),
+            backup_list,
             ft.Container(height=10),
             ft.Row([
-                ft.TextButton("Close", on_click=close_backup_dialog, expand=True),
+                ft.TextButton("Close", on_click=close_dialog, expand=True),
             ]),
         ], spacing=10)
         
-        backup_dialog = ft.AlertDialog(
-            title=ft.Text("Backup Manager"),
-            content=ft.Container(content=backup_dialog_content, width=500, height=500, padding=15),
+        dialog = ft.AlertDialog(
+            title=ft.Text("Backup Manager", size=18, weight=ft.FontWeight.BOLD),
+            content=ft.Container(content=dialog_content, width=500, height=500, padding=15),
+            actions_alignment=ft.MainAxisAlignment.END,
         )
         
-        page.dialog = backup_dialog
-        backup_dialog.open = True
+        page.dialog = dialog
+        dialog.open = True
         page.update()
+
     def reset_database_confirm(self, page: ft.Page):
         """Confirm and reset database"""
         
