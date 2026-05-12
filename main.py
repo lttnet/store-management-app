@@ -5296,53 +5296,76 @@ class StoreApp:
                         ),
                     ]),
                     ft.Divider(),
+                    # Company Name - full width
                     ft.Row([
-                        ft.Icon(ft.icons.BUSINESS, size=24, color=self.accent_color),
+                        ft.Icon(ft.icons.BUSINESS, size=20, color=self.accent_color),
                         ft.Column([
                             ft.Text("Company Name", size=font_small - 2, color="#888888"),
                             self.company_name_display,
-                        ], spacing=2),
-                    ], spacing=12),
-                    ft.Row([
-                        ft.Icon(ft.icons.PHONE, size=20, color=self.accent_color),
-                        ft.Column([
-                            ft.Text("Phone", size=font_small - 2, color="#888888"),
-                            self.company_phone_display,
-                        ], spacing=2),
-                        ft.Container(width=20),
-                        ft.Icon(ft.icons.EMAIL, size=20, color=self.accent_color),
-                        ft.Column([
-                            ft.Text("Email", size=font_small - 2, color="#888888"),
-                            self.company_email_display,
-                        ], spacing=2),
-                    ], spacing=0),
+                        ], spacing=2, expand=True),
+                    ], spacing=10),
+                    # Phone and Email - side by side on tablet, stacked on mobile
+                    ft.ResponsiveRow([
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon(ft.icons.PHONE, size=18, color=self.accent_color),
+                                ft.Column([
+                                    ft.Text("Phone", size=font_small - 2, color="#888888"),
+                                    self.company_phone_display,
+                                ], spacing=2),
+                            ], spacing=10),
+                            col={"xs": 12, "md": 6},
+                        ),
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon(ft.icons.EMAIL, size=18, color=self.accent_color),
+                                ft.Column([
+                                    ft.Text("Email", size=font_small - 2, color="#888888"),
+                                    self.company_email_display,
+                                ], spacing=2),
+                            ], spacing=10),
+                            col={"xs": 12, "md": 6},
+                        ),
+                    ], spacing=10),
+                    # Website - full width
                     ft.Row([
                         ft.Icon(ft.icons.LANGUAGE, size=20, color=self.accent_color),
                         ft.Column([
                             ft.Text("Website", size=font_small - 2, color="#888888"),
                             self.company_website_display,
-                        ], spacing=2),
-                    ], spacing=12),
+                        ], spacing=2, expand=True),
+                    ], spacing=10),
+                    # Address - full width
                     ft.Row([
                         ft.Icon(ft.icons.LOCATION_ON, size=20, color=self.accent_color),
                         ft.Column([
                             ft.Text("Address", size=font_small - 2, color="#888888"),
                             self.company_address_display,
-                        ], spacing=2),
-                    ], spacing=12),
-                    ft.Row([
-                        ft.Icon(ft.icons.LOCATION_CITY, size=20, color=self.accent_color),
-                        ft.Column([
-                            ft.Text("City", size=font_small - 2, color="#888888"),
-                            self.company_city_display,
-                        ], spacing=2),
-                        ft.Container(width=20),
-                        ft.Icon(ft.icons.RECEIPT, size=20, color=self.accent_color),
-                        ft.Column([
-                            ft.Text("Tax ID / VAT", size=font_small - 2, color="#888888"),
-                            self.company_tax_display,
-                        ], spacing=2),
-                    ], spacing=0),
+                        ], spacing=2, expand=True),
+                    ], spacing=10),
+                    # City and Tax ID - stacked on mobile, side by side on tablet
+                    ft.ResponsiveRow([
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon(ft.icons.LOCATION_CITY, size=18, color=self.accent_color),
+                                ft.Column([
+                                    ft.Text("City", size=font_small - 2, color="#888888"),
+                                    self.company_city_display,
+                                ], spacing=2),
+                            ], spacing=10),
+                            col={"xs": 12, "md": 6},
+                        ),
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon(ft.icons.RECEIPT, size=18, color=self.accent_color),
+                                ft.Column([
+                                    ft.Text("Tax ID / VAT", size=font_small - 2, color="#888888"),
+                                    self.company_tax_display,
+                                ], spacing=2),
+                            ], spacing=10),
+                            col={"xs": 12, "md": 6},
+                        ),
+                    ], spacing=10),
                 ], spacing=12),
                 padding=15,
             ),
@@ -5425,15 +5448,58 @@ class StoreApp:
                 content=ft.Column([
                     ft.Text("ℹ️ About", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
                     ft.Divider(),
-                    ft.Text("Store Management System", size=font_normal + 2, weight=ft.FontWeight.BOLD),
-                    ft.Text("Version 1.0.0", size=font_small - 1, color="#888888"),
-                    ft.Text("© 2024 Your Company", size=font_small - 2, color="#888888"),
+                    
+                    # App Logo/Icon
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Text("🏪", size=60),
+                            ft.Text("Store Management System", size=font_normal + 4, weight=ft.FontWeight.BOLD),
+                            ft.Text("Version 2.0.0", size=font_small - 1, color="#888888"),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                        margin=ft.margin.only(bottom=10),
+                    ),
+                    
+                    # Company Info (from company config)
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Text("Developed By", size=font_small, weight=ft.FontWeight.BOLD, color="#888888"),
+                            ft.Text("Your Company Name", size=font_small, color=self.accent_color),
+                            ft.Container(height=5),
+                            ft.Text("Contact", size=font_small, weight=ft.FontWeight.BOLD, color="#888888"),
+                            ft.Text("support@storemanagement.com", size=font_small, color=self.accent_color),
+                            ft.Text("+1 (555) 123-4567", size=font_small, color=self.accent_color),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                        margin=ft.margin.only(bottom=10),
+                    ),
+                    
+                    ft.Divider(),
+                    
+                    # Features List
+                    ft.Text("✨ Features", size=font_small, weight=ft.FontWeight.BOLD),
+                    ft.Column([
+                        ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Inventory Management", size=font_small - 1)], spacing=8),
+                        ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Barcode Scanning", size=font_small - 1)], spacing=8),
+                        ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("User Management", size=font_small - 1)], spacing=8),
+                        ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Export Reports (CSV/PDF)", size=font_small - 1)], spacing=8),
+                        ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Database Backup & Restore", size=font_small - 1)], spacing=8),
+                    ], spacing=6),
+                    
+                    ft.Container(height=10),
+                    ft.Divider(),
+                    
+                    # Footer
+                    ft.Text("© 2024 Store Management System", size=font_small - 2, color="#888888", text_align=ft.TextAlign.CENTER),
+                    ft.Text("All Rights Reserved", size=font_small - 2, color="#888888", text_align=ft.TextAlign.CENTER),
+                    ft.Text("Made with ❤️ using Flet", size=font_small - 2, color="#888888", text_align=ft.TextAlign.CENTER),
+                    
+                    # Action Buttons
                     ft.Container(height=10),
                     ft.Row([
-                        ft.IconButton(icon=ft.icons.PRIVACY_TIP, icon_size=20, on_click=lambda e: None, tooltip="Privacy Policy"),
-                        ft.IconButton(icon=ft.icons.HELP, icon_size=20, on_click=lambda e: None, tooltip="Help"),
-                        ft.IconButton(icon=ft.icons.FEEDBACK, icon_size=20, on_click=lambda e: None, tooltip="Send Feedback"),
-                        ft.IconButton(icon=ft.icons.SHARE, icon_size=20, on_click=lambda e: None, tooltip="Share App"),
+                        ft.IconButton(icon=ft.icons.PRIVACY_TIP, icon_size=20, on_click=lambda e: self.show_privacy_policy(page), tooltip="Privacy Policy"),
+                        ft.IconButton(icon=ft.icons.HELP, icon_size=20, on_click=lambda e: self.show_help(page), tooltip="Help"),
+                        ft.IconButton(icon=ft.icons.FEEDBACK, icon_size=20, on_click=lambda e: self.send_feedback(page), tooltip="Send Feedback"),
+                        ft.IconButton(icon=ft.icons.SHARE, icon_size=20, on_click=lambda e: self.share_app(page), tooltip="Share App"),
+                        ft.IconButton(icon=ft.icons.STAR, icon_size=20, on_click=lambda e: self.rate_app(page), tooltip="Rate App"),
                     ], spacing=20, alignment=ft.MainAxisAlignment.CENTER),
                 ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=15,
@@ -5454,26 +5520,223 @@ class StoreApp:
         
         self.current_view = "settings"
         page.update()
+    def show_privacy_policy(self, page: ft.Page):
+        """Show privacy policy dialog"""
+        
+        policy_content = ft.Column([
+            ft.Text("Privacy Policy", size=18, weight=ft.FontWeight.BOLD, color=self.accent_color),
+            ft.Divider(),
+            ft.Text("Last Updated: January 1, 2024", size=10, color="#888888"),
+            ft.Container(height=10),
+            ft.Text("Information Collection", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("We collect business inventory data that you enter into the app. This data is stored locally on your device.", size=12, color="#CCCCCC"),
+            ft.Container(height=8),
+            ft.Text("Data Security", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("All data is stored locally on your device. We do not transmit or share your data with any third parties.", size=12, color="#CCCCCC"),
+            ft.Container(height=8),
+            ft.Text("Contact Us", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("If you have questions about this policy, contact us at: privacy@storemanagement.com", size=12, color="#CCCCCC"),
+        ], spacing=8, scroll=ft.ScrollMode.AUTO, height=400)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Privacy Policy"),
+            content=ft.Container(content=policy_content, width=400, height=500, padding=15),
+            actions=[ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False))],
+        )
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
 
-    def edit_company_info_dialog(self, page: ft.Page):
-        """Open dialog to edit company information - then refresh settings"""
+    def show_help(self, page: ft.Page):
+        """Show help dialog"""
         
-        # Get current company info
-        current = self.get_company_info()
+        help_content = ft.Column([
+            ft.Text("Help & Support", size=18, weight=ft.FontWeight.BOLD, color=self.accent_color),
+            ft.Divider(),
+            ft.Text("📖 Quick Guide", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("• Dashboard: View inventory overview and stats", size=12, color="#CCCCCC"),
+            ft.Text("• Materials: Add, edit, delete materials", size=12, color="#CCCCCC"),
+            ft.Text("• Accessories: Manage parts and accessories", size=12, color="#CCCCCC"),
+            ft.Text("• Barcode Scanner: Scan or enter barcodes", size=12, color="#CCCCCC"),
+            ft.Text("• Inventory: Filter and manage stock", size=12, color="#CCCCCC"),
+            ft.Text("• Users: Manage user accounts and roles", size=12, color="#CCCCCC"),
+            ft.Text("• Settings: Configure app preferences", size=12, color="#CCCCCC"),
+            ft.Container(height=10),
+            ft.Text("💡 Tips", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("• Use filters to find items quickly", size=12, color="#CCCCCC"),
+            ft.Text("• Export data to CSV for backup", size=12, color="#CCCCCC"),
+            ft.Text("• Regular backups are recommended", size=12, color="#CCCCCC"),
+        ], spacing=8, scroll=ft.ScrollMode.AUTO, height=400)
         
-        name_field = ft.TextField(label="Company Name", value=current.get('company_name', ''), width=350, bgcolor=self.card_color)
-        phone_field = ft.TextField(label="Phone", value=current.get('phone', ''), width=350, bgcolor=self.card_color)
-        email_field = ft.TextField(label="Email", value=current.get('email', ''), width=350, bgcolor=self.card_color)
-        website_field = ft.TextField(label="Website", value=current.get('website', ''), width=350, bgcolor=self.card_color)
-        address_field = ft.TextField(label="Address", value=current.get('address', ''), width=350, bgcolor=self.card_color, multiline=True, min_lines=2)
-        city_field = ft.TextField(label="City", value=current.get('city', ''), width=350, bgcolor=self.card_color)
-        tax_id_field = ft.TextField(label="Tax ID / VAT", value=current.get('tax_id', ''), width=350, bgcolor=self.card_color)
+        dialog = ft.AlertDialog(
+            title=ft.Text("Help"),
+            content=ft.Container(content=help_content, width=400, height=500, padding=15),
+            actions=[ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False))],
+        )
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def send_feedback(self, page: ft.Page):
+        """Send feedback dialog"""
+        
+        feedback_input = ft.TextField(
+            label="Your Feedback",
+            hint_text="Please share your thoughts, suggestions, or report issues...",
+            multiline=True,
+            min_lines=5,
+            max_lines=8,
+            width=350,
+            bgcolor=self.card_color,
+        )
+        
+        email_input = ft.TextField(
+            label="Your Email (optional)",
+            hint_text="We may contact you about your feedback",
+            width=350,
+            bgcolor=self.card_color,
+        )
         
         status_text = ft.Text("", size=12, color="#888888")
+        
+        def submit_feedback(e):
+            feedback = feedback_input.value.strip()
+            if not feedback:
+                status_text.value = "❌ Please enter your feedback"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            # Here you can add code to send feedback to your email/server
+            # For now, just show success message
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(
+                ft.Text("✓ Thank you for your feedback!"),
+                bgcolor=self.success_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
         
         def close_dialog(e):
             page.dialog.open = False
             page.update()
+        
+        dialog_content = ft.Column([
+            ft.Text("Send Feedback", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            feedback_input,
+            email_input,
+            status_text,
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Submit", on_click=submit_feedback, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=12)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Feedback"),
+            content=ft.Container(content=dialog_content, width=450, height=450, padding=15),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def share_app(self, page: ft.Page):
+        """Share app information"""
+        
+        share_text = "Check out Store Management App!\n\nEasily manage your inventory, track stock, scan barcodes, and more.\n\nDownload now!"
+        
+        # Copy to clipboard
+        page.set_clipboard(share_text)
+        
+        page.snack_bar = ft.SnackBar(
+            ft.Text("✓ App info copied to clipboard! You can now share it."),
+            bgcolor=self.success_color,
+            duration=3000
+        )
+        page.snack_bar.open = True
+        page.update()
+
+    def rate_app(self, page: ft.Page):
+        """Rate app dialog"""
+        
+        rating_options = ft.Row([
+            ft.IconButton(icon=ft.icons.STAR_BORDER, icon_size=40, on_click=lambda e: submit_rating(1)),
+            ft.IconButton(icon=ft.icons.STAR_BORDER, icon_size=40, on_click=lambda e: submit_rating(2)),
+            ft.IconButton(icon=ft.icons.STAR_BORDER, icon_size=40, on_click=lambda e: submit_rating(3)),
+            ft.IconButton(icon=ft.icons.STAR_BORDER, icon_size=40, on_click=lambda e: submit_rating(4)),
+            ft.IconButton(icon=ft.icons.STAR_BORDER, icon_size=40, on_click=lambda e: submit_rating(5)),
+        ], spacing=5, alignment=ft.MainAxisAlignment.CENTER)
+        
+        rating_text = ft.Text("Tap a star to rate", size=14, color="#888888")
+        
+        def submit_rating(rating):
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Thank you for rating {rating} stars! ⭐"),
+                bgcolor=self.success_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
+        dialog_content = ft.Column([
+            ft.Text("Rate This App", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            ft.Text("How would you rate your experience?", size=14),
+            ft.Container(height=10),
+            rating_options,
+            rating_text,
+            ft.Container(height=10),
+            ft.TextButton("Maybe Later", on_click=lambda e: setattr(page.dialog, 'open', False)),
+        ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Rate Us"),
+            content=ft.Container(content=dialog_content, width=350, height=300, padding=15),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+        
+    def edit_company_info_dialog(self, page: ft.Page):
+        """Open dialog to edit company information with working cancel button"""
+        
+        # Get current company info
+        current = self.get_company_info()
+        
+        # Use full width fields on mobile
+        is_mobile = page.width < 800 if page.width else False
+        field_width = page.width - 80 if is_mobile else 350
+        
+        name_field = ft.TextField(label="Company Name", value=current.get('company_name', ''), width=field_width, bgcolor=self.card_color)
+        phone_field = ft.TextField(label="Phone", value=current.get('phone', ''), width=field_width, bgcolor=self.card_color)
+        email_field = ft.TextField(label="Email", value=current.get('email', ''), width=field_width, bgcolor=self.card_color)
+        website_field = ft.TextField(label="Website", value=current.get('website', ''), width=field_width, bgcolor=self.card_color)
+        address_field = ft.TextField(label="Address", value=current.get('address', ''), width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2)
+        
+        # City and Tax ID - stacked on mobile, side by side on desktop
+        if is_mobile:
+            city_field = ft.TextField(label="City", value=current.get('city', ''), width=field_width, bgcolor=self.card_color)
+            tax_id_field = ft.TextField(label="Tax ID / VAT", value=current.get('tax_id', ''), width=field_width, bgcolor=self.card_color)
+            city_tax_row = ft.Column([city_field, tax_id_field], spacing=10)
+        else:
+            city_field = ft.TextField(label="City", value=current.get('city', ''), width=170, bgcolor=self.card_color)
+            tax_id_field = ft.TextField(label="Tax ID / VAT", value=current.get('tax_id', ''), width=170, bgcolor=self.card_color)
+            city_tax_row = ft.Row([city_field, tax_id_field], spacing=10)
+        
+        status_text = ft.Text("", size=12, color="#888888")
+        
+        # Store reference to dialog
+        dialog_ref = None
+        
+        def close_dialog(e):
+            if dialog_ref:
+                dialog_ref.open = False
+                page.update()
         
         def save_info(e):
             import json
@@ -5500,16 +5763,24 @@ class StoreApp:
                 with open(config_file, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=4, ensure_ascii=False)
                 
-                page.dialog.open = False
+                # Update the display widgets directly
+                if hasattr(self, 'company_name_display'):
+                    self.company_name_display.value = data['company_name']
+                    self.company_phone_display.value = data['phone']
+                    self.company_email_display.value = data['email']
+                    self.company_website_display.value = data['website']
+                    self.company_address_display.value = data['address']
+                    self.company_city_display.value = data['city']
+                    self.company_tax_display.value = data['tax_id']
+                    page.update()
+                
+                close_dialog(None)
                 page.snack_bar = ft.SnackBar(
                     ft.Text("✓ Company information saved!"),
                     bgcolor=self.success_color,
                     duration=3000
                 )
                 page.snack_bar.open = True
-                
-                # Refresh the entire settings screen to show updated info
-                self.show_settings(page)
                 
             except Exception as ex:
                 status_text.value = f"❌ Error saving: {str(ex)}"
@@ -5526,7 +5797,7 @@ class StoreApp:
                     email_field,
                     website_field,
                     address_field,
-                    ft.Row([city_field, tax_id_field], spacing=10),
+                    city_tax_row,
                     status_text,
                 ], spacing=12, scroll=ft.ScrollMode.AUTO),
                 height=400,
@@ -5543,6 +5814,7 @@ class StoreApp:
             content=ft.Container(content=dialog_content, width=450, height=550, padding=15),
         )
         
+        dialog_ref = dialog
         page.dialog = dialog
         dialog.open = True
         page.update()
