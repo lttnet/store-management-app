@@ -110,8 +110,136 @@ class StoreApp:
         page.update()
     
     def get_company_info(self):
-        return {'company_name': 'Store Management', 'phone': '', 'email': '', 'website': '', 'address': '', 'city': '', 'tax_id': ''}
+        """Load company information from config file with error handling"""
+        import json
+        import os
+        
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        config_file = os.path.join(base_dir, "company_config.json")
+        
+        default_info = {
+            'company_name': 'Store Management System',
+            'phone': '',
+            'email': '',
+            'website': '',
+            'address': '',
+            'city': '',
+            'tax_id': ''
+        }
+        
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:  # Check if file is not empty
+                        data = json.loads(content)
+                        default_info.update(data)
+                        print(f"Loaded company info: {default_info}")  # Debug print
+            except (json.JSONDecodeError, ValueError, IOError) as e:
+                print(f"Error reading company config: {e}")
+                # If file is corrupted, create a new valid one
+                try:
+                    with open(config_file, 'w', encoding='utf-8') as f:
+                        json.dump(default_info, f, indent=4, ensure_ascii=False)
+                except:
+                    pass
+        else:
+            # Create default config file if it doesn't exist
+            try:
+                with open(config_file, 'w', encoding='utf-8') as f:
+                    json.dump(default_info, f, indent=4, ensure_ascii=False)
+                print(f"Created default company config at {config_file}")
+            except:
+                pass
+        
+        return default_info
     
+    def save_company_info(self, page: ft.Page):
+        """Save company information to config file"""
+        import json
+        import os
+        
+        # Find the company card and get values
+        # Since we can't easily get the values from the card, we'll use a dialog approach
+        
+        def save_info(e):
+            data = {
+                'company_name': name_field.value,
+                'phone': phone_field.value,
+                'email': email_field.value,
+                'website': website_field.value,
+                'address': address_field.value,
+                'city': city_field.value,
+                'tax_id': tax_id_field.value,
+            }
+            
+            try:
+                config_file = os.path.join(BASE_DIR, "company_config.json")
+                with open(config_file, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=4, ensure_ascii=False)
+                
+                page.dialog.open = False
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("✓ Company information saved!"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                self.show_settings(page)
+            except Exception as ex:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"❌ Error saving: {str(ex)}"),
+                    bgcolor=self.danger_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+            page.update()
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        # Get current company info
+        current = self.get_company_info()
+        
+        name_field = ft.TextField(label="Company Name", value=current.get('company_name', ''), width=350)
+        phone_field = ft.TextField(label="Phone", value=current.get('phone', ''), width=350)
+        email_field = ft.TextField(label="Email", value=current.get('email', ''), width=350)
+        website_field = ft.TextField(label="Website", value=current.get('website', ''), width=350)
+        address_field = ft.TextField(label="Address", value=current.get('address', ''), width=350, multiline=True)
+        city_field = ft.TextField(label="City", value=current.get('city', ''), width=350)
+        tax_id_field = ft.TextField(label="Tax ID / VAT", value=current.get('tax_id', ''), width=350)
+        
+        dialog_content = ft.Column([
+            ft.Text("Edit Company Information", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            ft.Container(
+                content=ft.Column([
+                    name_field,
+                    phone_field,
+                    email_field,
+                    website_field,
+                    address_field,
+                    city_field,
+                    tax_id_field,
+                ], spacing=12, scroll=ft.ScrollMode.AUTO),
+                height=400,
+            ),
+            ft.Divider(),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Save", on_click=save_info, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=12)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Company Information"),
+            content=ft.Container(content=dialog_content, width=450, height=550, padding=15),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
     # ============ ZOOM METHODS ============
     def zoom_in(self, page: ft.Page):
         self.zoom_level = min(self.zoom_level + 0.1, 2.0)
@@ -335,24 +463,29 @@ class StoreApp:
             (ft.icons.INVENTORY, "Materials", "materials"),
             (ft.icons.BUILD, "Parts", "accessories"),
             (ft.icons.QR_CODE_SCANNER, "Scan", "barcode_scanner"),
+            (ft.icons.LIST_ALT, "Inventory", "inventory"),
             (ft.icons.PEOPLE, "Users", "users"),
             (ft.icons.SETTINGS, "Settings", "settings"),
         ]
         
         def navigate(e):
-            view = nav_items[e.control.selected_index][2]
-            if view == "dashboard":
-                self.show_dashboard(page)
-            elif view == "materials":
-                self.show_materials_screen(page)
-            elif view == "accessories":
-                self.show_accessories(page)
-            elif view == "barcode_scanner":
-                self.show_barcode_scanner(page)
-            elif view == "users":
-                self.show_users(page)
-            elif view == "settings":
-                self.show_settings(page)
+            index = e.control.selected_index
+            if index < len(nav_items):
+                view = nav_items[index][2]
+                if view == "dashboard":
+                    self.show_dashboard(page)
+                elif view == "materials":
+                    self.show_materials_screen(page)
+                elif view == "accessories":
+                    self.show_accessories(page)
+                elif view == "barcode_scanner":
+                    self.show_barcode_scanner(page)
+                elif view == "inventory":
+                    self.show_inventory(page)
+                elif view == "users":
+                    self.show_users(page)
+                elif view == "settings":
+                    self.show_settings(page)
         
         return ft.NavigationBar(
             destinations=[
@@ -3698,7 +3831,7 @@ class StoreApp:
         page.update()
     
     def show_inventory(self, page: ft.Page):
-        """Show advanced inventory management screen with mobile navigation"""
+        """Show advanced inventory management screen with bottom navigation for mobile"""
         page.controls.clear()
         
         # Check if mobile
@@ -3715,14 +3848,6 @@ class StoreApp:
             font_normal = 18
             font_small = 14
             padding_size = 20
-        
-        # Navigation - IMPORTANT: Add this for mobile
-        if is_mobile:
-            nav = self.create_bottom_nav(page)
-            sidebar = None
-        else:
-            sidebar = self.create_sidebar(page)
-            nav = None
         
         # Get data
         materials = self.dict_list(MaterialManager.get_all())
@@ -3741,7 +3866,6 @@ class StoreApp:
                 'quantity': m.get('quantity', 0),
                 'quality': m.get('quality', 'Used'),
                 'location': m.get('location_ids', 'N/A'),
-                'size': m.get('size', 'N/A'),
                 'last_updated': m.get('updated_at', m.get('created_at', '')),
             })
         
@@ -3770,7 +3894,7 @@ class StoreApp:
         critical_stock = [i for i in inventory_items if i.get('quantity', 0) < 5]
         total_value = sum(i.get('quantity', 0) * (i.get('price', 0) if i.get('price') else 10) for i in inventory_items)
         
-        # Store current filtered items for export
+        # Store current filtered items
         self.current_filtered_items = inventory_items.copy()
         
         # Create scrollable content
@@ -3786,71 +3910,64 @@ class StoreApp:
                     icon_size=24,
                     icon_color=self.accent_color,
                     on_click=lambda e: self.show_inventory(page),
-                    tooltip="Refresh",
                 ),
             ])
         )
         scroll_content.controls.append(ft.Container(height=15))
         
-        # Stats cards
+        # Stats cards row 1
         stats_row = ft.Row([
             ft.Container(
                 content=ft.Column([
-                    ft.Text("📦 Total Items", size=font_small, color="#CCCCCC"),
-                    ft.Text(str(total_items), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ft.Text(f"Materials: {len(materials)} | Parts: {len(accessories)}", size=font_small - 2, color="#888888"),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                    ft.Text("📦 Items", size=font_small, color="#CCCCCC"),
+                    ft.Text(str(total_items), size=font_title + 4, weight=ft.FontWeight.BOLD),
+                    ft.Text(f"{len(materials)} Mat, {len(accessories)} Acc", size=font_small - 2, color="#888888"),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=12, bgcolor=self.accent_color, border_radius=10, expand=True,
             ),
             ft.Container(
                 content=ft.Column([
-                    ft.Text("📊 Total Stock", size=font_small, color="#CCCCCC"),
-                    ft.Text(str(total_stock), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ft.Text("Units in inventory", size=font_small - 2, color="#888888"),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                    ft.Text("📊 Stock", size=font_small, color="#CCCCCC"),
+                    ft.Text(str(total_stock), size=font_title + 4, weight=ft.FontWeight.BOLD),
+                    ft.Text("Units", size=font_small - 2, color="#888888"),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=12, bgcolor=self.success_color, border_radius=10, expand=True,
             ),
             ft.Container(
                 content=ft.Column([
-                    ft.Text("💰 Total Value", size=font_small, color="#CCCCCC"),
-                    ft.Text(f"${total_value:,.0f}", size=font_title + 2, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ft.Text("Inventory worth", size=font_small - 2, color="#888888"),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                    ft.Text("💰 Value", size=font_small, color="#CCCCCC"),
+                    ft.Text(f"${total_value:,.0f}", size=font_title + 2, weight=ft.FontWeight.BOLD),
+                    ft.Text("Total Worth", size=font_small - 2, color="#888888"),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=12, bgcolor="#9C27B0", border_radius=10, expand=True,
             ),
         ], spacing=12)
         scroll_content.controls.append(stats_row)
         scroll_content.controls.append(ft.Container(height=10))
         
-        # Second row stats
+        # Stats row 2
         stats_row2 = ft.Row([
             ft.Container(
                 content=ft.Row([
                     ft.Icon(ft.icons.WARNING, size=20, color=self.warning_color),
-                    ft.Column([
-                        ft.Text("Low Stock", size=font_small, color="#CCCCCC"),
-                        ft.Text(str(len(low_stock_items)), size=font_title + 2, weight=ft.FontWeight.BOLD, color=self.warning_color),
-                    ], spacing=2),
+                    ft.Text(str(len(low_stock_items)), size=font_title + 2, weight=ft.FontWeight.BOLD, color=self.warning_color),
+                    ft.Text("Low", size=font_small - 2, color="#888888"),
                 ], spacing=8),
                 padding=10, bgcolor=self.card_color, border_radius=10, expand=True,
             ),
             ft.Container(
                 content=ft.Row([
                     ft.Icon(ft.icons.ERROR, size=20, color=self.danger_color),
-                    ft.Column([
-                        ft.Text("Critical Stock", size=font_small, color="#CCCCCC"),
-                        ft.Text(str(len(critical_stock)), size=font_title + 2, weight=ft.FontWeight.BOLD, color=self.danger_color),
-                    ], spacing=2),
+                    ft.Text(str(len(critical_stock)), size=font_title + 2, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                    ft.Text("Critical", size=font_small - 2, color="#888888"),
                 ], spacing=8),
                 padding=10, bgcolor=self.card_color, border_radius=10, expand=True,
             ),
             ft.Container(
                 content=ft.Row([
                     ft.Icon(ft.icons.BAR_CHART, size=20, color=self.accent_color),
-                    ft.Column([
-                        ft.Text("Categories", size=font_small, color="#CCCCCC"),
-                        ft.Text(f"{len(set(i['type_name'] for i in inventory_items))}", size=font_title + 2, weight=ft.FontWeight.BOLD, color=self.accent_color),
-                    ], spacing=2),
+                    ft.Text(f"{len(set(i['type_name'] for i in inventory_items))}", size=font_title + 2, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                    ft.Text("Categories", size=font_small - 2, color="#888888"),
                 ], spacing=8),
                 padding=10, bgcolor=self.card_color, border_radius=10, expand=True,
             ),
@@ -3860,23 +3977,24 @@ class StoreApp:
         
         # Export buttons
         export_row = ft.Row([
-            ft.ElevatedButton("📊 Export CSV", on_click=lambda e: self.export_inventory_csv(page), expand=True,
+            ft.ElevatedButton("📊 CSV", on_click=lambda e: self.export_inventory_csv(page), expand=True,
                             style=ft.ButtonStyle(bgcolor=self.accent_color)),
-            ft.ElevatedButton("📄 Export PDF", on_click=lambda e: self.export_inventory_pdf(page), expand=True,
+            ft.ElevatedButton("📄 PDF", on_click=lambda e: self.export_inventory_pdf(page), expand=True,
                             style=ft.ButtonStyle(bgcolor=self.warning_color)),
-            ft.ElevatedButton("⚠️ Low Stock PDF", on_click=lambda e: self.export_low_stock_pdf(page), expand=True,
+            ft.ElevatedButton("⚠️ Low PDF", on_click=lambda e: self.export_low_stock_pdf(page), expand=True,
                             style=ft.ButtonStyle(bgcolor=self.danger_color)),
         ], spacing=10)
         scroll_content.controls.append(export_row)
         scroll_content.controls.append(ft.Container(height=15))
         
         # Quick adjust button
-        quick_adj_btn = ft.ElevatedButton(
-            "⚡ Quick Stock Adjustment", 
-            on_click=lambda e: self.quick_adjust_stock(page, inventory_items),
-            style=ft.ButtonStyle(bgcolor=self.warning_color),
+        scroll_content.controls.append(
+            ft.ElevatedButton(
+                "⚡ Quick Stock Adjustment", 
+                on_click=lambda e: self.quick_adjust_stock(page, inventory_items),
+                style=ft.ButtonStyle(bgcolor=self.warning_color),
+            )
         )
-        scroll_content.controls.append(quick_adj_btn)
         scroll_content.controls.append(ft.Container(height=15))
         
         # Filters
@@ -3884,95 +4002,82 @@ class StoreApp:
         scroll_content.controls.append(ft.Container(height=5))
         
         type_filter = ft.Dropdown(
-            label="Type",
-            width=120,
+            label="Type", width=120,
             options=[
-                ft.dropdown.Option("All", "All Items"),
+                ft.dropdown.Option("All", "All"),
                 ft.dropdown.Option("material", "📦 Materials"),
                 ft.dropdown.Option("accessory", "🔧 Accessories"),
             ],
-            value="All",
-            bgcolor=self.card_color,
+            value="All", bgcolor=self.card_color,
         )
-        
         quality_filter = ft.Dropdown(
-            label="Quality",
-            width=120,
+            label="Quality", width=120,
             options=[
-                ft.dropdown.Option("All", "All Qualities"),
+                ft.dropdown.Option("All", "All"),
                 ft.dropdown.Option("New", "🟢 New"),
                 ft.dropdown.Option("Used", "🟠 Used"),
                 ft.dropdown.Option("Damaged", "🔴 Damaged"),
                 ft.dropdown.Option("Repaired", "🔵 Repaired"),
             ],
-            value="All",
-            bgcolor=self.card_color,
+            value="All", bgcolor=self.card_color,
         )
-        
         stock_filter = ft.Dropdown(
-            label="Stock Status",
-            width=140,
+            label="Stock Status", width=130,
             options=[
                 ft.dropdown.Option("All", "All Stock"),
-                ft.dropdown.Option("Low", "⚠️ Low Stock (<10)"),
+                ft.dropdown.Option("Low", "⚠️ Low (<10)"),
                 ft.dropdown.Option("Critical", "🔥 Critical (<5)"),
                 ft.dropdown.Option("Normal", "✅ Normal (≥10)"),
             ],
-            value="All",
-            bgcolor=self.card_color,
+            value="All", bgcolor=self.card_color,
         )
-        
         search_input = ft.TextField(
-            hint_text="Search by name or code...",
-            expand=True,
-            bgcolor=self.card_color,
+            hint_text="Search by name or code...", 
+            expand=True, 
+            bgcolor=self.card_color, 
             prefix_icon=ft.icons.SEARCH,
         )
         
         scroll_content.controls.append(ft.Row([type_filter, quality_filter, stock_filter], spacing=10, wrap=True))
+        scroll_content.controls.append(ft.Container(height=8))
         scroll_content.controls.append(ft.Row([search_input, ft.OutlinedButton("Reset", on_click=lambda e: self.show_inventory(page))], spacing=10))
         scroll_content.controls.append(ft.Container(height=15))
         
-        # Inventory list
+        # Inventory list container
         inventory_container = ft.Column(spacing=8)
         
-        def update_inventory_display():
+        def update_display():
             inventory_container.controls.clear()
-            
             filtered = inventory_items.copy()
-            
             if type_filter.value != "All":
                 filtered = [i for i in filtered if i['type'] == type_filter.value]
             if quality_filter.value != "All":
                 filtered = [i for i in filtered if i['quality'] == quality_filter.value]
-            if stock_filter.value != "All":
-                if stock_filter.value == "Low":
-                    filtered = [i for i in filtered if i['quantity'] < 10]
-                elif stock_filter.value == "Critical":
-                    filtered = [i for i in filtered if i['quantity'] < 5]
-                elif stock_filter.value == "Normal":
-                    filtered = [i for i in filtered if i['quantity'] >= 10]
-            
-            search_query = search_input.value.lower() if search_input.value else ""
-            if search_query:
-                filtered = [i for i in filtered if search_query in i['name'].lower() or search_query in i['code'].lower()]
+            if stock_filter.value == "Low":
+                filtered = [i for i in filtered if i['quantity'] < 10]
+            elif stock_filter.value == "Critical":
+                filtered = [i for i in filtered if i['quantity'] < 5]
+            elif stock_filter.value == "Normal":
+                filtered = [i for i in filtered if i['quantity'] >= 10]
+            if search_input.value:
+                query = search_input.value.lower()
+                filtered = [i for i in filtered if query in i['name'].lower() or query in i['code'].lower()]
             
             self.current_filtered_items = filtered
-            
             inventory_container.controls.append(ft.Text(f"Showing {len(filtered)} of {len(inventory_items)} items", size=font_small - 1, color="#888888"))
             
             for item in filtered[:100]:
                 if item['quantity'] < 5:
                     stock_color = self.danger_color
-                    stock_status = "🔥 CRITICAL"
+                    status_text = "🔥 CRITICAL"
                 elif item['quantity'] < 10:
                     stock_color = self.warning_color
-                    stock_status = "⚠️ LOW"
+                    status_text = "⚠️ LOW"
                 else:
                     stock_color = self.success_color
-                    stock_status = "✅ OK"
+                    status_text = "✅ OK"
                 
-                stock_percentage = min(item['quantity'] / 50 * 100, 100)
+                pct = min(item['quantity'] / 50 * 100, 100)
                 
                 card = ft.Card(
                     content=ft.Container(
@@ -3984,13 +4089,13 @@ class StoreApp:
                                     ft.Text(item['code'], size=font_small - 2, color="#888888"),
                                 ], spacing=2, expand=True),
                                 ft.Column([
-                                    ft.Text(f"{item['quantity']} units", size=font_normal, weight=ft.FontWeight.BOLD, color=stock_color),
-                                    ft.Text(stock_status, size=font_small - 2, color=stock_color),
-                                ], horizontal_alignment=ft.CrossAxisAlignment.END, spacing=2),
+                                    ft.Text(f"{item['quantity']}", size=font_normal, weight=ft.FontWeight.BOLD, color=stock_color),
+                                    ft.Text(status_text, size=font_small - 3, color=stock_color),
+                                ], horizontal_alignment=ft.CrossAxisAlignment.END),
                             ]),
-                            ft.ProgressBar(value=stock_percentage / 100, color=stock_color, bgcolor="#3C3C3C", height=6),
+                            ft.ProgressBar(value=pct / 100, color=stock_color, bgcolor="#3C3C3C", height=6),
                             ft.Row([
-                                ft.Text(f"📍 {item['location']}", size=font_small - 1, color="#888888", expand=True),
+                                ft.Text(f"📍 {item['location']}", size=font_small - 1, expand=True),
                                 ft.Container(
                                     content=ft.Text(item['quality'], size=font_small - 2, color="white"),
                                     bgcolor=self.get_quality_color(item['quality']),
@@ -3999,16 +4104,11 @@ class StoreApp:
                                 ),
                             ]),
                             ft.Row([
-                                ft.IconButton(icon=ft.icons.ADD_CIRCLE, icon_size=20, icon_color=self.success_color,
-                                            on_click=lambda e, it=item: self.quick_stock_change(page, it, '+')),
-                                ft.IconButton(icon=ft.icons.REMOVE_CIRCLE, icon_size=20, icon_color=self.danger_color,
-                                            on_click=lambda e, it=item: self.quick_stock_change(page, it, '-')),
-                                ft.IconButton(icon=ft.icons.EDIT, icon_size=20, icon_color=self.accent_color,
-                                            on_click=lambda e, it=item: self.edit_inventory_item(page, it)),
-                                ft.IconButton(icon=ft.icons.QR_CODE, icon_size=20, icon_color=self.warning_color,
-                                            on_click=lambda e, it=item: self.show_barcode_dialog(page, it)),
-                                ft.IconButton(icon=ft.icons.DELETE, icon_size=20, icon_color=self.danger_color,
-                                            on_click=lambda e, it=item: self.delete_inventory_item(page, it)),
+                                ft.IconButton(icon=ft.icons.ADD_CIRCLE, icon_size=20, on_click=lambda e, it=item: self.quick_stock_change(page, it, '+')),
+                                ft.IconButton(icon=ft.icons.REMOVE_CIRCLE, icon_size=20, on_click=lambda e, it=item: self.quick_stock_change(page, it, '-')),
+                                ft.IconButton(icon=ft.icons.EDIT, icon_size=20, on_click=lambda e, it=item: self.edit_inventory_item(page, it)),
+                                ft.IconButton(icon=ft.icons.QR_CODE, icon_size=20, on_click=lambda e, it=item: self.show_barcode_dialog(page, it)),
+                                ft.IconButton(icon=ft.icons.DELETE, icon_size=20, on_click=lambda e, it=item: self.delete_inventory_item(page, it)),
                             ], spacing=0),
                         ], spacing=6),
                         padding=12,
@@ -4017,25 +4117,33 @@ class StoreApp:
                     margin=ft.margin.only(bottom=4),
                 )
                 inventory_container.controls.append(card)
-            
             page.update()
         
-        type_filter.on_change = lambda e: update_inventory_display()
-        quality_filter.on_change = lambda e: update_inventory_display()
-        stock_filter.on_change = lambda e: update_inventory_display()
-        search_input.on_change = lambda e: update_inventory_display()
-        
-        update_inventory_display()
+        type_filter.on_change = lambda e: update_display()
+        quality_filter.on_change = lambda e: update_display()
+        stock_filter.on_change = lambda e: update_display()
+        search_input.on_change = lambda e: update_display()
+        update_display()
         
         scroll_content.controls.append(inventory_container)
         scroll_content.controls.append(ft.Container(height=80))
         
         main_container = ft.Container(content=scroll_content, expand=True, padding=padding_size)
         
-        # Layout with proper mobile navigation
-        if is_mobile and nav:
-            page.add(ft.Column([main_container, nav], spacing=0, expand=True))
+        # ========== IMPORTANT: ADD BOTTOM NAVIGATION FOR MOBILE ==========
+        if is_mobile:
+            # Create bottom navigation bar
+            bottom_nav = self.create_bottom_nav(page)
+            # Stack: main content above bottom navigation
+            page.add(
+                ft.Column([
+                    main_container,
+                    bottom_nav,
+                ], spacing=0, expand=True)
+            )
         else:
+            # Desktop: sidebar + content
+            sidebar = self.create_sidebar(page)
             page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
         
         self.current_view = "inventory"
@@ -5160,9 +5268,89 @@ class StoreApp:
             margin=ft.margin.only(bottom=12),
         )
         scroll_content.controls.append(appearance_card)
-        
+                
+        # ========== COMPANY INFO SECTION ==========
+        # Get company info
+        company_info = self.get_company_info()
+
+        # Store display widgets as instance variables for later update
+        self.company_name_display = ft.Text(company_info.get('company_name', 'Not set'), size=font_normal, weight=ft.FontWeight.BOLD)
+        self.company_phone_display = ft.Text(company_info.get('phone', 'Not set'), size=font_small)
+        self.company_email_display = ft.Text(company_info.get('email', 'Not set'), size=font_small)
+        self.company_website_display = ft.Text(company_info.get('website', 'Not set'), size=font_small)
+        self.company_address_display = ft.Text(company_info.get('address', 'Not set'), size=font_small)
+        self.company_city_display = ft.Text(company_info.get('city', 'Not set'), size=font_small)
+        self.company_tax_display = ft.Text(company_info.get('tax_id', 'Not set'), size=font_small)
+
+        company_card = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Text("🏢 Company Information", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                        ft.Container(expand=True),
+                        ft.ElevatedButton(
+                            "✏️ Edit",
+                            on_click=lambda e: self.edit_company_info_dialog(page),
+                            icon=ft.icons.EDIT,
+                            style=ft.ButtonStyle(bgcolor=self.accent_color),
+                        ),
+                    ]),
+                    ft.Divider(),
+                    ft.Row([
+                        ft.Icon(ft.icons.BUSINESS, size=24, color=self.accent_color),
+                        ft.Column([
+                            ft.Text("Company Name", size=font_small - 2, color="#888888"),
+                            self.company_name_display,
+                        ], spacing=2),
+                    ], spacing=12),
+                    ft.Row([
+                        ft.Icon(ft.icons.PHONE, size=20, color=self.accent_color),
+                        ft.Column([
+                            ft.Text("Phone", size=font_small - 2, color="#888888"),
+                            self.company_phone_display,
+                        ], spacing=2),
+                        ft.Container(width=20),
+                        ft.Icon(ft.icons.EMAIL, size=20, color=self.accent_color),
+                        ft.Column([
+                            ft.Text("Email", size=font_small - 2, color="#888888"),
+                            self.company_email_display,
+                        ], spacing=2),
+                    ], spacing=0),
+                    ft.Row([
+                        ft.Icon(ft.icons.LANGUAGE, size=20, color=self.accent_color),
+                        ft.Column([
+                            ft.Text("Website", size=font_small - 2, color="#888888"),
+                            self.company_website_display,
+                        ], spacing=2),
+                    ], spacing=12),
+                    ft.Row([
+                        ft.Icon(ft.icons.LOCATION_ON, size=20, color=self.accent_color),
+                        ft.Column([
+                            ft.Text("Address", size=font_small - 2, color="#888888"),
+                            self.company_address_display,
+                        ], spacing=2),
+                    ], spacing=12),
+                    ft.Row([
+                        ft.Icon(ft.icons.LOCATION_CITY, size=20, color=self.accent_color),
+                        ft.Column([
+                            ft.Text("City", size=font_small - 2, color="#888888"),
+                            self.company_city_display,
+                        ], spacing=2),
+                        ft.Container(width=20),
+                        ft.Icon(ft.icons.RECEIPT, size=20, color=self.accent_color),
+                        ft.Column([
+                            ft.Text("Tax ID / VAT", size=font_small - 2, color="#888888"),
+                            self.company_tax_display,
+                        ], spacing=2),
+                    ], spacing=0),
+                ], spacing=12),
+                padding=15,
+            ),
+            elevation=2,
+            margin=ft.margin.only(bottom=12),
+        )
+        scroll_content.controls.append(company_card)
         # ========== DATABASE SECTION ==========
-# ========== DATABASE SECTION ==========
         # Get database size
         db_size = "N/A"
         try:
@@ -5267,6 +5455,98 @@ class StoreApp:
         self.current_view = "settings"
         page.update()
 
+    def edit_company_info_dialog(self, page: ft.Page):
+        """Open dialog to edit company information - then refresh settings"""
+        
+        # Get current company info
+        current = self.get_company_info()
+        
+        name_field = ft.TextField(label="Company Name", value=current.get('company_name', ''), width=350, bgcolor=self.card_color)
+        phone_field = ft.TextField(label="Phone", value=current.get('phone', ''), width=350, bgcolor=self.card_color)
+        email_field = ft.TextField(label="Email", value=current.get('email', ''), width=350, bgcolor=self.card_color)
+        website_field = ft.TextField(label="Website", value=current.get('website', ''), width=350, bgcolor=self.card_color)
+        address_field = ft.TextField(label="Address", value=current.get('address', ''), width=350, bgcolor=self.card_color, multiline=True, min_lines=2)
+        city_field = ft.TextField(label="City", value=current.get('city', ''), width=350, bgcolor=self.card_color)
+        tax_id_field = ft.TextField(label="Tax ID / VAT", value=current.get('tax_id', ''), width=350, bgcolor=self.card_color)
+        
+        status_text = ft.Text("", size=12, color="#888888")
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        def save_info(e):
+            import json
+            import os
+            
+            if not name_field.value:
+                status_text.value = "❌ Company name is required!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            data = {
+                'company_name': name_field.value,
+                'phone': phone_field.value or '',
+                'email': email_field.value or '',
+                'website': website_field.value or '',
+                'address': address_field.value or '',
+                'city': city_field.value or '',
+                'tax_id': tax_id_field.value or '',
+            }
+            
+            try:
+                config_file = os.path.join(BASE_DIR, "company_config.json")
+                with open(config_file, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=4, ensure_ascii=False)
+                
+                page.dialog.open = False
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("✓ Company information saved!"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                
+                # Refresh the entire settings screen to show updated info
+                self.show_settings(page)
+                
+            except Exception as ex:
+                status_text.value = f"❌ Error saving: {str(ex)}"
+                status_text.color = self.danger_color
+                page.update()
+        
+        dialog_content = ft.Column([
+            ft.Text("Edit Company Information", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            ft.Container(
+                content=ft.Column([
+                    name_field,
+                    phone_field,
+                    email_field,
+                    website_field,
+                    address_field,
+                    ft.Row([city_field, tax_id_field], spacing=10),
+                    status_text,
+                ], spacing=12, scroll=ft.ScrollMode.AUTO),
+                height=400,
+            ),
+            ft.Divider(),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Save Changes", on_click=save_info, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=12)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Edit Company Information"),
+            content=ft.Container(content=dialog_content, width=450, height=550, padding=15),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+    
     def edit_profile_dialog(self, page: ft.Page):
         """Open dialog to edit user profile"""
         
