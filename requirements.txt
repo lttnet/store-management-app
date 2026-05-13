@@ -1,4 +1,3 @@
 flet==0.21.2
-pillow
 requests
-reportlab
+
