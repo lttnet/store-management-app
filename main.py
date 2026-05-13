@@ -455,6 +455,7 @@ class StoreApp:
             width=260,
             bgcolor=self.sidebar_color,
         )
+    
     def create_bottom_nav(self, page: ft.Page):
         """Create bottom navigation bar for mobile devices"""
         
@@ -466,6 +467,7 @@ class StoreApp:
             (ft.icons.LIST_ALT, "Inventory", "inventory"),
             (ft.icons.PEOPLE, "Users", "users"),
             (ft.icons.SETTINGS, "Settings", "settings"),
+            (ft.icons.LOGOUT, "Logout", "logout"),  # Added Logout
         ]
         
         def navigate(e):
@@ -486,6 +488,8 @@ class StoreApp:
                     self.show_users(page)
                 elif view == "settings":
                     self.show_settings(page)
+                elif view == "logout":
+                    self.confirm_logout(page)
         
         return ft.NavigationBar(
             destinations=[
@@ -498,255 +502,683 @@ class StoreApp:
         )
                 # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Show dashboard - MOBILE RESPONSIVE (Card-based on mobile, tables on desktop)"""
+        """New simplified dashboard - ALL SECTIONS VISIBLE"""
         page.controls.clear()
         
-        materials = self.dict_list(MaterialManager.get_all())
-        accessories = self.dict_list(AccessoryManager.get_all())
-        stats = MaterialManager.get_stats()
-        accessory_stats = AccessoryManager.get_stats()
-        
-        low_stock_materials = [m for m in materials if m.get('quantity', 0) < 10]
-        low_stock_accessories = [a for a in accessories if a.get('quantity', 0) < 10]
-        
         # Check if mobile
-        is_mobile_device = page.width < 800 if page.width else False
+        is_mobile = page.width < 800 if page.width else False
         
-        # Font sizes - larger on mobile for readability
-        if is_mobile_device:
-            font_title = 24
-            font_normal = 16
-            font_small = 14
-            padding_size = 12
+        # Set padding based on device
+        if is_mobile:
+            padding_size = 10
+            font_title = 22
+            font_normal = 14
+            font_small = 12
         else:
+            padding_size = 20
             font_title = 28
             font_normal = 18
             font_small = 14
-            padding_size = 20
         
-        # Create sidebar or bottom navigation
-        if is_mobile_device:
-            # Use bottom navigation for mobile
+        # Navigation
+        if is_mobile:
             nav = self.create_bottom_nav(page)
             sidebar = None
         else:
-            # Use sidebar for desktop
             sidebar = self.create_sidebar(page)
             nav = None
         
-        # Create scrollable content
-        scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+        # Get data
+        materials = self.dict_list(MaterialManager.get_all())
+        accessories = self.dict_list(AccessoryManager.get_all())
+        users = self.dict_list(UserManager.get_all())
         
-        # Header
-        scroll_content.controls.append(
+        # Calculate statistics
+        total_materials = len(materials)
+        total_accessories = len(accessories)
+        total_items = total_materials + total_accessories
+        total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
+        total_users = len(users)
+        
+        # Low stock items
+        low_stock_materials = [m for m in materials if m.get('quantity', 0) < 10]
+        low_stock_accessories = [a for a in accessories if a.get('quantity', 0) < 10]
+        total_low_stock = len(low_stock_materials) + len(low_stock_accessories)
+        
+        # Quality counts
+        quality_counts = {"New": 0, "Used": 0, "Damaged": 0, "Repaired": 0}
+        for m in materials:
+            q = m.get('quality', 'Used')
+            quality_counts[q] = quality_counts.get(q, 0) + 1
+        for a in accessories:
+            q = a.get('quality', 'Used')
+            quality_counts[q] = quality_counts.get(q, 0) + 1
+        
+        # Create main content using ListView
+        main_list = ft.ListView(expand=True, spacing=10, padding=padding_size)
+        
+        # ========== SECTION 1: HEADER ==========
+        main_list.controls.append(
+            ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color)
+        )
+        main_list.controls.append(ft.Text(f"Welcome back!", size=14, color="#888888"))
+        main_list.controls.append(ft.Container(height=5))
+        
+        # ========== SECTION 2: STATS CARDS ==========
+        main_list.controls.append(
+            ft.Row([
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("📦", size=24),
+                        ft.Text("Items", size=11, color="#CCCCCC"),
+                        ft.Text(str(total_items), size=28, weight=ft.FontWeight.BOLD),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
+                    padding=12, bgcolor=self.accent_color, border_radius=10, expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("📊", size=24),
+                        ft.Text("Stock", size=11, color="#CCCCCC"),
+                        ft.Text(str(total_stock), size=28, weight=ft.FontWeight.BOLD),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
+                    padding=12, bgcolor=self.success_color, border_radius=10, expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("⚠️", size=24),
+                        ft.Text("Low", size=11, color="#CCCCCC"),
+                        ft.Text(str(total_low_stock), size=28, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
+                    padding=12, bgcolor=self.warning_color, border_radius=10, expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("👥", size=24),
+                        ft.Text("Users", size=11, color="#CCCCCC"),
+                        ft.Text(str(total_users), size=28, weight=ft.FontWeight.BOLD),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
+                    padding=12, bgcolor="#9C27B0", border_radius=10, expand=True,
+                ),
+            ], spacing=8)
+        )
+        main_list.controls.append(ft.Container(height=5))
+        
+        # ========== SECTION 3: QUALITY DISTRIBUTION ==========
+        main_list.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
+        main_list.controls.append(ft.Divider())
+        main_list.controls.append(ft.Container(height=5))
+        
+        quality_row = ft.Row([
             ft.Container(
-                content=ft.Row([
-                    ft.Text("Dashboard", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ft.Container(expand=True),
-                    ft.Text(datetime.now().strftime("%b %d"), size=font_small - 2, color="#888888"),
-                ]),
-                padding=ft.padding.only(bottom=15),
+                content=ft.Column([
+                    ft.Text("🟢", size=24),
+                    ft.Text("New", size=11),
+                    ft.Text(str(quality_counts.get("New", 0)), size=20, weight=ft.FontWeight.BOLD),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
+            ),
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("🟠", size=24),
+                    ft.Text("Used", size=11),
+                    ft.Text(str(quality_counts.get("Used", 0)), size=20, weight=ft.FontWeight.BOLD),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
+            ),
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("🔴", size=24),
+                    ft.Text("Damaged", size=11),
+                    ft.Text(str(quality_counts.get("Damaged", 0)), size=20, weight=ft.FontWeight.BOLD),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
+            ),
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("🔵", size=24),
+                    ft.Text("Repaired", size=11),
+                    ft.Text(str(quality_counts.get("Repaired", 0)), size=20, weight=ft.FontWeight.BOLD),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
+            ),
+        ], spacing=8)
+        main_list.controls.append(quality_row)
+        main_list.controls.append(ft.Container(height=5))
+        
+        # ========== SECTION 4: STOCK HEALTH ==========
+        healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100) if total_stock > 0 else 100)
+        healthy_percentage = max(0, min(healthy_percentage, 100))
+        
+        main_list.controls.append(ft.Text("💪 Stock Health", size=16, weight=ft.FontWeight.BOLD))
+        main_list.controls.append(ft.Divider())
+        main_list.controls.append(ft.Container(height=5))
+        
+        main_list.controls.append(
+            ft.Container(
+                content=ft.Column([
+                    ft.Text(f"{healthy_percentage}%", size=30, weight=ft.FontWeight.BOLD, color=self.success_color),
+                    ft.ProgressBar(value=healthy_percentage/100, color=self.success_color, bgcolor="#3C3C3C", height=8),
+                    ft.Text(f"Low Stock: {total_low_stock} items need attention", size=11, color=self.warning_color),
+                ], spacing=5, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=12, bgcolor=self.card_color, border_radius=10,
             )
         )
+        main_list.controls.append(ft.Container(height=5))
         
-        # Stats Cards - 3 in a row, wrap on mobile
-        stats_row = ft.Row(
-            [
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("📦", size=font_normal),
-                        ft.Text(str(stats.get('total_items', 0)), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
-                        ft.Text("Materials", size=font_small - 2, color="#CCCCCC"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
-                    padding=12, bgcolor=self.success_color, border_radius=12, expand=True,
-                ),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("🔧", size=font_normal),
-                        ft.Text(str(accessory_stats.get('total_items', 0)), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.text_color),
-                        ft.Text("Parts", size=font_small - 2, color="#CCCCCC"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
-                    padding=12, bgcolor=self.accent_color, border_radius=12, expand=True,
-                ),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("⚠️", size=font_normal),
-                        ft.Text(str(len(low_stock_materials) + len(low_stock_accessories)), size=font_title + 4, weight=ft.FontWeight.BOLD, color=self.danger_color),
-                        ft.Text("Low Stock", size=font_small - 2, color="#CCCCCC"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
-                    padding=12, bgcolor=self.warning_color, border_radius=12, expand=True,
-                ),
-            ],
-            spacing=12,
-        )
-        scroll_content.controls.append(stats_row)
-        scroll_content.controls.append(ft.Container(height=15))
-        
-        # ========== RECENT MATERIALS (Card-based for mobile) ==========
-        scroll_content.controls.append(
-            ft.Row([
-                ft.Text("📦 Recent Materials", size=font_normal, weight=ft.FontWeight.BOLD),
-                ft.Container(expand=True),
-                ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)),
-            ])
-        )
-        scroll_content.controls.append(ft.Divider())
+        # ========== SECTION 5: RECENT MATERIALS ==========
+        main_list.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
+        main_list.controls.append(ft.Divider())
+        main_list.controls.append(ft.Container(height=5))
         
         if materials:
-            for m in materials[:5]:
-                scroll_content.controls.append(
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Row([
-                                    ft.Text(m.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD, expand=True),
-                                    ft.Text(f"Qty: {m.get('quantity', 0)}", size=font_normal, weight=ft.FontWeight.BOLD,
-                                        color=self.danger_color if m.get('quantity', 0) < 10 else self.text_color),
-                                ]),
-                                ft.Row([
-                                    ft.Text(m.get('location_ids', 'N/A'), size=font_small - 1, color="#888888", expand=True),
-                                    ft.Container(
-                                        content=ft.Text(m.get('quality', 'Used'), size=font_small - 2, color="white"),
-                                        bgcolor=self.get_quality_color(m.get('quality', 'Used')),
-                                        border_radius=10,
-                                        padding=ft.padding.symmetric(horizontal=10, vertical=3),
-                                    ),
-                                ]),
-                            ]),
-                            padding=12,
-                        ),
-                        elevation=2,
-                        margin=ft.margin.only(bottom=8),
+            for m in materials[:4]:
+                main_list.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Text("📦", size=20),
+                            ft.Text(m.get('name', 'N/A'), size=13, weight=ft.FontWeight.BOLD, expand=True),
+                            ft.Text(f"{m.get('quantity', 0)}", size=13),
+                            ft.Container(
+                                content=ft.Text(m.get('quality', 'Used'), size=9, color="white"),
+                                bgcolor=self.get_quality_color(m.get('quality', 'Used')),
+                                border_radius=8,
+                                padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                            ),
+                        ]),
+                        padding=8, bgcolor="#2C2C2C", border_radius=8, margin=ft.margin.only(bottom=4),
                     )
                 )
+            main_list.controls.append(ft.TextButton("View All Materials", on_click=lambda e: self.show_materials_screen(page)))
         else:
-            scroll_content.controls.append(ft.Text("No materials found", size=font_small, color="#888888"))
+            main_list.controls.append(ft.Text("No materials found", size=12, color="#888888"))
         
-        scroll_content.controls.append(ft.Container(height=15))
+        main_list.controls.append(ft.Container(height=5))
         
-        # ========== RECENT ACCESSORIES (Card-based for mobile) ==========
-        scroll_content.controls.append(
-            ft.Row([
-                ft.Text("🔧 Recent Accessories", size=font_normal, weight=ft.FontWeight.BOLD),
-                ft.Container(expand=True),
-                ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)),
-            ])
-        )
-        scroll_content.controls.append(ft.Divider())
+        # ========== SECTION 6: RECENT ACCESSORIES ==========
+        main_list.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
+        main_list.controls.append(ft.Divider())
+        main_list.controls.append(ft.Container(height=5))
         
         if accessories:
-            for a in accessories[:5]:
+            for a in accessories[:4]:
                 location = a.get('location') or a.get('location_ids') or 'N/A'
-                scroll_content.controls.append(
-                    ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Row([
-                                    ft.Text(a.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD, expand=True),
-                                    ft.Text(f"Qty: {a.get('quantity', 0)}", size=font_normal, weight=ft.FontWeight.BOLD,
-                                        color=self.danger_color if a.get('quantity', 0) < 10 else self.text_color),
-                                ]),
-                                ft.Row([
-                                    ft.Text(location, size=font_small - 1, color="#888888", expand=True),
-                                    ft.Container(
-                                        content=ft.Text(a.get('quality', 'Used'), size=font_small - 2, color="white"),
-                                        bgcolor=self.get_quality_color(a.get('quality', 'Used')),
-                                        border_radius=10,
-                                        padding=ft.padding.symmetric(horizontal=10, vertical=3),
-                                    ),
-                                ]),
-                            ]),
-                            padding=12,
-                        ),
-                        elevation=2,
-                        margin=ft.margin.only(bottom=8),
+                main_list.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Text("🔧", size=20),
+                            ft.Text(a.get('name', 'N/A'), size=13, weight=ft.FontWeight.BOLD, expand=True),
+                            ft.Text(f"{a.get('quantity', 0)}", size=13),
+                            ft.Container(
+                                content=ft.Text(a.get('quality', 'Used'), size=9, color="white"),
+                                bgcolor=self.get_quality_color(a.get('quality', 'Used')),
+                                border_radius=8,
+                                padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                            ),
+                        ]),
+                        padding=8, bgcolor="#2C2C2C", border_radius=8, margin=ft.margin.only(bottom=4),
                     )
                 )
+            main_list.controls.append(ft.TextButton("View All Accessories", on_click=lambda e: self.show_accessories(page)))
         else:
-            scroll_content.controls.append(ft.Text("No accessories found", size=font_small, color="#888888"))
+            main_list.controls.append(ft.Text("No accessories found", size=12, color="#888888"))
         
-        scroll_content.controls.append(ft.Container(height=15))
+        main_list.controls.append(ft.Container(height=5))
         
-        # ========== LOW STOCK ALERTS ==========
-        if low_stock_materials or low_stock_accessories:
-            scroll_content.controls.append(
-                ft.Row([
-                    ft.Icon(ft.icons.WARNING_AMBER, color="#FF9800", size=20),
-                    ft.Text("Low Stock Alerts", size=font_normal, weight=ft.FontWeight.BOLD, color="#FF9800"),
-                    ft.Container(expand=True),
-                    ft.Text(f"{len(low_stock_materials) + len(low_stock_accessories)}", size=font_small, color="#888888"),
-                ])
-            )
-            scroll_content.controls.append(ft.Divider())
-            
-            for m in low_stock_materials[:4]:
-                scroll_content.controls.append(
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Container(width=4, height=35, bgcolor=self.danger_color, border_radius=2),
-                            ft.Container(width=10),
-                            ft.Text("📦", size=font_small),
-                            ft.Container(width=8),
-                            ft.Text(m.get('name', 'Unknown')[:20], size=font_small, expand=True),
-                            ft.Text(f"Stock: {m.get('quantity', 0)}", size=font_small, color=self.danger_color, weight=ft.FontWeight.BOLD),
-                        ]),
-                        padding=10,
-                        bgcolor="#3C2121",
-                        border_radius=8,
-                        margin=ft.margin.only(bottom=6),
-                    )
-                )
-            
-            for a in low_stock_accessories[:4]:
-                scroll_content.controls.append(
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Container(width=4, height=35, bgcolor=self.danger_color, border_radius=2),
-                            ft.Container(width=10),
-                            ft.Text("🔧", size=font_small),
-                            ft.Container(width=8),
-                            ft.Text(a.get('name', 'Unknown')[:20], size=font_small, expand=True),
-                            ft.Text(f"Stock: {a.get('quantity', 0)}", size=font_small, color=self.danger_color, weight=ft.FontWeight.BOLD),
-                        ]),
-                        padding=10,
-                        bgcolor="#3C2121",
-                        border_radius=8,
-                        margin=ft.margin.only(bottom=6),
-                    )
-                )
-            
-            scroll_content.controls.append(ft.Container(height=10))
+        # ========== SECTION 7: QUICK ACTIONS ==========
+        main_list.controls.append(ft.Text("⚡ Quick Actions", size=16, weight=ft.FontWeight.BOLD))
+        main_list.controls.append(ft.Divider())
+        main_list.controls.append(ft.Container(height=5))
         
-        # ========== QUICK ACTIONS ==========
-        scroll_content.controls.append(
+        main_list.controls.append(
             ft.Row([
-                ft.ElevatedButton("📥 Import", on_click=lambda e: None, expand=True, style=ft.ButtonStyle(bgcolor=self.accent_color)),
-                ft.ElevatedButton("📤 Export", on_click=lambda e: None, expand=True, style=ft.ButtonStyle(bgcolor=self.warning_color)),
-                ft.ElevatedButton("⚙️ Settings", on_click=lambda e: self.show_settings(page), expand=True),
-            ], spacing=10)
+                ft.ElevatedButton("➕ Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
+                ft.ElevatedButton("🔧 Add Accessory", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
+            ], spacing=8)
+        )
+        main_list.controls.append(
+            ft.Row([
+                ft.ElevatedButton("📷 Scan Barcode", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
+                ft.ElevatedButton("📊 Export CSV", on_click=lambda e: self.export_all_data_simple(page), expand=True),
+            ], spacing=8)
+        )
+        main_list.controls.append(ft.Container(height=5))
+        
+        # ========== SECTION 8: IMPORT/EXPORT ==========
+        main_list.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
+        main_list.controls.append(ft.Divider())
+        main_list.controls.append(ft.Container(height=5))
+        
+        main_list.controls.append(
+            ft.Row([
+                ft.ElevatedButton("📥 Import CSV", on_click=lambda e: self.show_import_dialog(page), expand=True),
+                ft.ElevatedButton("📄 Export PDF", on_click=lambda e: self.export_inventory_pdf_dashboard(page), expand=True),
+            ], spacing=8)
+        )
+        main_list.controls.append(
+            ft.Row([
+                ft.ElevatedButton("⚠️ Low Stock PDF", on_click=lambda e: self.export_low_stock_pdf_dashboard(page), expand=True, style=ft.ButtonStyle(bgcolor=self.danger_color)),
+            ], spacing=8)
         )
         
-        scroll_content.controls.append(ft.Container(height=20))
+        main_list.controls.append(ft.Container(height=20))
         
-        # Main container
-        main_container = ft.Container(content=scroll_content, expand=True, padding=padding_size)
+        main_container = main_list
         
-        # Layout based on device
-        if is_mobile_device and nav:
-            # Mobile: Bottom navigation + content
-            page.add(
-                ft.Column([
-                    main_container,
-                    nav,
-                ], spacing=0, expand=True)
-            )
+        # Layout
+        if is_mobile and nav:
+            page.add(ft.Column([main_container, nav], spacing=0, expand=True))
         else:
-            # Desktop: Sidebar + content
             page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
         
         self.current_view = "dashboard"
         page.update()
     
+    def export_inventory_pdf_dashboard(self, page: ft.Page):
+        """Export inventory to PDF from dashboard"""
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import landscape, A4
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER
+            from datetime import datetime
+            import os
+            
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            # Combine inventory items
+            inventory_items = []
+            for m in materials:
+                inventory_items.append({
+                    'type': 'Material',
+                    'name': m.get('name', 'N/A'),
+                    'code': m.get('item_code', 'N/A'),
+                    'quantity': m.get('quantity', 0),
+                    'quality': m.get('quality', 'Used'),
+                    'location': m.get('location_ids', 'N/A'),
+                })
+            for a in accessories:
+                inventory_items.append({
+                    'type': 'Accessory',
+                    'name': a.get('name', 'N/A'),
+                    'code': a.get('item_code', 'N/A'),
+                    'quantity': a.get('quantity', 0),
+                    'quality': a.get('quality', 'Used'),
+                    'location': a.get('location') or a.get('location_ids', 'N/A'),
+                })
+            
+            # Create exports folder
+            export_dir = "exports"
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = os.path.join(export_dir, f"inventory_report_{timestamp}.pdf")
+            
+            doc = SimpleDocTemplate(filename, pagesize=landscape(A4), 
+                                    rightMargin=30, leftMargin=30,
+                                    topMargin=40, bottomMargin=30)
+            
+            styles = getSampleStyleSheet()
+            story = []
+            
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=20,
+                textColor=colors.HexColor('#1976D2'),
+                alignment=TA_CENTER,
+                spaceAfter=20
+            )
+            
+            story.append(Paragraph("Store Management System - Inventory Report", title_style))
+            story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", 
+                                styles['Normal']))
+            story.append(Spacer(1, 20))
+            
+            # Summary
+            total_items = len(inventory_items)
+            total_quantity = sum(i.get('quantity', 0) for i in inventory_items)
+            
+            summary_data = [
+                ['Total Items', str(total_items)],
+                ['Total Quantity', str(total_quantity)],
+            ]
+            
+            summary_table = Table(summary_data, colWidths=[120, 80])
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1976D2')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+            ]))
+            story.append(summary_table)
+            story.append(Spacer(1, 20))
+            
+            # Inventory table
+            table_data = [['#', 'Type', 'Name', 'Code', 'Quantity', 'Quality', 'Location']]
+            
+            for i, item in enumerate(inventory_items[:200], 1):
+                table_data.append([
+                    str(i),
+                    item['type'],
+                    item['name'],
+                    item['code'],
+                    str(item['quantity']),
+                    item['quality'],
+                    item['location'],
+                ])
+            
+            table = Table(table_data, colWidths=[30, 50, 100, 70, 45, 60, 80])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3C3C3C')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
+            ]))
+            
+            story.append(table)
+            doc.build(story)
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ PDF exported to {filename}"),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except ImportError:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("Please install reportlab: pip install reportlab"),
+                bgcolor=self.danger_color,
+                duration=5000
+            )
+            page.snack_bar.open = True
+            page.update()
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ PDF export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+
+    def export_low_stock_pdf_dashboard(self, page: ft.Page):
+        """Export low stock items to PDF from dashboard"""
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER
+            from datetime import datetime
+            import os
+            
+            # Get low stock items
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            low_stock_items = []
+            for m in materials:
+                if m.get('quantity', 0) < 10:
+                    low_stock_items.append({
+                        'type': 'Material',
+                        'name': m.get('name', 'N/A'),
+                        'code': m.get('item_code', 'N/A'),
+                        'quantity': m.get('quantity', 0),
+                        'quality': m.get('quality', 'Used'),
+                        'location': m.get('location_ids', 'N/A'),
+                    })
+            for a in accessories:
+                if a.get('quantity', 0) < 10:
+                    low_stock_items.append({
+                        'type': 'Accessory',
+                        'name': a.get('name', 'N/A'),
+                        'code': a.get('item_code', 'N/A'),
+                        'quantity': a.get('quantity', 0),
+                        'quality': a.get('quality', 'Used'),
+                        'location': a.get('location') or a.get('location_ids', 'N/A'),
+                    })
+            
+            if not low_stock_items:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("No low stock items to export"),
+                    bgcolor=self.warning_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            export_dir = "exports"
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = os.path.join(export_dir, f"low_stock_report_{timestamp}.pdf")
+            
+            doc = SimpleDocTemplate(filename, pagesize=A4, 
+                                    rightMargin=30, leftMargin=30,
+                                    topMargin=30, bottomMargin=20)
+            
+            styles = getSampleStyleSheet()
+            story = []
+            
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=20,
+                textColor=colors.HexColor('#F44336'),
+                alignment=TA_CENTER,
+                spaceAfter=20
+            )
+            
+            story.append(Paragraph("Low Stock Report", title_style))
+            story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", 
+                                styles['Normal']))
+            story.append(Spacer(1, 20))
+            
+            # Table data
+            table_data = [['#', 'Type', 'Name', 'Code', 'Current Stock', 'Quality', 'Location']]
+            
+            for i, item in enumerate(low_stock_items, 1):
+                table_data.append([
+                    str(i),
+                    item['type'],
+                    item['name'],
+                    item['code'],
+                    str(item['quantity']),
+                    item['quality'],
+                    item['location'],
+                ])
+            
+            table = Table(table_data, colWidths=[30, 50, 100, 70, 45, 60, 80])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F44336')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
+            ]))
+            
+            story.append(table)
+            doc.build(story)
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Low stock PDF exported to {filename}"),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except ImportError:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("Please install reportlab: pip install reportlab"),
+                bgcolor=self.danger_color,
+                duration=5000
+            )
+            page.snack_bar.open = True
+            page.update()
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ Export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+    def create_recent_activity_card(self, recent_items, font_small, font_normal):
+        """Create recent activity card"""
+        
+        activity_list = ft.Column(spacing=8)
+        
+        if recent_items:
+            for item in recent_items[:5]:
+                activity_list.controls.append(
+                    ft.Row([
+                        ft.Text(item['type'], size=18),
+                        ft.Column([
+                            ft.Text(item['name'], size=font_small, weight=ft.FontWeight.BOLD),
+                            ft.Text(f"Added on {item['date']}", size=font_small - 2, color="#888888"),
+                        ], spacing=2, expand=True),
+                    ], spacing=10)
+                )
+        else:
+            activity_list.controls.append(ft.Text("No recent activity", size=font_small, color="#888888"))
+        
+        return ft.Container(
+            content=ft.Column([
+                ft.Text("🕐 Recent Activity", size=font_normal, weight=ft.FontWeight.BOLD),
+                ft.Divider(),
+                activity_list,
+            ], spacing=10),
+            padding=15,
+            bgcolor=self.card_color,
+            border_radius=15,
+            expand=True,
+        )
+
+    def create_recent_materials_card(self, page, materials, font_small, font_normal):
+        """Create recent materials card"""
+        
+        materials_list = ft.Column(spacing=8)
+        
+        if materials:
+            for m in materials[:6]:
+                materials_list.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Text("📦", size=18),
+                            ft.Column([
+                                ft.Text(m.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD),
+                                ft.Text(f"Stock: {m.get('quantity', 0)} | {m.get('location_ids', 'N/A')}", size=font_small - 2, color="#888888"),
+                            ], spacing=2, expand=True),
+                            ft.Container(
+                                content=ft.Text(m.get('quality', 'Used'), size=font_small - 2, color="white"),
+                                bgcolor=self.get_quality_color(m.get('quality', 'Used')),
+                                border_radius=10,
+                                padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                            ),
+                        ], spacing=10),
+                        padding=8,
+                        bgcolor="#2C2C2C",
+                        border_radius=8,
+                    )
+                )
+        else:
+            materials_list.controls.append(ft.Text("No materials found", size=font_small, color="#888888"))
+        
+        materials_list.controls.append(
+            ft.TextButton("View All Materials", on_click=lambda e: self.show_materials_screen(page))
+        )
+        
+        return ft.Container(
+            content=ft.Column([
+                ft.Text("📦 Recent Materials", size=font_normal, weight=ft.FontWeight.BOLD),
+                ft.Divider(),
+                materials_list,
+            ], spacing=10),
+            padding=15,
+            bgcolor=self.card_color,
+            border_radius=15,
+            expand=True,
+        )
+
+    def create_recent_accessories_card(self, page, accessories, font_small, font_normal):
+        """Create recent accessories card"""
+        
+        accessories_list = ft.Column(spacing=8)
+        
+        if accessories:
+            for a in accessories[:6]:
+                location = a.get('location') or a.get('location_ids') or 'N/A'
+                accessories_list.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Text("🔧", size=18),
+                            ft.Column([
+                                ft.Text(a.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD),
+                                ft.Text(f"Stock: {a.get('quantity', 0)} | {location}", size=font_small - 2, color="#888888"),
+                            ], spacing=2, expand=True),
+                            ft.Container(
+                                content=ft.Text(a.get('quality', 'Used'), size=font_small - 2, color="white"),
+                                bgcolor=self.get_quality_color(a.get('quality', 'Used')),
+                                border_radius=10,
+                                padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                            ),
+                        ], spacing=10),
+                        padding=8,
+                        bgcolor="#2C2C2C",
+                        border_radius=8,
+                    )
+                )
+        else:
+            accessories_list.controls.append(ft.Text("No accessories found", size=font_small, color="#888888"))
+        
+        accessories_list.controls.append(
+            ft.TextButton("View All Accessories", on_click=lambda e: self.show_accessories(page))
+        )
+        
+        return ft.Container(
+            content=ft.Column([
+                ft.Text("🔧 Recent Accessories", size=font_normal, weight=ft.FontWeight.BOLD),
+                ft.Divider(),
+                accessories_list,
+            ], spacing=10),
+            padding=15,
+            bgcolor=self.card_color,
+            border_radius=15,
+            expand=True,
+        )
+
+    def create_import_export_panel(self, page, font_small, font_normal):
+        """Create import/export panel"""
+        
+        return ft.Container(
+            content=ft.Column([
+                ft.Text("📁 Import / Export", size=font_normal, weight=ft.FontWeight.BOLD),
+                ft.Divider(),
+                ft.Row([
+                    ft.ElevatedButton("📥 Import CSV", on_click=lambda e: self.show_import_dialog(page), expand=True),
+                    ft.ElevatedButton("📤 Export CSV", on_click=lambda e: self.export_all_data_simple(page), expand=True, style=ft.ButtonStyle(bgcolor=self.warning_color)),
+                ], spacing=10),
+                ft.Row([
+                    ft.ElevatedButton("📄 Export PDF", on_click=lambda e: self.export_inventory_pdf_dashboard(page), expand=True),
+                    ft.ElevatedButton("⚠️ Low Stock PDF", on_click=lambda e: self.export_low_stock_pdf_dashboard(page), expand=True, style=ft.ButtonStyle(bgcolor=self.danger_color)),
+                ], spacing=10),
+                ft.Text("Supports CSV and PDF formats", size=font_small - 2, color="#888888", text_align=ft.TextAlign.CENTER),
+            ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=15,
+            bgcolor=self.card_color,
+            border_radius=15,
+        )
     def show_materials_screen(self, page: ft.Page):
         """Show materials screen - MOBILE OPTIMIZED (Card-based)"""
         page.controls.clear()
@@ -5441,7 +5873,35 @@ class StoreApp:
             margin=ft.margin.only(bottom=12),
         )
         scroll_content.controls.append(database_section)
-        
+
+                # ========== LOGOUT SECTION ==========
+        logout_card = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(ft.icons.LOGOUT, size=24, color=self.danger_color),
+                        ft.Text("Account", size=font_normal, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                        ft.Container(expand=True),
+                    ]),
+                    ft.Divider(),
+                    ft.Text("You are currently logged in as:", size=font_small, color="#888888"),
+                    ft.Text(f"{self.current_user.get('name', 'User')}", size=font_normal, weight=ft.FontWeight.BOLD),
+                    ft.Text(f"{self.current_user.get('email', 'N/A')}", size=font_small - 1, color="#888888"),
+                    ft.Container(height=10),
+                    ft.ElevatedButton(
+                        "🚪 Logout",
+                        on_click=lambda e: self.confirm_logout(page),
+                        icon=ft.icons.LOGOUT,
+                        style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color),
+                    ),
+                ], spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=15,
+            ),
+            elevation=2,
+            margin=ft.margin.only(bottom=12),
+        )
+        scroll_content.controls.append(logout_card)
+
         # ========== ABOUT SECTION ==========
         about_card = ft.Card(
             content=ft.Container(
@@ -5520,6 +5980,40 @@ class StoreApp:
         
         self.current_view = "settings"
         page.update()
+    def confirm_logout(self, page: ft.Page):
+        """Show logout confirmation dialog"""
+        
+        def do_logout(e):
+            page.dialog.open = False
+            self.current_user = None
+            self.show_login(page)
+        
+        def cancel_logout(e):
+            page.dialog.open = False
+            page.update()
+        
+        dialog_content = ft.Column([
+            ft.Text("🚪 Logout", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
+            ft.Divider(),
+            ft.Text("Are you sure you want to logout?", size=14),
+            ft.Text(f"You are currently logged in as:", size=12, color="#888888"),
+            ft.Text(f"{self.current_user.get('name', 'User')}", size=14, weight=ft.FontWeight.BOLD),
+            ft.Container(height=15),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=cancel_logout),
+                ft.FilledButton("Logout", on_click=do_logout, style=ft.ButtonStyle(bgcolor=self.danger_color)),
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=15),
+        ], spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Confirm Logout"),
+            content=ft.Container(content=dialog_content, width=350, height=280, padding=20),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+    
     def show_privacy_policy(self, page: ft.Page):
         """Show privacy policy dialog"""
         
