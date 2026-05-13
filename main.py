@@ -502,23 +502,11 @@ class StoreApp:
         )
                 # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """New simplified dashboard - ALL SECTIONS VISIBLE"""
+        """Ultra-simple dashboard - GUARANTEED TO WORK"""
         page.controls.clear()
         
         # Check if mobile
         is_mobile = page.width < 800 if page.width else False
-        
-        # Set padding based on device
-        if is_mobile:
-            padding_size = 10
-            font_title = 22
-            font_normal = 14
-            font_small = 12
-        else:
-            padding_size = 20
-            font_title = 28
-            font_normal = 18
-            font_small = 14
         
         # Navigation
         if is_mobile:
@@ -554,221 +542,202 @@ class StoreApp:
             q = a.get('quality', 'Used')
             quality_counts[q] = quality_counts.get(q, 0) + 1
         
-        # Create main content using ListView
-        main_list = ft.ListView(expand=True, spacing=10, padding=padding_size)
+        # Create a simple Column (NO ListView)
+        main_column = ft.Column(spacing=15, expand=True)
         
         # ========== SECTION 1: HEADER ==========
-        main_list.controls.append(
+        main_column.controls.append(
             ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color)
         )
-        main_list.controls.append(ft.Text(f"Welcome back!", size=14, color="#888888"))
-        main_list.controls.append(ft.Container(height=5))
+        main_column.controls.append(ft.Text("Welcome back!", size=14, color="#888888"))
         
         # ========== SECTION 2: STATS CARDS ==========
-        main_list.controls.append(
+        main_column.controls.append(
             ft.Row([
                 ft.Container(
                     content=ft.Column([
-                        ft.Text("📦", size=24),
-                        ft.Text("Items", size=11, color="#CCCCCC"),
-                        ft.Text(str(total_items), size=28, weight=ft.FontWeight.BOLD),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
+                        ft.Text("📦", size=20),
+                        ft.Text(str(total_items), size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Items", size=10, color="#CCCCCC"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                     padding=12, bgcolor=self.accent_color, border_radius=10, expand=True,
                 ),
                 ft.Container(
                     content=ft.Column([
-                        ft.Text("📊", size=24),
-                        ft.Text("Stock", size=11, color="#CCCCCC"),
-                        ft.Text(str(total_stock), size=28, weight=ft.FontWeight.BOLD),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
+                        ft.Text("📊", size=20),
+                        ft.Text(str(total_stock), size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Stock", size=10, color="#CCCCCC"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                     padding=12, bgcolor=self.success_color, border_radius=10, expand=True,
                 ),
                 ft.Container(
                     content=ft.Column([
-                        ft.Text("⚠️", size=24),
-                        ft.Text("Low", size=11, color="#CCCCCC"),
-                        ft.Text(str(total_low_stock), size=28, weight=ft.FontWeight.BOLD, color=self.danger_color),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
+                        ft.Text("⚠️", size=20),
+                        ft.Text(str(total_low_stock), size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Low", size=10, color="#CCCCCC"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                     padding=12, bgcolor=self.warning_color, border_radius=10, expand=True,
                 ),
                 ft.Container(
                     content=ft.Column([
-                        ft.Text("👥", size=24),
-                        ft.Text("Users", size=11, color="#CCCCCC"),
-                        ft.Text(str(total_users), size=28, weight=ft.FontWeight.BOLD),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
+                        ft.Text("👥", size=20),
+                        ft.Text(str(total_users), size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Users", size=10, color="#CCCCCC"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                     padding=12, bgcolor="#9C27B0", border_radius=10, expand=True,
                 ),
             ], spacing=8)
         )
-        main_list.controls.append(ft.Container(height=5))
         
         # ========== SECTION 3: QUALITY DISTRIBUTION ==========
-        main_list.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
-        main_list.controls.append(ft.Divider())
-        main_list.controls.append(ft.Container(height=5))
+        main_column.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
         
-        quality_row = ft.Row([
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("🟢", size=24),
-                    ft.Text("New", size=11),
-                    ft.Text(str(quality_counts.get("New", 0)), size=20, weight=ft.FontWeight.BOLD),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
-            ),
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("🟠", size=24),
-                    ft.Text("Used", size=11),
-                    ft.Text(str(quality_counts.get("Used", 0)), size=20, weight=ft.FontWeight.BOLD),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
-            ),
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("🔴", size=24),
-                    ft.Text("Damaged", size=11),
-                    ft.Text(str(quality_counts.get("Damaged", 0)), size=20, weight=ft.FontWeight.BOLD),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
-            ),
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("🔵", size=24),
-                    ft.Text("Repaired", size=11),
-                    ft.Text(str(quality_counts.get("Repaired", 0)), size=20, weight=ft.FontWeight.BOLD),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
-            ),
-        ], spacing=8)
-        main_list.controls.append(quality_row)
-        main_list.controls.append(ft.Container(height=5))
+        # Create quality cards as simple containers
+        quality_container = ft.Container(
+            content=ft.Row([
+                ft.Container(
+                    content=ft.Text(f"🟢 New: {quality_counts.get('New', 0)}", size=14),
+                    padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
+                ),
+                ft.Container(
+                    content=ft.Text(f"🟠 Used: {quality_counts.get('Used', 0)}", size=14),
+                    padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
+                ),
+            ], spacing=8),
+            margin=ft.margin.only(bottom=5),
+        )
+        main_column.controls.append(quality_container)
+        
+        quality_container2 = ft.Container(
+            content=ft.Row([
+                ft.Container(
+                    content=ft.Text(f"🔴 Damaged: {quality_counts.get('Damaged', 0)}", size=14),
+                    padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
+                ),
+                ft.Container(
+                    content=ft.Text(f"🔵 Repaired: {quality_counts.get('Repaired', 0)}", size=14),
+                    padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
+                ),
+            ], spacing=8),
+        )
+        main_column.controls.append(quality_container2)
         
         # ========== SECTION 4: STOCK HEALTH ==========
         healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100) if total_stock > 0 else 100)
         healthy_percentage = max(0, min(healthy_percentage, 100))
         
-        main_list.controls.append(ft.Text("💪 Stock Health", size=16, weight=ft.FontWeight.BOLD))
-        main_list.controls.append(ft.Divider())
-        main_list.controls.append(ft.Container(height=5))
-        
-        main_list.controls.append(
+        main_column.controls.append(ft.Text("💪 Stock Health", size=16, weight=ft.FontWeight.BOLD))
+        main_column.controls.append(
             ft.Container(
                 content=ft.Column([
-                    ft.Text(f"{healthy_percentage}%", size=30, weight=ft.FontWeight.BOLD, color=self.success_color),
-                    ft.ProgressBar(value=healthy_percentage/100, color=self.success_color, bgcolor="#3C3C3C", height=8),
-                    ft.Text(f"Low Stock: {total_low_stock} items need attention", size=11, color=self.warning_color),
-                ], spacing=5, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Text(f"{healthy_percentage}%", size=24, weight=ft.FontWeight.BOLD, color=self.success_color),
+                    ft.ProgressBar(value=healthy_percentage/100, color=self.success_color, bgcolor="#3C3C3C", height=6),
+                    ft.Text(f"Low Stock: {total_low_stock} items", size=12, color=self.warning_color),
+                ], spacing=5),
                 padding=12, bgcolor=self.card_color, border_radius=10,
             )
         )
-        main_list.controls.append(ft.Container(height=5))
         
         # ========== SECTION 5: RECENT MATERIALS ==========
-        main_list.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
-        main_list.controls.append(ft.Divider())
-        main_list.controls.append(ft.Container(height=5))
+        main_column.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
         
         if materials:
-            for m in materials[:4]:
-                main_list.controls.append(
+            for m in materials[:3]:
+                main_column.controls.append(
                     ft.Container(
                         content=ft.Row([
-                            ft.Text("📦", size=20),
-                            ft.Text(m.get('name', 'N/A'), size=13, weight=ft.FontWeight.BOLD, expand=True),
-                            ft.Text(f"{m.get('quantity', 0)}", size=13),
+                            ft.Text("📦", size=18),
+                            ft.Text(m.get('name', 'N/A'), size=14, expand=True),
+                            ft.Text(f"Qty: {m.get('quantity', 0)}", size=14),
                             ft.Container(
-                                content=ft.Text(m.get('quality', 'Used'), size=9, color="white"),
+                                content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
                                 bgcolor=self.get_quality_color(m.get('quality', 'Used')),
                                 border_radius=8,
-                                padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
                             ),
                         ]),
-                        padding=8, bgcolor="#2C2C2C", border_radius=8, margin=ft.margin.only(bottom=4),
+                        padding=10, bgcolor="#2C2C2C", border_radius=8,
                     )
                 )
-            main_list.controls.append(ft.TextButton("View All Materials", on_click=lambda e: self.show_materials_screen(page)))
+            main_column.controls.append(ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)))
         else:
-            main_list.controls.append(ft.Text("No materials found", size=12, color="#888888"))
-        
-        main_list.controls.append(ft.Container(height=5))
+            main_column.controls.append(ft.Text("No materials", size=12, color="#888888"))
         
         # ========== SECTION 6: RECENT ACCESSORIES ==========
-        main_list.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
-        main_list.controls.append(ft.Divider())
-        main_list.controls.append(ft.Container(height=5))
+        main_column.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
         
         if accessories:
-            for a in accessories[:4]:
-                location = a.get('location') or a.get('location_ids') or 'N/A'
-                main_list.controls.append(
+            for a in accessories[:3]:
+                main_column.controls.append(
                     ft.Container(
                         content=ft.Row([
-                            ft.Text("🔧", size=20),
-                            ft.Text(a.get('name', 'N/A'), size=13, weight=ft.FontWeight.BOLD, expand=True),
-                            ft.Text(f"{a.get('quantity', 0)}", size=13),
+                            ft.Text("🔧", size=18),
+                            ft.Text(a.get('name', 'N/A'), size=14, expand=True),
+                            ft.Text(f"Qty: {a.get('quantity', 0)}", size=14),
                             ft.Container(
-                                content=ft.Text(a.get('quality', 'Used'), size=9, color="white"),
+                                content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
                                 bgcolor=self.get_quality_color(a.get('quality', 'Used')),
                                 border_radius=8,
-                                padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
                             ),
                         ]),
-                        padding=8, bgcolor="#2C2C2C", border_radius=8, margin=ft.margin.only(bottom=4),
+                        padding=10, bgcolor="#2C2C2C", border_radius=8,
                     )
                 )
-            main_list.controls.append(ft.TextButton("View All Accessories", on_click=lambda e: self.show_accessories(page)))
+            main_column.controls.append(ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)))
         else:
-            main_list.controls.append(ft.Text("No accessories found", size=12, color="#888888"))
+            main_column.controls.append(ft.Text("No accessories", size=12, color="#888888"))
         
-        main_list.controls.append(ft.Container(height=5))
+        # ========== SECTION 7: BUTTONS ==========
+        main_column.controls.append(ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD))
         
-        # ========== SECTION 7: QUICK ACTIONS ==========
-        main_list.controls.append(ft.Text("⚡ Quick Actions", size=16, weight=ft.FontWeight.BOLD))
-        main_list.controls.append(ft.Divider())
-        main_list.controls.append(ft.Container(height=5))
-        
-        main_list.controls.append(
+        main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("➕ Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
-                ft.ElevatedButton("🔧 Add Accessory", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
+                ft.ElevatedButton("Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
+                ft.ElevatedButton("Add Part", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
             ], spacing=8)
         )
-        main_list.controls.append(
+        main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("📷 Scan Barcode", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
-                ft.ElevatedButton("📊 Export CSV", on_click=lambda e: self.export_all_data_simple(page), expand=True),
+                ft.ElevatedButton("Scan", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
+                ft.ElevatedButton("Export", on_click=lambda e: self.export_all_data_simple(page), expand=True),
             ], spacing=8)
         )
-        main_list.controls.append(ft.Container(height=5))
         
         # ========== SECTION 8: IMPORT/EXPORT ==========
-        main_list.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
-        main_list.controls.append(ft.Divider())
-        main_list.controls.append(ft.Container(height=5))
+        main_column.controls.append(ft.Text("Import / Export", size=16, weight=ft.FontWeight.BOLD))
         
-        main_list.controls.append(
+        main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("📥 Import CSV", on_click=lambda e: self.show_import_dialog(page), expand=True),
-                ft.ElevatedButton("📄 Export PDF", on_click=lambda e: self.export_inventory_pdf_dashboard(page), expand=True),
+                ft.ElevatedButton("Import CSV", on_click=lambda e: self.show_import_dialog(page), expand=True),
+                ft.ElevatedButton("Export PDF", on_click=lambda e: self.export_inventory_pdf_dashboard(page), expand=True),
             ], spacing=8)
         )
-        main_list.controls.append(
+        main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("⚠️ Low Stock PDF", on_click=lambda e: self.export_low_stock_pdf_dashboard(page), expand=True, style=ft.ButtonStyle(bgcolor=self.danger_color)),
+                ft.ElevatedButton("Low Stock PDF", on_click=lambda e: self.export_low_stock_pdf_dashboard(page), expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.danger_color)),
             ], spacing=8)
         )
         
-        main_list.controls.append(ft.Container(height=20))
+        # Wrap in a Container with Scroll
+        main_container = ft.Container(
+            content=main_column,
+            expand=True,
+            padding=15,
+        )
         
-        main_container = main_list
+        # Make it scrollable by wrapping in a Column with scroll
+        scrollable_container = ft.Container(
+            content=ft.Column([main_container], scroll=ft.ScrollMode.AUTO, expand=True),
+            expand=True,
+        )
         
         # Layout
         if is_mobile and nav:
-            page.add(ft.Column([main_container, nav], spacing=0, expand=True))
+            page.add(ft.Column([scrollable_container, nav], spacing=0, expand=True))
         else:
-            page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
+            page.add(ft.Row([sidebar, scrollable_container], spacing=0, expand=True))
         
         self.current_view = "dashboard"
         page.update()
