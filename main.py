@@ -710,12 +710,12 @@ class StoreApp:
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton("Import CSV", on_click=lambda e: self.show_import_dialog(page), expand=True),
-                ft.ElevatedButton("Export PDF", on_click=lambda e: self.export_inventory_pdf_dashboard(page), expand=True),
+                ft.ElevatedButton("Export PDF",  on_click=lambda e: self.export_inventory_html(page), expand=True),
             ], spacing=8)
         )
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Low Stock PDF", on_click=lambda e: self.export_low_stock_pdf_dashboard(page), expand=True,
+                ft.ElevatedButton("Low Stock PDF", on_click=lambda e: self.export_low_stock_html(page), expand=True,
                                 style=ft.ButtonStyle(bgcolor=self.danger_color)),
             ], spacing=8)
         )
@@ -742,7 +742,7 @@ class StoreApp:
         self.current_view = "dashboard"
         page.update()
     
-    def export_inventory_pdf_dashboard(self, page: ft.Page):
+  #  def export_inventory_pdf_dashboard(self, page: ft.Page):
         """Export inventory to PDF from dashboard"""
         try:
             from reportlab.lib import colors
@@ -878,27 +878,339 @@ class StoreApp:
             )
             page.snack_bar.open = True
             page.update()
-
-    def export_low_stock_pdf_dashboard(self, page: ft.Page):
-        """Export low stock items to PDF from dashboard"""
+    def export_inventory_html(self, page: ft.Page):
+        """Export inventory to HTML - works without any extra libraries"""
+        from datetime import datetime
+        import os
+        import webbrowser
+        
         try:
-            from reportlab.lib import colors
-            from reportlab.lib.pagesizes import A4
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.enums import TA_CENTER
-            from datetime import datetime
-            import os
-            
-            # Get low stock items
+            # Get data
             materials = self.dict_list(MaterialManager.get_all())
             accessories = self.dict_list(AccessoryManager.get_all())
             
+            # Calculate totals
+            total_materials = len(materials)
+            total_accessories = len(accessories)
+            total_items = total_materials + total_accessories
+            total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
+            
+            # Low stock count
+            low_stock_count = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
+            
+            # Create exports folder
+            export_dir = "exports"
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = os.path.join(export_dir, f"inventory_report_{timestamp}.html")
+            
+            # Quality colors mapping
+            quality_colors = {
+                "New": "#4CAF50",
+                "Used": "#FF9800", 
+                "Damaged": "#F44336",
+                "Repaired": "#2196F3"
+            }
+            
+            # Create HTML content
+            html_content = f"""<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Inventory Report - Store Management System</title>
+        <style>
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }}
+            .container {{
+                max-width: 1400px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 16px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                overflow: hidden;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #1976D2 0%, #2196F3 100%);
+                color: white;
+                padding: 30px;
+                text-align: center;
+            }}
+            .header h1 {{
+                font-size: 28px;
+                margin-bottom: 10px;
+            }}
+            .header p {{
+                opacity: 0.9;
+                font-size: 14px;
+            }}
+            .stats {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 20px;
+                padding: 30px;
+                background: #f8f9fa;
+            }}
+            .stat-card {{
+                background: white;
+                padding: 20px;
+                border-radius: 12px;
+                text-align: center;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            }}
+            .stat-card .icon {{
+                font-size: 32px;
+                margin-bottom: 10px;
+            }}
+            .stat-card .value {{
+                font-size: 28px;
+                font-weight: bold;
+                color: #1976D2;
+            }}
+            .stat-card .label {{
+                color: #666;
+                font-size: 12px;
+                margin-top: 5px;
+            }}
+            .section {{
+                padding: 20px 30px;
+            }}
+            .section h2 {{
+                font-size: 20px;
+                margin-bottom: 15px;
+                color: #333;
+                border-left: 4px solid #1976D2;
+                padding-left: 15px;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+                overflow-x: auto;
+                display: block;
+            }}
+            th, td {{
+                border: 1px solid #ddd;
+                padding: 12px;
+                text-align: left;
+                font-size: 13px;
+            }}
+            th {{
+                background-color: #1976D2;
+                color: white;
+                font-weight: 600;
+            }}
+            tr:nth-child(even) {{
+                background-color: #f9f9f9;
+            }}
+            tr:hover {{
+                background-color: #f5f5f5;
+            }}
+            .badge {{
+                display: inline-block;
+                padding: 4px 12px;
+                border-radius: 20px;
+                font-size: 11px;
+                font-weight: 600;
+                color: white;
+            }}
+            .badge-new {{ background-color: #4CAF50; }}
+            .badge-used {{ background-color: #FF9800; }}
+            .badge-damaged {{ background-color: #F44336; }}
+            .badge-repaired {{ background-color: #2196F3; }}
+            .low-stock {{
+                color: #F44336;
+                font-weight: bold;
+            }}
+            .footer {{
+                text-align: center;
+                padding: 20px;
+                background: #f8f9fa;
+                color: #666;
+                font-size: 12px;
+                border-top: 1px solid #eee;
+            }}
+            @media print {{
+                body {{
+                    background: white;
+                    padding: 0;
+                }}
+                .stats, .header {{
+                    break-inside: avoid;
+                }}
+                table {{
+                    break-inside: auto;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>📊 Store Management System</h1>
+                <p>Inventory Report - Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}</p>
+            </div>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="icon">📦</div>
+                    <div class="value">{total_items}</div>
+                    <div class="label">Total Items</div>
+                    <div style="font-size: 11px; color: #888;">{total_materials} Materials, {total_accessories} Accessories</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon">📊</div>
+                    <div class="value">{total_stock}</div>
+                    <div class="label">Total Stock Units</div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon">⚠️</div>
+                    <div class="value" style="color: #F44336;">{low_stock_count}</div>
+                    <div class="label">Low Stock Items</div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>📦 Materials Inventory ({total_materials} items)</h2>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Code</th>
+                                <th>Quantity</th>
+                                <th>Quality</th>
+                                <th>Location</th>
+                                <th>Size</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+    """
+            
+            for m in materials[:200]:
+                quantity = m.get('quantity', 0)
+                quantity_class = 'low-stock' if quantity < 10 else ''
+                quality = m.get('quality', 'Used')
+                badge_class = f"badge-{quality.lower()}"
+                
+                html_content += f"""
+                            <tr>
+                                <td><strong>{m.get('name', 'N/A')}</strong></td>
+                                <td>{m.get('item_code', 'N/A')}</td>
+                                <td class="{quantity_class}">{quantity}</td>
+                                <td><span class="badge {badge_class}">{quality}</span></td>
+                                <td>{m.get('location_ids', 'N/A')}</td>
+                                <td>{m.get('size', 'N/A')}</td>
+                            </tr>"""
+            
+            html_content += """
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>🔧 Accessories Inventory ({total_accessories} items)</h2>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Code</th>
+                                <th>Quantity</th>
+                                <th>Quality</th>
+                                <th>Location</th>
+                                <th>Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+    """
+            
+            for a in accessories[:200]:
+                quantity = a.get('quantity', 0)
+                quantity_class = 'low-stock' if quantity < 10 else ''
+                quality = a.get('quality', 'Used')
+                badge_class = f"badge-{quality.lower()}"
+                location = a.get('location') or a.get('location_ids') or 'N/A'
+                price = a.get('price', 0)
+                price_text = f"${price:.2f}" if price else "N/A"
+                
+                html_content += f"""
+                            <tr>
+                                <td><strong>{a.get('name', 'N/A')}</strong></td>
+                                <td>{a.get('item_code', 'N/A')}</td>
+                                <td class="{quantity_class}">{quantity}</td>
+                                <td><span class="badge {badge_class}">{quality}</span></td>
+                                <td>{location}</td>
+                                <td>{price_text}</td>
+                            </tr>"""
+            
+            html_content += f"""
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="footer">
+                <p>Generated by Store Management System v1.0</p>
+                <p>© {datetime.now().year} All Rights Reserved</p>
+            </div>
+        </div>
+    </body>
+    </html>"""
+            
+            # Save to file
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            # Open in browser
+            webbrowser.open(f'file://{os.path.abspath(filename)}')
+            
+            # Show success message
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Report saved: {filename}"),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ Export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+    def export_low_stock_html(self, page: ft.Page):
+        """Export low stock items to HTML"""
+        from datetime import datetime
+        import os
+        import webbrowser
+        
+        try:
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            # Filter low stock items
             low_stock_items = []
             for m in materials:
                 if m.get('quantity', 0) < 10:
                     low_stock_items.append({
-                        'type': 'Material',
+                        'type': '📦 Material',
                         'name': m.get('name', 'N/A'),
                         'code': m.get('item_code', 'N/A'),
                         'quantity': m.get('quantity', 0),
@@ -908,7 +1220,7 @@ class StoreApp:
             for a in accessories:
                 if a.get('quantity', 0) < 10:
                     low_stock_items.append({
-                        'type': 'Accessory',
+                        'type': '🔧 Accessory',
                         'name': a.get('name', 'N/A'),
                         'code': a.get('item_code', 'N/A'),
                         'quantity': a.get('quantity', 0),
@@ -926,75 +1238,82 @@ class StoreApp:
                 page.update()
                 return
             
+            # Create exports folder
             export_dir = "exports"
             if not os.path.exists(export_dir):
                 os.makedirs(export_dir)
             
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = os.path.join(export_dir, f"low_stock_report_{timestamp}.pdf")
+            filename = os.path.join(export_dir, f"low_stock_report_{timestamp}.html")
             
-            doc = SimpleDocTemplate(filename, pagesize=A4, 
-                                    rightMargin=30, leftMargin=30,
-                                    topMargin=30, bottomMargin=20)
+            # Create HTML content (simplified version)
+            html_content = f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Low Stock Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
+            .container {{ max-width: 1200px; margin: 0 auto; background: white; border-radius: 12px; padding: 20px; }}
+            h1 {{ color: #F44336; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+            th, td {{ border: 1px solid #ddd; padding: 10px; text-align: left; }}
+            th {{ background-color: #F44336; color: white; }}
+            .critical {{ background-color: #FFEBEE; }}
+            .footer {{ text-align: center; margin-top: 20px; color: #888; font-size: 12px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>⚠️ Low Stock Report</h1>
+            <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p>Total low stock items: {len(low_stock_items)}</p>
+            <table>
+                <tr>
+                    <th>Type</th>
+                    <th>Name</th>
+                    <th>Code</th>
+                    <th>Current Stock</th>
+                    <th>Quality</th>
+                    <th>Location</th>
+                </tr>
+    """
             
-            styles = getSampleStyleSheet()
-            story = []
+            for item in low_stock_items:
+                critical_class = 'critical' if item['quantity'] < 5 else ''
+                html_content += f"""
+                <tr class="{critical_class}">
+                    <td>{item['type']}</td>
+                    <td><strong>{item['name']}</strong></td>
+                    <td>{item['code']}</td>
+                    <td style="color: #F44336; font-weight: bold;">{item['quantity']}</td>
+                    <td>{item['quality']}</td>
+                    <td>{item['location']}</td>
+                </tr>"""
             
-            title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
-                fontSize=20,
-                textColor=colors.HexColor('#F44336'),
-                alignment=TA_CENTER,
-                spaceAfter=20
-            )
+            html_content += """
+            </table>
+            <div class="footer">
+                <p>Generated by Store Management System</p>
+            </div>
+        </div>
+    </body>
+    </html>"""
             
-            story.append(Paragraph("Low Stock Report", title_style))
-            story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", 
-                                styles['Normal']))
-            story.append(Spacer(1, 20))
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(html_content)
             
-            # Table data
-            table_data = [['#', 'Type', 'Name', 'Code', 'Current Stock', 'Quality', 'Location']]
-            
-            for i, item in enumerate(low_stock_items, 1):
-                table_data.append([
-                    str(i),
-                    item['type'],
-                    item['name'],
-                    item['code'],
-                    str(item['quantity']),
-                    item['quality'],
-                    item['location'],
-                ])
-            
-            table = Table(table_data, colWidths=[30, 50, 100, 70, 45, 60, 80])
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F44336')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
-            ]))
-            
-            story.append(table)
-            doc.build(story)
+            webbrowser.open(f'file://{os.path.abspath(filename)}')
             
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ Low stock PDF exported to {filename}"),
+                ft.Text(f"✓ Low stock report saved to {filename}"),
                 bgcolor=self.success_color,
                 duration=4000
             )
             page.snack_bar.open = True
             page.update()
             
-        except ImportError:
-            page.snack_bar = ft.SnackBar(
-                ft.Text("Please install reportlab: pip install reportlab"),
-                bgcolor=self.danger_color,
-                duration=5000
-            )
-            page.snack_bar.open = True
-            page.update()
         except Exception as e:
             page.snack_bar = ft.SnackBar(
                 ft.Text(f"❌ Export failed: {str(e)}"),
