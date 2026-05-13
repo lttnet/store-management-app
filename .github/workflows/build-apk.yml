@@ -36,6 +36,7 @@ jobs:
         run: |
           pip install flet==0.21.2
           pip install requests
+          pip install reportlab
       
       - name: Build APK
         id: build
