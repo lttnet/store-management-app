@@ -1364,15 +1364,20 @@ class StoreApp:
         )
     
     def show_materials_screen(self, page: ft.Page):
-        """Show materials screen with categories, filters, and full CRUD operations"""
+        """Show materials screen with cards on mobile, table on desktop"""
         page.controls.clear()
         
         self.page_ref = page
         materials = self.dict_list(MaterialManager.get_all())
         sidebar = self.create_sidebar(page)
         
-        # Check if mobile
+        # Check if mobile - IMPORTANT: Use page.width
         is_mobile = page.width < 800 if page.width else False
+        
+        # For testing on desktop, you can force mobile mode by uncommenting:
+        # is_mobile = True
+        
+        print(f"Screen width: {page.width}, is_mobile: {is_mobile}")  # Debug print
         
         # Navigation for mobile
         if is_mobile:
@@ -1432,7 +1437,7 @@ class StoreApp:
         for label, color, ftype in quality_configs:
             btn = ft.Container(
                 content=ft.Text(label, size=font_small, weight=ft.FontWeight.BOLD, color=self.text_color),
-                padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
                 bgcolor=color if self.current_material_filter == ftype else self.card_color,
                 border_radius=25,
                 ink=True,
@@ -1441,7 +1446,7 @@ class StoreApp:
             self.material_filter_buttons[ftype] = btn
             quality_filter_buttons.append(btn)
         
-        quality_filter_row = ft.Row(quality_filter_buttons, spacing=8, wrap=True)
+        quality_filter_row = ft.Row(quality_filter_buttons, spacing=6, wrap=True)
         
         # ========== CATEGORY FILTER WITH MANAGE BUTTON ==========
         category_filter = ft.Dropdown(
@@ -1478,8 +1483,13 @@ class StoreApp:
                 on_click=lambda e: self.open_add_modal(page),
             )
         
-        # ========== MATERIALS CONTAINER ==========
-        materials_container = ft.Column(spacing=10 if is_mobile else 2, scroll=ft.ScrollMode.AUTO, expand=True)
+        # ========== MATERIALS CONTAINER - Card view for mobile, Table for desktop ==========
+        if is_mobile:
+            # Mobile: Card view container
+            materials_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+        else:
+            # Desktop: Table view container
+            materials_container = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, height=500)
         
         # ========== DETAIL PANEL (Desktop only) ==========
         if not is_mobile:
@@ -1550,7 +1560,7 @@ class StoreApp:
             
             for m in filtered:
                 if is_mobile:
-                    # Mobile: Card view
+                    # MOBILE: Card view
                     card = ft.Card(
                         content=ft.Container(
                             content=ft.Column([
@@ -1600,7 +1610,7 @@ class StoreApp:
                     )
                     materials_container.controls.append(card)
                 else:
-                    # Desktop: Table row
+                    # DESKTOP: Table row
                     row = ft.Container(
                         content=ft.Row([
                             ft.Text(m.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD, width=200),
@@ -1650,7 +1660,7 @@ class StoreApp:
         
         # ========== BUILD MAIN CONTENT ==========
         if is_mobile:
-            # Mobile layout
+            # MOBILE LAYOUT - Cards with FAB
             content = ft.Column([
                 ft.Row([
                     ft.Text("Materials", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
@@ -1661,7 +1671,7 @@ class StoreApp:
                 ft.Container(height=10),
                 quality_filter_row,
                 ft.Container(height=10),
-                category_row,  # Category filter with manage button
+                category_row,
                 ft.Container(height=15),
                 materials_container,
                 ft.Container(height=80),
@@ -1669,7 +1679,7 @@ class StoreApp:
             
             main_container = ft.Container(content=content, expand=True, padding=padding_size)
             
-            # Add FAB and bottom navigation for mobile
+            # Add FAB for mobile
             page.add(
                 ft.Stack([
                     main_container,
@@ -1682,7 +1692,7 @@ class StoreApp:
                 page.add(nav)
             
         else:
-            # Desktop layout
+            # DESKTOP LAYOUT - Table with sidebar
             header_row = ft.Container(
                 content=ft.Row([
                     ft.Text("Name", size=font_small, weight=ft.FontWeight.BOLD, width=200),
@@ -2021,9 +2031,9 @@ class StoreApp:
             self.material_detail_panel.content = self.create_detail_panel(material, self.page_ref)
             self.page_ref.update()
 
-            # ============ ACCESSORIES SCREEN ============
+                # ============ ACCESSORIES SCREEN ============
     def show_accessories(self, page: ft.Page):
-        """Show accessories screen with categories, filters, and full CRUD operations"""
+        """Show accessories screen with cards on mobile, table on desktop"""
         page.controls.clear()
         
         self.page_ref = page
@@ -2032,6 +2042,8 @@ class StoreApp:
         
         # Check if mobile
         is_mobile = page.width < 800 if page.width else False
+        
+        print(f"Accessories screen - width: {page.width}, is_mobile: {is_mobile}")
         
         # Navigation for mobile
         if is_mobile:
@@ -2054,8 +2066,8 @@ class StoreApp:
         # Initialize filters
         if not hasattr(self, 'current_accessory_filter'):
             self.current_accessory_filter = "All"
-        if not hasattr(self, 'current_accessory_category_filter'):
-            self.current_accessory_category_filter = "All"
+        if not hasattr(self, 'current_acc_category_filter'):
+            self.current_acc_category_filter = "All"
         if not hasattr(self, 'accessory_search_query'):
             self.accessory_search_query = ""
         
@@ -2091,7 +2103,7 @@ class StoreApp:
         for label, color, ftype in quality_configs:
             btn = ft.Container(
                 content=ft.Text(label, size=font_small, weight=ft.FontWeight.BOLD, color=self.text_color),
-                padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
                 bgcolor=color if self.current_accessory_filter == ftype else self.card_color,
                 border_radius=25,
                 ink=True,
@@ -2100,14 +2112,14 @@ class StoreApp:
             self.accessory_filter_buttons[ftype] = btn
             quality_filter_buttons.append(btn)
         
-        quality_filter_row = ft.Row(quality_filter_buttons, spacing=8, wrap=True)
+        quality_filter_row = ft.Row(quality_filter_buttons, spacing=6, wrap=True)
         
         # ========== CATEGORY FILTER WITH MANAGE BUTTON ==========
         category_filter = ft.Dropdown(
             label="Category",
             width=150 if not is_mobile else page.width - 100,
             options=[ft.dropdown.Option(cat, cat) for cat in categories],
-            value=self.current_accessory_category_filter,
+            value=self.current_acc_category_filter,
             bgcolor=self.card_color,
             text_size=font_small,
         )
@@ -2138,7 +2150,10 @@ class StoreApp:
             )
         
         # ========== ACCESSORIES CONTAINER ==========
-        accessories_container = ft.Column(spacing=10 if is_mobile else 2, scroll=ft.ScrollMode.AUTO, expand=True)
+        if is_mobile:
+            accessories_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+        else:
+            accessories_container = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, height=500)
         
         # ========== DETAIL PANEL (Desktop only) ==========
         if not is_mobile:
@@ -2153,7 +2168,6 @@ class StoreApp:
         # ========== FILTER FUNCTIONS ==========
         def filter_accessories_by_quality(filter_type):
             self.current_accessory_filter = filter_type
-            # Update button colors
             color_map = {
                 "All": self.accent_color,
                 "New": self.success_color,
@@ -2167,7 +2181,7 @@ class StoreApp:
             update_accessories_display()
         
         def filter_accessories_by_category(category):
-            self.current_accessory_category_filter = category
+            self.current_acc_category_filter = category
             update_accessories_display()
         
         def on_search(e):
@@ -2181,23 +2195,18 @@ class StoreApp:
                 page.update()
         
         def update_accessories_display():
-            # Filter accessories
             filtered = accessories.copy()
             
-            # Apply quality filter
             if self.current_accessory_filter != "All":
                 filtered = [a for a in filtered if a.get('quality') == self.current_accessory_filter]
             
-            # Apply category filter
-            if self.current_accessory_category_filter != "All":
-                filtered = [a for a in filtered if a.get('category', 'Uncategorized') == self.current_accessory_category_filter]
+            if self.current_acc_category_filter != "All":
+                filtered = [a for a in filtered if a.get('category', 'Uncategorized') == self.current_acc_category_filter]
             
-            # Apply search filter
             if self.accessory_search_query:
                 query = self.accessory_search_query.lower()
                 filtered = [a for a in filtered if query in a.get('name', '').lower() or query in a.get('item_code', '').lower()]
             
-            # Update display
             accessories_container.controls.clear()
             
             if not filtered:
@@ -2208,8 +2217,12 @@ class StoreApp:
                 return
             
             for a in filtered:
+                location = a.get('location') or a.get('location_ids') or 'N/A'
+                price = a.get('price', 0)
+                price_text = f"${price:.2f}" if price else ""
+                
                 if is_mobile:
-                    # Mobile: Card view
+                    # MOBILE: Card view
                     card = ft.Card(
                         content=ft.Container(
                             content=ft.Column([
@@ -2228,8 +2241,8 @@ class StoreApp:
                                     ),
                                 ]),
                                 ft.Row([
-                                    ft.Text(f"📍 {a.get('location', 'N/A')}", size=font_small - 1, color="#888888", expand=True),
-                                    ft.Text(f"💰 ${a.get('price', 0):.2f}", size=font_small - 1, color="#4CAF50") if a.get('price') else ft.Container(),
+                                    ft.Text(f"📍 {location}", size=font_small - 1, color="#888888", expand=True),
+                                    ft.Text(price_text, size=font_small - 1, color="#4CAF50") if price_text else ft.Container(),
                                 ]),
                                 ft.Divider(height=1, color="#3C3C3C"),
                                 ft.Row([
@@ -2260,14 +2273,10 @@ class StoreApp:
                     )
                     accessories_container.controls.append(card)
                 else:
-                    # Desktop: Table row
-                    location = a.get('location') or a.get('location_ids') or 'N/A'
-                    price = a.get('price', 0)
-                    price_text = f"${price:.2f}" if price else "N/A"
-                    
+                    # DESKTOP: Table row
                     row = ft.Container(
                         content=ft.Row([
-                            ft.Text(a.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD, width=200),
+                            ft.Text(a.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD, width=180),
                             ft.Text(a.get('category', 'Uncategorized'), size=font_small - 1, width=120, color=self.accent_color),
                             ft.Text(location, size=font_small - 1, width=120, color="#888888"),
                             ft.Text(str(a.get('quantity', 0)), size=font_small, width=60,
@@ -2280,7 +2289,6 @@ class StoreApp:
                                 padding=ft.padding.symmetric(horizontal=8, vertical=4),
                                 width=90,
                             ),
-                            ft.Text(price_text, size=font_small - 1, width=60, color="#4CAF50"),
                             ft.Row([
                                 ft.IconButton(
                                     icon=ft.icons.EDIT, icon_size=18,
@@ -2315,7 +2323,7 @@ class StoreApp:
         
         # ========== BUILD MAIN CONTENT ==========
         if is_mobile:
-            # Mobile layout
+            # MOBILE LAYOUT
             content = ft.Column([
                 ft.Row([
                     ft.Text("Accessories", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
@@ -2326,7 +2334,7 @@ class StoreApp:
                 ft.Container(height=10),
                 quality_filter_row,
                 ft.Container(height=10),
-                category_row,  # Category filter with manage button
+                category_row,
                 ft.Container(height=15),
                 accessories_container,
                 ft.Container(height=80),
@@ -2334,7 +2342,6 @@ class StoreApp:
             
             main_container = ft.Container(content=content, expand=True, padding=padding_size)
             
-            # Add FAB for mobile
             page.add(
                 ft.Stack([
                     main_container,
@@ -2342,20 +2349,18 @@ class StoreApp:
                 ], expand=True)
             )
             
-            # Add bottom navigation if mobile
             if nav:
                 page.add(nav)
             
         else:
-            # Desktop layout
+            # DESKTOP LAYOUT
             header_row = ft.Container(
                 content=ft.Row([
-                    ft.Text("Name", size=font_small, weight=ft.FontWeight.BOLD, width=200),
+                    ft.Text("Name", size=font_small, weight=ft.FontWeight.BOLD, width=180),
                     ft.Text("Category", size=font_small, weight=ft.FontWeight.BOLD, width=120),
                     ft.Text("Location", size=font_small, weight=ft.FontWeight.BOLD, width=120),
                     ft.Text("Qty", size=font_small, weight=ft.FontWeight.BOLD, width=60),
                     ft.Text("Quality", size=font_small, weight=ft.FontWeight.BOLD, width=90),
-                    ft.Text("Price", size=font_small, weight=ft.FontWeight.BOLD, width=60),
                     ft.Text("Actions", size=font_small, weight=ft.FontWeight.BOLD, width=120),
                 ], alignment=ft.MainAxisAlignment.START),
                 padding=ft.padding.symmetric(vertical=10, horizontal=12),
