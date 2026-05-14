@@ -741,145 +741,9 @@ class StoreApp:
         
         self.current_view = "dashboard"
         page.update()
-    
-  #  def export_inventory_pdf_dashboard(self, page: ft.Page):
-        """Export inventory to PDF from dashboard"""
-        try:
-            from reportlab.lib import colors
-            from reportlab.lib.pagesizes import landscape, A4
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.enums import TA_CENTER
-            from datetime import datetime
-            import os
-            
-            # Get data
-            materials = self.dict_list(MaterialManager.get_all())
-            accessories = self.dict_list(AccessoryManager.get_all())
-            
-            # Combine inventory items
-            inventory_items = []
-            for m in materials:
-                inventory_items.append({
-                    'type': 'Material',
-                    'name': m.get('name', 'N/A'),
-                    'code': m.get('item_code', 'N/A'),
-                    'quantity': m.get('quantity', 0),
-                    'quality': m.get('quality', 'Used'),
-                    'location': m.get('location_ids', 'N/A'),
-                })
-            for a in accessories:
-                inventory_items.append({
-                    'type': 'Accessory',
-                    'name': a.get('name', 'N/A'),
-                    'code': a.get('item_code', 'N/A'),
-                    'quantity': a.get('quantity', 0),
-                    'quality': a.get('quality', 'Used'),
-                    'location': a.get('location') or a.get('location_ids', 'N/A'),
-                })
-            
-            # Create exports folder
-            export_dir = "exports"
-            if not os.path.exists(export_dir):
-                os.makedirs(export_dir)
-            
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = os.path.join(export_dir, f"inventory_report_{timestamp}.pdf")
-            
-            doc = SimpleDocTemplate(filename, pagesize=landscape(A4), 
-                                    rightMargin=30, leftMargin=30,
-                                    topMargin=40, bottomMargin=30)
-            
-            styles = getSampleStyleSheet()
-            story = []
-            
-            title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
-                fontSize=20,
-                textColor=colors.HexColor('#1976D2'),
-                alignment=TA_CENTER,
-                spaceAfter=20
-            )
-            
-            story.append(Paragraph("Store Management System - Inventory Report", title_style))
-            story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", 
-                                styles['Normal']))
-            story.append(Spacer(1, 20))
-            
-            # Summary
-            total_items = len(inventory_items)
-            total_quantity = sum(i.get('quantity', 0) for i in inventory_items)
-            
-            summary_data = [
-                ['Total Items', str(total_items)],
-                ['Total Quantity', str(total_quantity)],
-            ]
-            
-            summary_table = Table(summary_data, colWidths=[120, 80])
-            summary_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1976D2')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
-            ]))
-            story.append(summary_table)
-            story.append(Spacer(1, 20))
-            
-            # Inventory table
-            table_data = [['#', 'Type', 'Name', 'Code', 'Quantity', 'Quality', 'Location']]
-            
-            for i, item in enumerate(inventory_items[:200], 1):
-                table_data.append([
-                    str(i),
-                    item['type'],
-                    item['name'],
-                    item['code'],
-                    str(item['quantity']),
-                    item['quality'],
-                    item['location'],
-                ])
-            
-            table = Table(table_data, colWidths=[30, 50, 100, 70, 45, 60, 80])
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3C3C3C')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 9),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 8),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
-            ]))
-            
-            story.append(table)
-            doc.build(story)
-            
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ PDF exported to {filename}"),
-                bgcolor=self.success_color,
-                duration=4000
-            )
-            page.snack_bar.open = True
-            page.update()
-            
-        except ImportError:
-            page.snack_bar = ft.SnackBar(
-                ft.Text("Please install reportlab: pip install reportlab"),
-                bgcolor=self.danger_color,
-                duration=5000
-            )
-            page.snack_bar.open = True
-            page.update()
-        except Exception as e:
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"❌ PDF export failed: {str(e)}"),
-                bgcolor=self.danger_color,
-                duration=4000
-            )
-            page.snack_bar.open = True
-            page.update()
+
     def export_inventory_html(self, page: ft.Page):
-        """Export inventory to HTML - works without any extra libraries"""
+        """Export inventory to HTML and open in browser automatically"""
         from datetime import datetime
         import os
         import webbrowser
@@ -894,28 +758,71 @@ class StoreApp:
             total_accessories = len(accessories)
             total_items = total_materials + total_accessories
             total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
-            
-            # Low stock count
             low_stock_count = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
             
-            # Create exports folder
-            export_dir = "exports"
-            if not os.path.exists(export_dir):
-                os.makedirs(export_dir)
+            # Create HTML content
+            html_content = self.generate_html_report(materials, accessories, total_items, total_stock, low_stock_count, total_materials, total_accessories)
+            
+            # Save to a temporary file or Downloads folder
+            download_dir = self.get_download_path()
+            
+            if not os.path.exists(download_dir):
+                os.makedirs(download_dir)
             
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = os.path.join(export_dir, f"inventory_report_{timestamp}.html")
+            filename = os.path.join(download_dir, f"inventory_report_{timestamp}.html")
             
-            # Quality colors mapping
-            quality_colors = {
-                "New": "#4CAF50",
-                "Used": "#FF9800", 
-                "Damaged": "#F44336",
-                "Repaired": "#2196F3"
-            }
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(html_content)
             
-            # Create HTML content
-            html_content = f"""<!DOCTYPE html>
+            # Open in web browser immediately
+            webbrowser.open(f'file://{os.path.abspath(filename)}')
+            
+            # Show success message
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Report opened in browser! Saved to: {filename}"),
+                bgcolor=self.success_color,
+                duration=5000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ Export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+    def get_download_path(self):
+        """Get the appropriate download folder path for the device"""
+        import os
+        
+        # Android devices
+        if os.path.exists("/storage/emulated/0/Download"):
+            return "/storage/emulated/0/Download/StoreManagement"
+        
+        # Windows/Mac/Linux desktop
+        elif os.path.exists(os.path.expanduser("~/Downloads")):
+            return os.path.expanduser("~/Downloads/StoreManagement")
+        
+        # Fallback to local folder
+        else:
+            return "exports"
+
+    def generate_html_report(self, materials, accessories, total_items, total_stock, low_stock_count, total_materials, total_accessories):
+        """Generate beautiful HTML report content"""
+        from datetime import datetime
+        
+        quality_colors = {
+            "New": "#4CAF50",
+            "Used": "#FF9800", 
+            "Damaged": "#F44336",
+            "Repaired": "#2196F3"
+        }
+        
+        html_content = f"""<!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
@@ -1046,12 +953,6 @@ class StoreApp:
                     background: white;
                     padding: 0;
                 }}
-                .stats, .header {{
-                    break-inside: avoid;
-                }}
-                table {{
-                    break-inside: auto;
-                }}
             }}
         </style>
     </head>
@@ -1097,14 +998,14 @@ class StoreApp:
                         </thead>
                         <tbody>
     """
+        
+        for m in materials[:200]:
+            quantity = m.get('quantity', 0)
+            quantity_class = 'low-stock' if quantity < 10 else ''
+            quality = m.get('quality', 'Used')
+            badge_class = f"badge-{quality.lower()}"
             
-            for m in materials[:200]:
-                quantity = m.get('quantity', 0)
-                quantity_class = 'low-stock' if quantity < 10 else ''
-                quality = m.get('quality', 'Used')
-                badge_class = f"badge-{quality.lower()}"
-                
-                html_content += f"""
+            html_content += f"""
                             <tr>
                                 <td><strong>{m.get('name', 'N/A')}</strong></td>
                                 <td>{m.get('item_code', 'N/A')}</td>
@@ -1113,8 +1014,8 @@ class StoreApp:
                                 <td>{m.get('location_ids', 'N/A')}</td>
                                 <td>{m.get('size', 'N/A')}</td>
                             </tr>"""
-            
-            html_content += """
+        
+        html_content += """
                         </tbody>
                     </table>
                 </div>
@@ -1136,17 +1037,17 @@ class StoreApp:
                         </thead>
                         <tbody>
     """
+        
+        for a in accessories[:200]:
+            quantity = a.get('quantity', 0)
+            quantity_class = 'low-stock' if quantity < 10 else ''
+            quality = a.get('quality', 'Used')
+            badge_class = f"badge-{quality.lower()}"
+            location = a.get('location') or a.get('location_ids') or 'N/A'
+            price = a.get('price', 0)
+            price_text = f"${price:.2f}" if price else "N/A"
             
-            for a in accessories[:200]:
-                quantity = a.get('quantity', 0)
-                quantity_class = 'low-stock' if quantity < 10 else ''
-                quality = a.get('quality', 'Used')
-                badge_class = f"badge-{quality.lower()}"
-                location = a.get('location') or a.get('location_ids') or 'N/A'
-                price = a.get('price', 0)
-                price_text = f"${price:.2f}" if price else "N/A"
-                
-                html_content += f"""
+            html_content += f"""
                             <tr>
                                 <td><strong>{a.get('name', 'N/A')}</strong></td>
                                 <td>{a.get('item_code', 'N/A')}</td>
@@ -1155,8 +1056,8 @@ class StoreApp:
                                 <td>{location}</td>
                                 <td>{price_text}</td>
                             </tr>"""
-            
-            html_content += f"""
+        
+        html_content += f"""
                         </tbody>
                     </table>
                 </div>
@@ -1169,33 +1070,11 @@ class StoreApp:
         </div>
     </body>
     </html>"""
-            
-            # Save to file
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            
-            # Open in browser
-            webbrowser.open(f'file://{os.path.abspath(filename)}')
-            
-            # Show success message
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ Report saved: {filename}"),
-                bgcolor=self.success_color,
-                duration=4000
-            )
-            page.snack_bar.open = True
-            page.update()
-            
-        except Exception as e:
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"❌ Export failed: {str(e)}"),
-                bgcolor=self.danger_color,
-                duration=4000
-            )
-            page.snack_bar.open = True
-            page.update()
+        
+        return html_content
+
     def export_low_stock_html(self, page: ft.Page):
-        """Export low stock items to HTML"""
+        """Export low stock items to HTML and open in browser"""
         from datetime import datetime
         import os
         import webbrowser
@@ -1210,7 +1089,7 @@ class StoreApp:
             for m in materials:
                 if m.get('quantity', 0) < 10:
                     low_stock_items.append({
-                        'type': '📦 Material',
+                        'type': 'Material',
                         'name': m.get('name', 'N/A'),
                         'code': m.get('item_code', 'N/A'),
                         'quantity': m.get('quantity', 0),
@@ -1220,7 +1099,7 @@ class StoreApp:
             for a in accessories:
                 if a.get('quantity', 0) < 10:
                     low_stock_items.append({
-                        'type': '🔧 Accessory',
+                        'type': 'Accessory',
                         'name': a.get('name', 'N/A'),
                         'code': a.get('item_code', 'N/A'),
                         'quantity': a.get('quantity', 0),
@@ -1238,16 +1117,45 @@ class StoreApp:
                 page.update()
                 return
             
-            # Create exports folder
-            export_dir = "exports"
-            if not os.path.exists(export_dir):
-                os.makedirs(export_dir)
+            # Generate HTML content (simplified version)
+            html_content = self.generate_low_stock_html(low_stock_items)
+            
+            # Save to Downloads
+            download_dir = self.get_download_path()
+            if not os.path.exists(download_dir):
+                os.makedirs(download_dir)
             
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = os.path.join(export_dir, f"low_stock_report_{timestamp}.html")
+            filename = os.path.join(download_dir, f"low_stock_report_{timestamp}.html")
             
-            # Create HTML content (simplified version)
-            html_content = f"""<!DOCTYPE html>
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            # Open in browser
+            webbrowser.open(f'file://{os.path.abspath(filename)}')
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Low stock report opened in browser!"),
+                bgcolor=self.success_color,
+                duration=5000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ Export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+
+    def generate_low_stock_html(self, low_stock_items):
+        """Generate low stock HTML report"""
+        from datetime import datetime
+        
+        html_content = f"""<!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
@@ -1262,6 +1170,9 @@ class StoreApp:
             th {{ background-color: #F44336; color: white; }}
             .critical {{ background-color: #FFEBEE; }}
             .footer {{ text-align: center; margin-top: 20px; color: #888; font-size: 12px; }}
+            @media print {{
+                body {{ background: white; }}
+            }}
         </style>
     </head>
     <body>
@@ -1270,29 +1181,33 @@ class StoreApp:
             <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             <p>Total low stock items: {len(low_stock_items)}</p>
             <table>
-                <tr>
-                    <th>Type</th>
-                    <th>Name</th>
-                    <th>Code</th>
-                    <th>Current Stock</th>
-                    <th>Quality</th>
-                    <th>Location</th>
-                </tr>
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Name</th>
+                        <th>Code</th>
+                        <th>Current Stock</th>
+                        <th>Quality</th>
+                        <th>Location</th>
+                    </tr>
+                </thead>
+                <tbody>
     """
-            
-            for item in low_stock_items:
-                critical_class = 'critical' if item['quantity'] < 5 else ''
-                html_content += f"""
-                <tr class="{critical_class}">
-                    <td>{item['type']}</td>
-                    <td><strong>{item['name']}</strong></td>
-                    <td>{item['code']}</td>
-                    <td style="color: #F44336; font-weight: bold;">{item['quantity']}</td>
-                    <td>{item['quality']}</td>
-                    <td>{item['location']}</td>
-                </tr>"""
-            
-            html_content += """
+        
+        for item in low_stock_items:
+            critical_class = 'critical' if item['quantity'] < 5 else ''
+            html_content += f"""
+                    <tr class="{critical_class}">
+                        <td>{item['type']}</td>
+                        <td><strong>{item['name']}</strong></td>
+                        <td>{item['code']}</td>
+                        <td style="color: #F44336; font-weight: bold;">{item['quantity']}</td>
+                        <td>{item['quality']}</td>
+                        <td>{item['location']}</td>
+                    </tr>"""
+        
+        html_content += f"""
+                </tbody>
             </table>
             <div class="footer">
                 <p>Generated by Store Management System</p>
@@ -1300,28 +1215,8 @@ class StoreApp:
         </div>
     </body>
     </html>"""
-            
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            
-            webbrowser.open(f'file://{os.path.abspath(filename)}')
-            
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ Low stock report saved to {filename}"),
-                bgcolor=self.success_color,
-                duration=4000
-            )
-            page.snack_bar.open = True
-            page.update()
-            
-        except Exception as e:
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"❌ Export failed: {str(e)}"),
-                bgcolor=self.danger_color,
-                duration=4000
-            )
-            page.snack_bar.open = True
-            page.update()
+        
+        return html_content
     def create_recent_activity_card(self, recent_items, font_small, font_normal):
         """Create recent activity card"""
         
