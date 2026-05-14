@@ -266,31 +266,54 @@ class StoreApp:
             self.show_accessories(page)
         page.update()
     
-            # ============ MAIN ============
     def main(self, page: ft.Page):
+        # Initialize scale helper
+        self.scale_helper = ScaleHelper(page)
         self.page_ref = page
         
-        # FULL SCREEN - NO BORDERS
+        # FORCE FULL SCREEN
+        page.window_width = None
+        page.window_height = None
+        page.window_maximized = True
+        page.window_resizable = True
+        page.window_min_width = None
+        page.window_min_height = None
+        
         page.title = "Store Management System"
         page.theme_mode = ft.ThemeMode.DARK
         page.bgcolor = self.bg_color
         page.padding = 0
         page.spacing = 0
-        page.window_width = None
-        page.window_height = None
-        page.window_maximized = True
-        page.window_resizable = True
         
-        # Calculate screen scale for fonts
-        self.screen_scale = 1.0
-        if page.width:
-            self.screen_scale = min(page.width / 1200, 1.2)
+        # Track zoom level
+        self.zoom_level = 1.0
         
+        # FORCE INITIAL PAGE UPDATE to get proper width
+        page.update()
+        
+        # Now get width after update
+        print(f"Initial page width: {page.width}")
+        
+        # Handle resize to update scale and refresh views
         def on_resize(e):
-            if page.width:
-                self.screen_scale = min(page.width / 1200, 1.2)
-            if self.current_user and self.current_view == "dashboard":
-                self.show_dashboard(page)
+            self.scale_helper.update_scale()
+            print(f"Resize - new width: {page.width}")
+            if self.current_user:
+                # Refresh current view with new size
+                if self.current_view == "dashboard":
+                    self.show_dashboard(page)
+                elif self.current_view == "materials":
+                    self.show_materials_screen(page)
+                elif self.current_view == "accessories":
+                    self.show_accessories(page)
+                elif self.current_view == "inventory":
+                    self.show_inventory(page)
+                elif self.current_view == "users":
+                    self.show_users(page)
+                elif self.current_view == "settings":
+                    self.show_settings(page)
+                elif self.current_view == "barcode_scanner":
+                    self.show_barcode_scanner(page)
         
         page.on_resize = on_resize
         
@@ -1371,13 +1394,19 @@ class StoreApp:
         materials = self.dict_list(MaterialManager.get_all())
         sidebar = self.create_sidebar(page)
         
-        # Check if mobile - IMPORTANT: Use page.width
-        is_mobile = page.width < 800 if page.width else False
-        
-        # For testing on desktop, you can force mobile mode by uncommenting:
+        # FORCE MOBILE FOR TESTING - Remove this after testing
         # is_mobile = True
         
-        print(f"Screen width: {page.width}, is_mobile: {is_mobile}")  # Debug print
+        # Better mobile detection - check both width and user agent
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Also check if it's likely a mobile device based on typical phone widths
+        if page.width and page.width <= 768:
+            is_mobile = True
+        
+        print(f"=== MATERIALS SCREEN ===")
+        print(f"Page width: {page.width}")
+        print(f"Is mobile: {is_mobile}")
         
         # Navigation for mobile
         if is_mobile:
@@ -1483,13 +1512,14 @@ class StoreApp:
                 on_click=lambda e: self.open_add_modal(page),
             )
         
-        # ========== MATERIALS CONTAINER - Card view for mobile, Table for desktop ==========
+        # ========== MATERIALS CONTAINER ==========
+        # FORCE card view on mobile, table view on desktop
         if is_mobile:
-            # Mobile: Card view container
             materials_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+            print("Using MOBILE card view")
         else:
-            # Desktop: Table view container
             materials_container = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, height=500)
+            print("Using DESKTOP table view")
         
         # ========== DETAIL PANEL (Desktop only) ==========
         if not is_mobile:
@@ -1504,7 +1534,6 @@ class StoreApp:
         # ========== FILTER FUNCTIONS ==========
         def filter_materials_by_quality(filter_type):
             self.current_material_filter = filter_type
-            # Update button colors
             color_map = {
                 "All": self.accent_color,
                 "New": self.success_color,
@@ -1525,12 +1554,6 @@ class StoreApp:
             self.material_search_query = search_field.value
             update_materials_display()
         
-        def on_material_select(material):
-            self.selected_material_detail = material
-            if not is_mobile and 'detail_panel' in locals():
-                detail_panel.content = self.create_detail_panel(material, page)
-                page.update()
-        
         def update_materials_display():
             # Filter materials
             filtered = materials.copy()
@@ -1548,7 +1571,7 @@ class StoreApp:
                 query = self.material_search_query.lower()
                 filtered = [m for m in filtered if query in m.get('name', '').lower() or query in m.get('item_code', '').lower()]
             
-            # Update display
+            # Clear and rebuild
             materials_container.controls.clear()
             
             if not filtered:
@@ -1645,7 +1668,7 @@ class StoreApp:
                         bgcolor="#2C2C2C",
                         border_radius=6,
                         ink=True,
-                        on_click=lambda e, mat=m: on_material_select(mat),
+                        on_click=lambda e, mat=m: self.on_material_select(mat),
                     )
                     materials_container.controls.append(row)
             
