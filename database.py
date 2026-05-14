@@ -1,16 +1,19 @@
-# database.py
+"""
+Database module for Store Management System
+"""
 import sqlite3
 import os
 
-# Database path
-DB_PATH = "store_management.db"
+# Get the absolute path to the database file
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "store_management.db")
 
 def init_database():
     """Initialize the database with all required tables"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Create users table
+    # Create users table with all columns
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18,48 +21,36 @@ def init_database():
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             role TEXT DEFAULT 'user',
+            avatar_path TEXT,
             is_premium INTEGER DEFAULT 0,
             premium_plan TEXT,
-            stripe_customer_id TEXT,
             license_key TEXT,
             license_expiry TEXT,
             trial_mode INTEGER DEFAULT 0,
             trial_end_date TEXT,
-            avatar_path TEXT,
+            guest_mode INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS scan_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            barcode TEXT,
-            item_name TEXT,
-            item_sku TEXT,
-            item_price REAL,
-            item_stock INTEGER,
-            item_type TEXT,
-            scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            found INTEGER DEFAULT 1
-        )
-    ''')
-
-    # Create materials table (no image_path)
+    # Create materials table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
+            category TEXT DEFAULT 'Uncategorized',
+            category_id INTEGER,
             item_code TEXT UNIQUE,
             quantity INTEGER DEFAULT 0,
             size TEXT,
             length REAL,
-            quality TEXT,
+            quality TEXT DEFAULT 'New',
             location_ids TEXT,
             colors TEXT,
             notes TEXT,
             barcode_value TEXT UNIQUE,
-            barcode_path TEXT,
+            image_path TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -70,10 +61,12 @@ def init_database():
         CREATE TABLE IF NOT EXISTS accessories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
+            category TEXT DEFAULT 'Uncategorized',
+            category_id INTEGER,
             item_code TEXT UNIQUE,
             quantity INTEGER DEFAULT 0,
             price REAL DEFAULT 0,
-            quality TEXT,
+            quality TEXT DEFAULT 'New',
             location TEXT,
             notes TEXT,
             barcode_value TEXT UNIQUE,
@@ -83,190 +76,52 @@ def init_database():
         )
     ''')
     
-    # Create activity logs table
+    # Create custom_categories table
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS activity_logs (
+        CREATE TABLE IF NOT EXISTS custom_categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            action TEXT,
-            item_type TEXT,
-            item_id INTEGER,
-            details TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )
-    ''')
-    
-    # Create backups table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS backups (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT,
-            file_size TEXT,
+            name TEXT UNIQUE NOT NULL,
+            icon TEXT DEFAULT '📁',
+            color TEXT DEFAULT '#1976D2',
+            created_by TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
-    # Insert default admin user if not exists
-    cursor.execute("SELECT * FROM users WHERE email = ?", ("admin@store.com",))
-    if not cursor.fetchone():
+    # Insert default admin user if no users exist
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
         import hashlib
-        default_password = "admin123"
-        password_hash = hashlib.sha256(default_password.encode()).hexdigest()
+        admin_password = hashlib.sha256("admin123".encode()).hexdigest()
         cursor.execute('''
-            INSERT INTO users (name, email, password_hash, role, is_premium)
-            VALUES (?, ?, ?, ?, ?)
-        ''', ("Administrator", "admin@store.com", password_hash, "admin", 1))
-        print("Default admin user created: admin@store.com / admin123")
+            INSERT INTO users (name, email, password_hash, role)
+            VALUES (?, ?, ?, ?)
+        ''', ("Administrator", "admin@store.com", admin_password, "admin"))
+        print("✅ Default admin user created: admin@store.com / admin123")
+    
+    # Add any missing columns to existing users table
+    cursor.execute("PRAGMA table_info(users)")
+    existing_columns = [column[1] for column in cursor.fetchall()]
+    
+    columns_to_add = {
+        'guest_mode': 'INTEGER DEFAULT 0',
+        'avatar_path': 'TEXT',
+        'trial_mode': 'INTEGER DEFAULT 0',
+        'trial_end_date': 'TEXT',
+        'is_premium': 'INTEGER DEFAULT 0',
+        'premium_plan': 'TEXT',
+        'license_key': 'TEXT',
+        'license_expiry': 'TEXT'
+    }
+    
+    for col_name, col_type in columns_to_add.items():
+        if col_name not in existing_columns:
+            try:
+                cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+                print(f"✅ Added column: {col_name}")
+            except Exception as e:
+                print(f"Error adding {col_name}: {e}")
     
     conn.commit()
     conn.close()
-    print("Database initialized successfully")
-
-def get_db_connection():
-    """Get database connection"""
-    return sqlite3.connect(DB_PATH)
-
-def backup_database():
-    """Create a backup of the database"""
-    import shutil
-    from datetime import datetime
-    
-    backup_dir = "backups"
-    if not os.path.exists(backup_dir):
-        os.makedirs(backup_dir)
-    
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    backup_name = f"backup_{timestamp}.db"
-    backup_path = os.path.join(backup_dir, backup_name)
-    
-    shutil.copy2(DB_PATH, backup_path)
-    
-    # Log the backup
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    file_size = os.path.getsize(backup_path)
-    
-    if file_size < 1024:
-        size_str = f"{file_size} B"
-    elif file_size < 1024 * 1024:
-        size_str = f"{file_size / 1024:.1f} KB"
-    else:
-        size_str = f"{file_size / (1024 * 1024):.1f} MB"
-    
-    cursor.execute("INSERT INTO backups (filename, file_size) VALUES (?, ?)", (backup_name, size_str))
-    conn.commit()
-    conn.close()
-    
-    return backup_path
-
-def restore_database(backup_file):
-    """Restore database from backup"""
-    import shutil
-    
-    backup_path = os.path.join("backups", backup_file)
-    if os.path.exists(backup_path):
-        shutil.copy2(backup_path, DB_PATH)
-        return True
-    return False
-
-def get_database_size():
-    """Get database file size"""
-    if os.path.exists(DB_PATH):
-        size = os.path.getsize(DB_PATH)
-        if size < 1024:
-            return f"{size} B"
-        elif size < 1024 * 1024:
-            return f"{size / 1024:.1f} KB"
-        else:
-            return f"{size / (1024 * 1024):.1f} MB"
-    return "N/A"
-
-def get_backup_list():
-    """Get list of backups"""
-    import os
-    from datetime import datetime
-    
-    backups = []
-    backup_dir = "backups"
-    
-    if os.path.exists(backup_dir):
-        for file in os.listdir(backup_dir):
-            if file.endswith('.db'):
-                file_path = os.path.join(backup_dir, file)
-                file_size = os.path.getsize(file_path)
-                file_time = os.path.getmtime(file_path)
-                
-                if file_size < 1024:
-                    size_str = f"{file_size} B"
-                elif file_size < 1024 * 1024:
-                    size_str = f"{file_size / 1024:.1f} KB"
-                else:
-                    size_str = f"{file_size / (1024 * 1024):.1f} MB"
-                
-                date_str = datetime.fromtimestamp(file_time).strftime('%Y-%m-%d %H:%M:%S')
-                
-                backups.append({
-                    'filename': file,
-                    'size': size_str,
-                    'date': date_str,
-                    'path': file_path
-                })
-    
-    backups.sort(key=lambda x: x['date'], reverse=True)
-    return backups
-
-def delete_backup(backup_file):
-    """Delete a backup file"""
-    import os
-    backup_path = os.path.join("backups", backup_file)
-    if os.path.exists(backup_path):
-        os.remove(backup_path)
-        
-        # Remove from database log
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM backups WHERE filename = ?", (backup_file,))
-        conn.commit()
-        conn.close()
-        
-        return True
-    return False
-
-def reset_database():
-    """Reset database (delete all data)"""
-    import os
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
-        init_database()
-        return True
-    return False
-
-def execute_query(query, params=None):
-    """Execute a query and return results"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-        
-        if query.strip().upper().startswith('SELECT'):
-            results = cursor.fetchall()
-            conn.close()
-            return results
-        else:
-            conn.commit()
-            last_id = cursor.lastrowid
-            conn.close()
-            return last_id
-    except Exception as e:
-        print(f"Database error: {e}")
-        conn.close()
-        return None
-
-# Run initialization when module is imported
-if __name__ == "__main__":
-    init_database()
+    print("✅ Database initialized successfully")
