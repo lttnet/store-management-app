@@ -1385,18 +1385,20 @@ class StoreApp:
             bgcolor=self.card_color,
             border_radius=15,
         )
-        
     def show_materials_screen(self, page: ft.Page):
-        """ULTRA SIMPLE - Exactly like test app"""
+        """With categories - step by step"""
         page.controls.clear()
         
-        # Get materials
         materials = self.dict_list(MaterialManager.get_all())
-        
-        # Create bottom navigation for mobile
         nav = self.create_bottom_nav(page)
         
-        # Create a simple column that scrolls
+        # Get unique categories
+        categories = ["All"]
+        for m in materials:
+            cat = m.get('category', 'Uncategorized')
+            if cat not in categories:
+                categories.append(cat)
+        
         main_column = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         
         # Title
@@ -1404,33 +1406,49 @@ class StoreApp:
             ft.Text("Materials", size=28, weight=ft.FontWeight.BOLD, color=self.text_color)
         )
         
-        # Add debug info
-        main_column.controls.append(
-            ft.Text(f"Found {len(materials)} materials", size=14, color="#888888")
+        # Category filter
+        category_filter = ft.Dropdown(
+            label="Category",
+            width=200,
+            options=[ft.dropdown.Option(cat, cat) for cat in categories],
+            value="All",
+            bgcolor=self.card_color,
         )
+        main_column.controls.append(category_filter)
         
         # Container for cards
         cards_container = ft.Column(spacing=10)
         
-        # Add cards
-        for m in materials:
-            card = ft.Card(
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Text(m.get('name', 'N/A'), size=18, weight=ft.FontWeight.BOLD),
-                        ft.Text(f"Quantity: {m.get('quantity', 0)}", size=14),
-                        ft.Text(f"Location: {m.get('location_ids', 'N/A')}", size=12, color="#888888"),
-                        ft.Row([
-                            ft.IconButton(icon=ft.icons.EDIT, icon_size=20),
-                            ft.IconButton(icon=ft.icons.DELETE, icon_size=20),
-                        ], spacing=0),
-                    ], spacing=5),
-                    padding=15,
-                ),
-                elevation=3,
-                margin=ft.margin.only(bottom=10),
-            )
-            cards_container.controls.append(card)
+        def update_cards():
+            selected = category_filter.value
+            cards_container.controls.clear()
+            
+            for m in materials:
+                if selected != "All" and m.get('category', 'Uncategorized') != selected:
+                    continue
+                
+                card = ft.Card(
+                    content=ft.Container(
+                        content=ft.Column([
+                            ft.Text(m.get('name', 'N/A'), size=18, weight=ft.FontWeight.BOLD),
+                            ft.Text(f"📁 {m.get('category', 'Uncategorized')}", size=12, color=self.accent_color),
+                            ft.Text(f"Qty: {m.get('quantity', 0)}", size=14),
+                            ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=12, color="#888888"),
+                            ft.Row([
+                                ft.IconButton(icon=ft.icons.EDIT, icon_size=20),
+                                ft.IconButton(icon=ft.icons.DELETE, icon_size=20),
+                            ], spacing=0),
+                        ], spacing=5),
+                        padding=15,
+                    ),
+                    elevation=3,
+                    margin=ft.margin.only(bottom=10),
+                )
+                cards_container.controls.append(card)
+            page.update()
+        
+        category_filter.on_change = lambda e: update_cards()
+        update_cards()
         
         main_column.controls.append(cards_container)
         
@@ -1441,7 +1459,6 @@ class StoreApp:
             on_click=lambda e: self.open_add_modal(page),
         )
         
-        # Layout
         main_container = ft.Container(content=main_column, expand=True, padding=20)
         
         page.add(
