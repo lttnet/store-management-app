@@ -1386,11 +1386,19 @@ class StoreApp:
             border_radius=15,
         )
     def show_materials_screen(self, page: ft.Page):
-        """WORKING - With Search"""
+        """FULL WORKING VERSION - With all filters"""
         page.controls.clear()
         
         materials = self.dict_list(MaterialManager.get_all())
         nav = self.create_bottom_nav(page)
+        
+        # Get categories
+        categories = ["All"]
+        for m in materials:
+            cat = m.get('category', 'Uncategorized')
+            if cat not in categories:
+                categories.append(cat)
+        categories.sort()
         
         main_column = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         
@@ -1408,14 +1416,66 @@ class StoreApp:
         main_column.controls.append(search_field)
         main_column.controls.append(ft.Container(height=5))
         
+        # Quality Filters
+        quality_filter_row = ft.Row(spacing=8, wrap=True)
+        current_quality = "All"
+        
+        quality_buttons = {}
+        for label in ["All", "New", "Used", "Damaged", "Repaired"]:
+            btn = ft.Container(
+                content=ft.Text(label, size=12, color=self.text_color),
+                padding=ft.padding.symmetric(horizontal=12, vertical=5),
+                bgcolor=self.card_color if label != "All" else self.accent_color,
+                border_radius=20,
+                ink=True,
+            )
+            quality_buttons[label] = btn
+            quality_filter_row.controls.append(btn)
+        
+        main_column.controls.append(quality_filter_row)
+        main_column.controls.append(ft.Container(height=5))
+        
+        # Category Filter
+        category_row = ft.Row(spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        
+        category_filter = ft.Dropdown(
+            label="Category",
+            width=150,
+            options=[ft.dropdown.Option(cat, cat) for cat in categories],
+            value="All",
+            bgcolor=self.card_color,
+        )
+        category_row.controls.append(category_filter)
+        
+        # Category Manager Button
+        category_manager_btn = ft.IconButton(
+            icon=ft.icons.SETTINGS,
+            icon_size=20,
+            icon_color=self.accent_color,
+            on_click=lambda e: self.show_category_manager(page),
+        )
+        category_row.controls.append(category_manager_btn)
+        
+        main_column.controls.append(category_row)
+        main_column.controls.append(ft.Container(height=5))
+        
         # Cards container
         cards_container = ft.Column(spacing=10)
+        
+        current_category = "All"
         
         def update_cards():
             search_query = search_field.value.lower() if search_field.value else ""
             cards_container.controls.clear()
             
             for m in materials:
+                # Quality filter
+                if current_quality != "All" and m.get('quality') != current_quality:
+                    continue
+                # Category filter
+                if current_category != "All" and m.get('category', 'Uncategorized') != current_category:
+                    continue
+                # Search filter
                 if search_query and search_query not in m.get('name', '').lower():
                     continue
                 
@@ -1424,6 +1484,7 @@ class StoreApp:
                         content=ft.Column([
                             ft.Text(m.get('name', 'N/A'), size=18, weight=ft.FontWeight.BOLD),
                             ft.Text(f"📁 {m.get('category', 'Uncategorized')}", size=12, color=self.accent_color),
+                            ft.Text(f"🏷️ {m.get('quality', 'Used')}", size=12),
                             ft.Text(f"Qty: {m.get('quantity', 0)}", size=14),
                             ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=12, color="#888888"),
                             ft.Row([
@@ -1440,7 +1501,29 @@ class StoreApp:
                 cards_container.controls.append(card)
             page.update()
         
+        # Quality filter handlers
+        def make_quality_handler(label):
+            def handler(e):
+                nonlocal current_quality
+                current_quality = label
+                for lbl, btn in quality_buttons.items():
+                    btn.bgcolor = self.accent_color if lbl == label else self.card_color
+                    btn.update()
+                update_cards()
+            return handler
+        
+        for label, btn in quality_buttons.items():
+            btn.on_click = make_quality_handler(label)
+        
+        # Category filter handler
+        def on_category_change(e):
+            nonlocal current_category
+            current_category = category_filter.value
+            update_cards()
+        
+        category_filter.on_change = on_category_change
         search_field.on_change = lambda e: update_cards()
+        
         update_cards()
         
         main_column.controls.append(cards_container)
