@@ -90,7 +90,6 @@ class StoreApp:
             "Damaged": "#FF5252",
             "Repaired": "#1976D2",
         }
-        self.FORCE_MOBILE = True  # Change to False for auto-detection
     
     def dict_list(self, rows):
         if rows is None:
@@ -1388,18 +1387,26 @@ class StoreApp:
         )
     
     def show_materials_screen(self, page: ft.Page):
-        """ULTRA SIMPLE materials screen - guaranteed to show cards"""
+        """Show materials screen - WORKING with Categories (No FilterChip)"""
         page.controls.clear()
         
-        # FORCE MOBILE LAYOUT - Always show cards
-        is_mobile = True  # Force cards for testing
+        # FORCE MOBILE MODE - Always use card layout
+        is_mobile = True
         
-        print(f"=== MATERIALS SCREEN - FORCED MOBILE: {is_mobile} ===")
+        print(f"Materials screen - is_mobile: {is_mobile}")
         
         # Get data
         materials = self.dict_list(MaterialManager.get_all())
         
-        # Create sidebar or bottom navigation
+        # Get unique categories
+        categories = ["All"]
+        for m in materials:
+            cat = m.get('category', 'Uncategorized')
+            if cat not in categories:
+                categories.append(cat)
+        categories.sort()
+        
+        # Navigation
         if is_mobile:
             nav = self.create_bottom_nav(page)
             sidebar = None
@@ -1407,26 +1414,128 @@ class StoreApp:
             sidebar = self.create_sidebar(page)
             nav = None
         
-        # Create a simple Column that scrolls
+        # State variables for filters
+        current_quality_filter = "All"
+        current_category_filter = "All"
+        search_query = ""
+        
+        # ========== CREATE SCROLLABLE COLUMN ==========
         main_column = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         
         # Title
         main_column.controls.append(
             ft.Text("Materials", size=24, weight=ft.FontWeight.BOLD, color=self.text_color)
         )
+        main_column.controls.append(ft.Container(height=5))
         
-        # Add materials as cards
-        if materials:
-            for m in materials[:20]:
+        # Search field
+        search_field = ft.TextField(
+            hint_text="Search materials...",
+            bgcolor=self.card_color,
+            border_color=self.accent_color,
+            text_size=14,
+        )
+        main_column.controls.append(search_field)
+        main_column.controls.append(ft.Container(height=10))
+        
+        # Quality Filter Buttons (using Container instead of FilterChip)
+        quality_filter_row = ft.Row(spacing=8, wrap=True)
+        
+        quality_filters = {}
+        quality_configs = [
+            ("All", self.accent_color),
+            ("New", self.success_color),
+            ("Used", self.warning_color),
+            ("Damaged", self.danger_color),
+            ("Repaired", self.accent_color),
+        ]
+        
+        for label, color in quality_configs:
+            btn = ft.Container(
+                content=ft.Text(label, size=12, weight=ft.FontWeight.BOLD, color=self.text_color),
+                padding=ft.padding.symmetric(horizontal=15, vertical=6),
+                bgcolor=color if label == current_quality_filter else self.card_color,
+                border_radius=20,
+                ink=True,
+            )
+            quality_filters[label] = btn
+            quality_filter_row.controls.append(btn)
+        
+        main_column.controls.append(quality_filter_row)
+        main_column.controls.append(ft.Container(height=10))
+        
+        # Category Filter with Manage Button
+        category_row = ft.Row(spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        
+        category_filter = ft.Dropdown(
+            label="Category",
+            width=150,
+            options=[ft.dropdown.Option(cat, cat) for cat in categories],
+            value="All",
+            bgcolor=self.card_color,
+            text_size=13,
+        )
+        category_row.controls.append(category_filter)
+        
+        # Category Manager Button
+        category_manager_btn = ft.IconButton(
+            icon=ft.icons.SETTINGS,
+            icon_size=20,
+            icon_color=self.accent_color,
+            on_click=lambda e: self.show_category_manager(page),
+            tooltip="Manage Categories",
+        )
+        category_row.controls.append(category_manager_btn)
+        
+        main_column.controls.append(category_row)
+        main_column.controls.append(ft.Container(height=15))
+        
+        # ========== MATERIALS CARDS CONTAINER ==========
+        materials_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+        
+        # Function to update display
+        def update_materials_display():
+            # Filter materials
+            filtered = materials.copy()
+            
+            # Apply quality filter
+            if current_quality_filter != "All":
+                filtered = [m for m in filtered if m.get('quality') == current_quality_filter]
+            
+            # Apply category filter
+            if current_category_filter != "All":
+                filtered = [m for m in filtered if m.get('category', 'Uncategorized') == current_category_filter]
+            
+            # Apply search filter
+            if search_query:
+                query = search_query.lower()
+                filtered = [m for m in filtered if query in m.get('name', '').lower() or query in m.get('item_code', '').lower()]
+            
+            # Clear and rebuild cards
+            materials_container.controls.clear()
+            
+            if not filtered:
+                materials_container.controls.append(
+                    ft.Text("No materials found", size=14, color="#888888", text_align=ft.TextAlign.CENTER)
+                )
+                page.update()
+                return
+            
+            for m in filtered:
+                # Get category icon
+                cat_name = m.get('category', 'Uncategorized')
+                cat_icon = self.get_category_icon(cat_name)
+                
                 card = ft.Card(
                     content=ft.Container(
                         content=ft.Column([
                             ft.Row([
                                 ft.Text(m.get('name', 'N/A'), size=16, weight=ft.FontWeight.BOLD, expand=True),
-                                ft.Text(f"Qty: {m.get('quantity', 0)}", size=14, weight=ft.FontWeight.BOLD),
+                                ft.Text(f"Qty: {m.get('quantity', 0)}", size=14, weight=ft.FontWeight.BOLD,
+                                    color=self.danger_color if m.get('quantity', 0) < 10 else self.text_color),
                             ]),
                             ft.Row([
-                                ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=12, color="#888888", expand=True),
+                                ft.Text(f"{cat_icon} {cat_name}", size=12, color=self.accent_color, expand=True),
                                 ft.Container(
                                     content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
                                     bgcolor=self.get_quality_color(m.get('quality', 'Used')),
@@ -1434,14 +1543,26 @@ class StoreApp:
                                     padding=ft.padding.symmetric(horizontal=8, vertical=2),
                                 ),
                             ]),
+                            ft.Row([
+                                ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=12, color="#888888", expand=True),
+                            ]),
                             ft.Divider(),
                             ft.Row([
-                                ft.IconButton(icon=ft.icons.EDIT, icon_size=20, 
-                                             on_click=lambda e, mid=m.get('id'): self.open_edit_modal(page, mid)),
-                                ft.IconButton(icon=ft.icons.DELETE, icon_size=20,
-                                             on_click=lambda e, mid=m.get('id'): self.open_delete_modal(page, mid)),
-                                ft.IconButton(icon=ft.icons.QR_CODE, icon_size=20,
-                                             on_click=lambda e, mid=m.get('id'): self.show_barcode_dialog(page, m)),
+                                ft.IconButton(
+                                    icon=ft.icons.EDIT, 
+                                    icon_size=20,
+                                    on_click=lambda e, mid=m.get('id'): self.open_edit_modal(page, mid),
+                                ),
+                                ft.IconButton(
+                                    icon=ft.icons.DELETE, 
+                                    icon_size=20,
+                                    on_click=lambda e, mid=m.get('id'): self.open_delete_modal(page, mid),
+                                ),
+                                ft.IconButton(
+                                    icon=ft.icons.QR_CODE, 
+                                    icon_size=20,
+                                    on_click=lambda e, mat=m: self.show_barcode_dialog(page, mat),
+                                ),
                             ], spacing=0),
                         ], spacing=8),
                         padding=12,
@@ -1449,9 +1570,51 @@ class StoreApp:
                     elevation=2,
                     margin=ft.margin.only(bottom=8),
                 )
-                main_column.controls.append(card)
-        else:
-            main_column.controls.append(ft.Text("No materials found", size=14, color="#888888"))
+                materials_container.controls.append(card)
+            
+            page.update()
+        
+        # ========== SETUP FILTER HANDLERS ==========
+        
+        # Quality filter handler
+        def make_quality_handler(filter_label, btn):
+            def handler(e):
+                nonlocal current_quality_filter
+                current_quality_filter = filter_label
+                
+                # Update button colors
+                color_map = {
+                    "All": self.accent_color,
+                    "New": self.success_color,
+                    "Used": self.warning_color,
+                    "Damaged": self.danger_color,
+                    "Repaired": self.accent_color,
+                }
+                for label, button in quality_filters.items():
+                    button.bgcolor = color_map.get(label, self.card_color) if label == filter_label else self.card_color
+                    button.update()
+                
+                update_materials_display()
+            return handler
+        
+        for label, btn in quality_filters.items():
+            btn.on_click = make_quality_handler(label, btn)
+        
+        # Category filter handler
+        def on_category_change(e):
+            nonlocal current_category_filter
+            current_category_filter = category_filter.value
+            update_materials_display()
+        
+        category_filter.on_change = on_category_change
+        
+        # Search handler
+        def on_search(e):
+            nonlocal search_query
+            search_query = search_field.value
+            update_materials_display()
+        
+        search_field.on_change = on_search
         
         # Add FAB
         add_button = ft.FloatingActionButton(
@@ -1460,14 +1623,19 @@ class StoreApp:
             on_click=lambda e: self.open_add_modal(page),
         )
         
-        # Layout
-        main_container = ft.Container(content=main_column, expand=True, padding=20)
+        # Initial load
+        update_materials_display()
+        
+        main_column.controls.append(materials_container)
+        
+        # ========== LAYOUT ==========
+        main_container = ft.Container(content=main_column, expand=True, padding=15)
         
         if is_mobile and nav:
             page.add(
                 ft.Stack([
                     ft.Column([main_container, nav], spacing=0, expand=True),
-                    ft.Container(content=add_button, right=16, bottom=80),
+                    ft.Container(content=add_button, right=16, bottom=16),
                 ], expand=True)
             )
         else:
@@ -1778,47 +1946,18 @@ class StoreApp:
             self.material_detail_panel.content = self.create_detail_panel(material, self.page_ref)
             self.page_ref.update()
 
-                # ============ ACCESSORIES SCREEN ============
+                    # ============ ACCESSORIES SCREEN ============
     def show_accessories(self, page: ft.Page):
-        """Show accessories screen with cards on mobile, table on desktop"""
+        """Show accessories screen - WORKING with Categories (No FilterChip)"""
         page.controls.clear()
         
-        self.page_ref = page
+        # FORCE MOBILE MODE
+        is_mobile = True
+        
+        # Get data
         accessories = self.dict_list(AccessoryManager.get_all())
-        sidebar = self.create_sidebar(page)
         
-        # Check if mobile
-        is_mobile = page.width < 800 if page.width else False
-        
-        print(f"Accessories screen - width: {page.width}, is_mobile: {is_mobile}")
-        
-        # Navigation for mobile
-        if is_mobile:
-            nav = self.create_bottom_nav(page)
-        else:
-            nav = None
-        
-        # Font sizes
-        if is_mobile:
-            font_title = 22
-            font_normal = 15
-            font_small = 12
-            padding_size = 10
-        else:
-            font_title = 24
-            font_normal = 16
-            font_small = 13
-            padding_size = 20
-        
-        # Initialize filters
-        if not hasattr(self, 'current_accessory_filter'):
-            self.current_accessory_filter = "All"
-        if not hasattr(self, 'current_acc_category_filter'):
-            self.current_acc_category_filter = "All"
-        if not hasattr(self, 'accessory_search_query'):
-            self.accessory_search_query = ""
-        
-        # Get unique categories from accessories
+        # Get unique categories
         categories = ["All"]
         for a in accessories:
             cat = a.get('category', 'Uncategorized')
@@ -1826,52 +1965,69 @@ class StoreApp:
                 categories.append(cat)
         categories.sort()
         
-        # ========== SEARCH FIELD ==========
+        # Navigation
+        if is_mobile:
+            nav = self.create_bottom_nav(page)
+            sidebar = None
+        else:
+            sidebar = self.create_sidebar(page)
+            nav = None
+        
+        # State variables
+        current_quality_filter = "All"
+        current_category_filter = "All"
+        search_query = ""
+        
+        # Main column
+        main_column = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+        
+        # Title
+        main_column.controls.append(
+            ft.Text("Accessories", size=24, weight=ft.FontWeight.BOLD, color=self.text_color)
+        )
+        main_column.controls.append(ft.Container(height=5))
+        
+        # Search field
         search_field = ft.TextField(
             hint_text="Search accessories...",
-            width=200 if not is_mobile else page.width - 60,
             bgcolor=self.card_color,
             border_color=self.accent_color,
-            text_size=font_small,
+            text_size=14,
         )
+        main_column.controls.append(search_field)
+        main_column.controls.append(ft.Container(height=10))
         
-        # ========== QUALITY FILTER BUTTONS ==========
-        self.accessory_filter_buttons = {}
+        # Quality filters
+        quality_filter_row = ft.Row(spacing=8, wrap=True)
+        quality_filters = {}
         
-        quality_filter_buttons = []
-        quality_configs = [
-            ("All", self.accent_color, "All"),
-            ("New", self.success_color, "New"),
-            ("Used", self.warning_color, "Used"),
-            ("Damaged", self.danger_color, "Damaged"),
-            ("Repaired", self.accent_color, "Repaired"),
-        ]
-        
-        for label, color, ftype in quality_configs:
+        for label, color in [("All", self.accent_color), ("New", self.success_color), ("Used", self.warning_color), ("Damaged", self.danger_color), ("Repaired", self.accent_color)]:
             btn = ft.Container(
-                content=ft.Text(label, size=font_small, weight=ft.FontWeight.BOLD, color=self.text_color),
-                padding=ft.padding.symmetric(horizontal=12, vertical=6),
-                bgcolor=color if self.current_accessory_filter == ftype else self.card_color,
-                border_radius=25,
+                content=ft.Text(label, size=12, weight=ft.FontWeight.BOLD, color=self.text_color),
+                padding=ft.padding.symmetric(horizontal=15, vertical=6),
+                bgcolor=color if label == current_quality_filter else self.card_color,
+                border_radius=20,
                 ink=True,
-                on_click=lambda e, f=ftype: filter_accessories_by_quality(f),
             )
-            self.accessory_filter_buttons[ftype] = btn
-            quality_filter_buttons.append(btn)
+            quality_filters[label] = btn
+            quality_filter_row.controls.append(btn)
         
-        quality_filter_row = ft.Row(quality_filter_buttons, spacing=6, wrap=True)
+        main_column.controls.append(quality_filter_row)
+        main_column.controls.append(ft.Container(height=10))
         
-        # ========== CATEGORY FILTER WITH MANAGE BUTTON ==========
+        # Category filter
+        category_row = ft.Row(spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        
         category_filter = ft.Dropdown(
             label="Category",
-            width=150 if not is_mobile else page.width - 100,
+            width=150,
             options=[ft.dropdown.Option(cat, cat) for cat in categories],
-            value=self.current_acc_category_filter,
+            value="All",
             bgcolor=self.card_color,
-            text_size=font_small,
+            text_size=13,
         )
+        category_row.controls.append(category_filter)
         
-        # Category Manager Button
         category_manager_btn = ft.IconButton(
             icon=ft.icons.SETTINGS,
             icon_size=20,
@@ -1879,259 +2035,150 @@ class StoreApp:
             on_click=lambda e: self.show_category_manager(page),
             tooltip="Manage Categories",
         )
+        category_row.controls.append(category_manager_btn)
         
-        category_row = ft.Row([category_filter, category_manager_btn], spacing=8)
+        main_column.controls.append(category_row)
+        main_column.controls.append(ft.Container(height=15))
         
-        # ========== ADD BUTTON ==========
-        if is_mobile:
-            add_button = ft.FloatingActionButton(
-                icon=ft.icons.ADD,
-                bgcolor=self.success_color,
-                on_click=lambda e: self.open_add_accessory_modal(page),
-            )
-        else:
-            add_button = ft.FilledButton(
-                "➕ Add Accessory",
-                style=ft.ButtonStyle(bgcolor=self.success_color, color=self.text_color, padding=12),
-                on_click=lambda e: self.open_add_accessory_modal(page),
-            )
-        
-        # ========== ACCESSORIES CONTAINER ==========
-        if is_mobile:
-            accessories_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
-        else:
-            accessories_container = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, height=500)
-        
-        # ========== DETAIL PANEL (Desktop only) ==========
-        if not is_mobile:
-            detail_panel = ft.Container(
-                content=self.create_accessory_detail_panel(self.selected_accessory_detail, page),
-                width=320,
-                bgcolor=self.card_color,
-                border_radius=12,
-                padding=15,
-            )
-        
-        # ========== FILTER FUNCTIONS ==========
-        def filter_accessories_by_quality(filter_type):
-            self.current_accessory_filter = filter_type
-            color_map = {
-                "All": self.accent_color,
-                "New": self.success_color,
-                "Used": self.warning_color,
-                "Damaged": self.danger_color,
-                "Repaired": self.accent_color,
-            }
-            for ftype, btn in self.accessory_filter_buttons.items():
-                btn.bgcolor = color_map.get(ftype, self.card_color) if ftype == filter_type else self.card_color
-                btn.update()
-            update_accessories_display()
-        
-        def filter_accessories_by_category(category):
-            self.current_acc_category_filter = category
-            update_accessories_display()
-        
-        def on_search(e):
-            self.accessory_search_query = search_field.value
-            update_accessories_display()
-        
-        def on_accessory_select(accessory):
-            self.selected_accessory_detail = accessory
-            if not is_mobile and 'detail_panel' in locals():
-                detail_panel.content = self.create_accessory_detail_panel(accessory, page)
-                page.update()
+        # Accessories container
+        accessories_container = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         
         def update_accessories_display():
             filtered = accessories.copy()
             
-            if self.current_accessory_filter != "All":
-                filtered = [a for a in filtered if a.get('quality') == self.current_accessory_filter]
+            if current_quality_filter != "All":
+                filtered = [a for a in filtered if a.get('quality') == current_quality_filter]
             
-            if self.current_acc_category_filter != "All":
-                filtered = [a for a in filtered if a.get('category', 'Uncategorized') == self.current_acc_category_filter]
+            if current_category_filter != "All":
+                filtered = [a for a in filtered if a.get('category', 'Uncategorized') == current_category_filter]
             
-            if self.accessory_search_query:
-                query = self.accessory_search_query.lower()
+            if search_query:
+                query = search_query.lower()
                 filtered = [a for a in filtered if query in a.get('name', '').lower() or query in a.get('item_code', '').lower()]
             
             accessories_container.controls.clear()
             
             if not filtered:
                 accessories_container.controls.append(
-                    ft.Text("No accessories found", size=font_small, color="#888888", text_align=ft.TextAlign.CENTER)
+                    ft.Text("No accessories found", size=14, color="#888888", text_align=ft.TextAlign.CENTER)
                 )
                 page.update()
                 return
             
             for a in filtered:
+                cat_name = a.get('category', 'Uncategorized')
+                cat_icon = self.get_category_icon(cat_name)
                 location = a.get('location') or a.get('location_ids') or 'N/A'
                 price = a.get('price', 0)
                 price_text = f"${price:.2f}" if price else ""
                 
-                if is_mobile:
-                    # MOBILE: Card view
-                    card = ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Row([
-                                    ft.Text(a.get('name', 'N/A'), size=font_normal, weight=ft.FontWeight.BOLD, expand=True),
-                                    ft.Text(f"Qty: {a.get('quantity', 0)}", size=font_normal, weight=ft.FontWeight.BOLD,
-                                        color=self.danger_color if a.get('quantity', 0) < 10 else self.text_color),
-                                ]),
-                                ft.Row([
-                                    ft.Text(f"📁 {a.get('category', 'Uncategorized')}", size=font_small - 1, color=self.accent_color, expand=True),
-                                    ft.Container(
-                                        content=ft.Text(a.get('quality', 'Used'), size=font_small - 2, color="white"),
-                                        bgcolor=self.get_quality_color(a.get('quality', 'Used')),
-                                        border_radius=10,
-                                        padding=ft.padding.symmetric(horizontal=8, vertical=3),
-                                    ),
-                                ]),
-                                ft.Row([
-                                    ft.Text(f"📍 {location}", size=font_small - 1, color="#888888", expand=True),
-                                    ft.Text(price_text, size=font_small - 1, color="#4CAF50") if price_text else ft.Container(),
-                                ]),
-                                ft.Divider(height=1, color="#3C3C3C"),
-                                ft.Row([
-                                    ft.IconButton(
-                                        icon=ft.icons.EDIT,
-                                        icon_size=20,
-                                        icon_color=self.accent_color,
-                                        on_click=lambda e, acc=a: self.open_edit_accessory_modal(page, acc['id']),
-                                    ),
-                                    ft.IconButton(
-                                        icon=ft.icons.DELETE,
-                                        icon_size=20,
-                                        icon_color=self.danger_color,
-                                        on_click=lambda e, acc=a: self.open_delete_accessory_modal(page, acc['id']),
-                                    ),
-                                    ft.IconButton(
-                                        icon=ft.icons.QR_CODE,
-                                        icon_size=20,
-                                        icon_color=self.warning_color,
-                                        on_click=lambda e, acc=a: self.show_barcode_dialog(page, acc),
-                                    ),
-                                ], spacing=0, alignment=ft.MainAxisAlignment.END),
-                            ], spacing=8),
-                            padding=12,
-                        ),
-                        elevation=2,
-                        margin=ft.margin.only(bottom=8),
-                    )
-                    accessories_container.controls.append(card)
-                else:
-                    # DESKTOP: Table row
-                    row = ft.Container(
-                        content=ft.Row([
-                            ft.Text(a.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD, width=180),
-                            ft.Text(a.get('category', 'Uncategorized'), size=font_small - 1, width=120, color=self.accent_color),
-                            ft.Text(location, size=font_small - 1, width=120, color="#888888"),
-                            ft.Text(str(a.get('quantity', 0)), size=font_small, width=60,
-                                color=self.danger_color if a.get('quantity', 0) < 10 else self.text_color,
-                                weight=ft.FontWeight.BOLD if a.get('quantity', 0) < 10 else None),
-                            ft.Container(
-                                content=ft.Text(a.get('quality', 'Used'), size=font_small - 2, color="white"),
-                                bgcolor=self.get_quality_color(a.get('quality', 'Used')),
-                                border_radius=10,
-                                padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                                width=90,
-                            ),
+                card = ft.Card(
+                    content=ft.Container(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Text(a.get('name', 'N/A'), size=16, weight=ft.FontWeight.BOLD, expand=True),
+                                ft.Text(f"Qty: {a.get('quantity', 0)}", size=14, weight=ft.FontWeight.BOLD,
+                                    color=self.danger_color if a.get('quantity', 0) < 10 else self.text_color),
+                            ]),
+                            ft.Row([
+                                ft.Text(f"{cat_icon} {cat_name}", size=12, color=self.accent_color, expand=True),
+                                ft.Container(
+                                    content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
+                                    bgcolor=self.get_quality_color(a.get('quality', 'Used')),
+                                    border_radius=8,
+                                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                                ),
+                            ]),
+                            ft.Row([
+                                ft.Text(f"📍 {location}", size=12, color="#888888", expand=True),
+                                ft.Text(price_text, size=12, color="#4CAF50") if price_text else ft.Container(),
+                            ]),
+                            ft.Divider(),
                             ft.Row([
                                 ft.IconButton(
-                                    icon=ft.icons.EDIT, icon_size=18,
-                                    on_click=lambda e, acc=a: self.open_edit_accessory_modal(page, acc['id']),
+                                    icon=ft.icons.EDIT, 
+                                    icon_size=20,
+                                    on_click=lambda e, aid=a.get('id'): self.open_edit_accessory_modal(page, aid),
                                 ),
                                 ft.IconButton(
-                                    icon=ft.icons.DELETE, icon_size=18,
-                                    on_click=lambda e, acc=a: self.open_delete_accessory_modal(page, acc['id']),
+                                    icon=ft.icons.DELETE, 
+                                    icon_size=20,
+                                    on_click=lambda e, aid=a.get('id'): self.open_delete_accessory_modal(page, aid),
                                 ),
                                 ft.IconButton(
-                                    icon=ft.icons.QR_CODE, icon_size=18,
+                                    icon=ft.icons.QR_CODE, 
+                                    icon_size=20,
                                     on_click=lambda e, acc=a: self.show_barcode_dialog(page, acc),
                                 ),
                             ], spacing=0),
-                        ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                        padding=ft.padding.symmetric(vertical=8, horizontal=12),
-                        bgcolor="#2C2C2C",
-                        border_radius=6,
-                        ink=True,
-                        on_click=lambda e, acc=a: on_accessory_select(acc),
-                    )
-                    accessories_container.controls.append(row)
+                        ], spacing=8),
+                        padding=12,
+                    ),
+                    elevation=2,
+                    margin=ft.margin.only(bottom=8),
+                )
+                accessories_container.controls.append(card)
             
             page.update()
         
-        # Connect event handlers
+        # Setup handlers
+        def make_quality_handler(filter_label):
+            def handler(e):
+                nonlocal current_quality_filter
+                current_quality_filter = filter_label
+                color_map = {
+                    "All": self.accent_color,
+                    "New": self.success_color,
+                    "Used": self.warning_color,
+                    "Damaged": self.danger_color,
+                    "Repaired": self.accent_color,
+                }
+                for label, btn in quality_filters.items():
+                    btn.bgcolor = color_map.get(label, self.card_color) if label == filter_label else self.card_color
+                    btn.update()
+                update_accessories_display()
+            return handler
+        
+        for label, btn in quality_filters.items():
+            btn.on_click = make_quality_handler(label)
+        
+        def on_category_change(e):
+            nonlocal current_category_filter
+            current_category_filter = category_filter.value
+            update_accessories_display()
+        
+        category_filter.on_change = on_category_change
+        
+        def on_search(e):
+            nonlocal search_query
+            search_query = search_field.value
+            update_accessories_display()
+        
         search_field.on_change = on_search
-        category_filter.on_change = lambda e: filter_accessories_by_category(e.control.value)
+        
+        # Add FAB
+        add_button = ft.FloatingActionButton(
+            icon=ft.icons.ADD,
+            bgcolor=self.success_color,
+            on_click=lambda e: self.open_add_accessory_modal(page),
+        )
         
         # Initial load
         update_accessories_display()
         
-        # ========== BUILD MAIN CONTENT ==========
-        if is_mobile:
-            # MOBILE LAYOUT
-            content = ft.Column([
-                ft.Row([
-                    ft.Text("Accessories", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ft.Container(expand=True),
-                ]),
-                ft.Container(height=10),
-                search_field,
-                ft.Container(height=10),
-                quality_filter_row,
-                ft.Container(height=10),
-                category_row,
-                ft.Container(height=15),
-                accessories_container,
-                ft.Container(height=80),
-            ], expand=True, scroll=ft.ScrollMode.AUTO)
-            
-            main_container = ft.Container(content=content, expand=True, padding=padding_size)
-            
+        main_column.controls.append(accessories_container)
+        
+        # Layout
+        main_container = ft.Container(content=main_column, expand=True, padding=15)
+        
+        if is_mobile and nav:
             page.add(
                 ft.Stack([
-                    main_container,
+                    ft.Column([main_container, nav], spacing=0, expand=True),
                     ft.Container(content=add_button, right=16, bottom=16),
                 ], expand=True)
             )
-            
-            if nav:
-                page.add(nav)
-            
         else:
-            # DESKTOP LAYOUT
-            header_row = ft.Container(
-                content=ft.Row([
-                    ft.Text("Name", size=font_small, weight=ft.FontWeight.BOLD, width=180),
-                    ft.Text("Category", size=font_small, weight=ft.FontWeight.BOLD, width=120),
-                    ft.Text("Location", size=font_small, weight=ft.FontWeight.BOLD, width=120),
-                    ft.Text("Qty", size=font_small, weight=ft.FontWeight.BOLD, width=60),
-                    ft.Text("Quality", size=font_small, weight=ft.FontWeight.BOLD, width=90),
-                    ft.Text("Actions", size=font_small, weight=ft.FontWeight.BOLD, width=120),
-                ], alignment=ft.MainAxisAlignment.START),
-                padding=ft.padding.symmetric(vertical=10, horizontal=12),
-                bgcolor="#3C3C3C",
-                border_radius=8,
-            )
-            
-            content = ft.Column([
-                ft.Row([
-                    ft.Text("Accessories & Parts", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ft.Container(expand=True),
-                    ft.Row([ft.Icon(ft.icons.SEARCH, size=20), search_field], spacing=8),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Container(height=12),
-                ft.Row([quality_filter_row, ft.Container(expand=True), category_row, add_button], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Container(height=15),
-                ft.Row([
-                    ft.Container(content=ft.Column([header_row, accessories_container], spacing=0), expand=True, bgcolor=self.card_color, border_radius=10, padding=5),
-                    ft.Container(width=15),
-                    detail_panel,
-                ], expand=True),
-            ], expand=True)
-            
-            main_container = ft.Container(content=content, expand=True, padding=padding_size)
             page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
         
         self.current_view = "accessories"
