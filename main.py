@@ -1386,18 +1386,11 @@ class StoreApp:
             border_radius=15,
         )
     def show_materials_screen(self, page: ft.Page):
-        """With categories - step by step"""
+        """WORKING - With Search"""
         page.controls.clear()
         
         materials = self.dict_list(MaterialManager.get_all())
         nav = self.create_bottom_nav(page)
-        
-        # Get unique categories
-        categories = ["All"]
-        for m in materials:
-            cat = m.get('category', 'Uncategorized')
-            if cat not in categories:
-                categories.append(cat)
         
         main_column = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         
@@ -1406,25 +1399,24 @@ class StoreApp:
             ft.Text("Materials", size=28, weight=ft.FontWeight.BOLD, color=self.text_color)
         )
         
-        # Category filter
-        category_filter = ft.Dropdown(
-            label="Category",
-            width=200,
-            options=[ft.dropdown.Option(cat, cat) for cat in categories],
-            value="All",
+        # Search Field
+        search_field = ft.TextField(
+            hint_text="Search materials...",
             bgcolor=self.card_color,
+            border_color=self.accent_color,
         )
-        main_column.controls.append(category_filter)
+        main_column.controls.append(search_field)
+        main_column.controls.append(ft.Container(height=5))
         
-        # Container for cards
+        # Cards container
         cards_container = ft.Column(spacing=10)
         
         def update_cards():
-            selected = category_filter.value
+            search_query = search_field.value.lower() if search_field.value else ""
             cards_container.controls.clear()
             
             for m in materials:
-                if selected != "All" and m.get('category', 'Uncategorized') != selected:
+                if search_query and search_query not in m.get('name', '').lower():
                     continue
                 
                 card = ft.Card(
@@ -1435,8 +1427,9 @@ class StoreApp:
                             ft.Text(f"Qty: {m.get('quantity', 0)}", size=14),
                             ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=12, color="#888888"),
                             ft.Row([
-                                ft.IconButton(icon=ft.icons.EDIT, icon_size=20),
-                                ft.IconButton(icon=ft.icons.DELETE, icon_size=20),
+                                ft.IconButton(icon=ft.icons.EDIT, icon_size=20, on_click=lambda e, mid=m.get('id'): self.open_edit_modal(page, mid)),
+                                ft.IconButton(icon=ft.icons.DELETE, icon_size=20, on_click=lambda e, mid=m.get('id'): self.open_delete_modal(page, mid)),
+                                ft.IconButton(icon=ft.icons.QR_CODE, icon_size=20, on_click=lambda e, mat=m: self.show_barcode_dialog(page, mat)),
                             ], spacing=0),
                         ], spacing=5),
                         padding=15,
@@ -1447,12 +1440,12 @@ class StoreApp:
                 cards_container.controls.append(card)
             page.update()
         
-        category_filter.on_change = lambda e: update_cards()
+        search_field.on_change = lambda e: update_cards()
         update_cards()
         
         main_column.controls.append(cards_container)
         
-        # Add FAB
+        # FAB
         add_button = ft.FloatingActionButton(
             icon=ft.icons.ADD,
             bgcolor=self.success_color,
