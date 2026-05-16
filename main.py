@@ -3079,13 +3079,13 @@ class StoreApp:
         page.update()
         
     def open_add_modal(self, page: ft.Page):
-        """STEP 6: Add Category + Quality buttons"""
+        """STEP 6 FIXED: Category and Quality using BottomSheet (returns correctly)"""
         
         import random
         import string
         
         print("=" * 50)
-        print("STEP 6: Testing Category + Quality Buttons")
+        print("STEP 6 FIXED: Using BottomSheet for selections")
         print("=" * 50)
         
         def generate_barcode():
@@ -3127,7 +3127,9 @@ class StoreApp:
             style=ft.ButtonStyle(bgcolor=self.card_color, color=self.text_color),
         )
         
-        def show_category_dialog(e):
+        def show_category_bottomsheet(e):
+            """Open BottomSheet for category selection"""
+            
             def select_category(name, icon):
                 nonlocal selected_category
                 selected_category = name
@@ -3137,7 +3139,7 @@ class StoreApp:
                     ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
                 ], spacing=8)
                 page.update()
-                category_dialog.open = False
+                bottomsheet.open = False
                 page.update()
             
             categories = [
@@ -3167,24 +3169,23 @@ class StoreApp:
                     )
                 )
             
-            category_dialog = ft.AlertDialog(
-                title=ft.Text("Select Category", size=16, weight=ft.FontWeight.BOLD),
+            bottomsheet = ft.BottomSheet(
                 content=ft.Container(
-                    content=ft.Column(category_items, spacing=5, scroll=ft.ScrollMode.AUTO),
-                    width=300,
+                    content=ft.Column([
+                        ft.Text("Select Category", size=18, weight=ft.FontWeight.BOLD),
+                        ft.Divider(),
+                        ft.Column(category_items, spacing=5, scroll=ft.ScrollMode.AUTO),
+                    ], spacing=10),
+                    padding=20,
                     height=400,
-                    padding=10,
                 ),
-                actions=[
-                    ft.TextButton("Close", on_click=lambda e: setattr(category_dialog, 'open', False)),
-                ],
+                open=True,
             )
             
-            page.dialog = category_dialog
-            category_dialog.open = True
+            page.overlay.append(bottomsheet)
             page.update()
         
-        category_button.on_click = show_category_dialog
+        category_button.on_click = show_category_bottomsheet
         
         # ========== QUALITY BUTTON ==========
         quality_button = ft.ElevatedButton(
@@ -3196,7 +3197,9 @@ class StoreApp:
             style=ft.ButtonStyle(bgcolor=self.card_color, color=self.text_color),
         )
         
-        def show_quality_dialog(e):
+        def show_quality_bottomsheet(e):
+            """Open BottomSheet for quality selection"""
+            
             def select_quality(quality):
                 nonlocal selected_quality
                 selected_quality = quality
@@ -3206,7 +3209,7 @@ class StoreApp:
                     ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
                 ], spacing=8)
                 page.update()
-                quality_dialog.open = False
+                bottomsheet.open = False
                 page.update()
             
             quality_options = ["New", "Used", "Damaged", "Repaired"]
@@ -3226,23 +3229,23 @@ class StoreApp:
                     )
                 )
             
-            quality_dialog = ft.AlertDialog(
-                title=ft.Text("Select Quality", size=16, weight=ft.FontWeight.BOLD),
+            bottomsheet = ft.BottomSheet(
                 content=ft.Container(
-                    content=ft.Column(quality_items, spacing=5),
-                    width=300,
-                    padding=10,
+                    content=ft.Column([
+                        ft.Text("Select Quality", size=18, weight=ft.FontWeight.BOLD),
+                        ft.Divider(),
+                        ft.Column(quality_items, spacing=5),
+                    ], spacing=10),
+                    padding=20,
+                    height=350,
                 ),
-                actions=[
-                    ft.TextButton("Close", on_click=lambda e: setattr(quality_dialog, 'open', False)),
-                ],
+                open=True,
             )
             
-            page.dialog = quality_dialog
-            quality_dialog.open = True
+            page.overlay.append(bottomsheet)
             page.update()
         
-        quality_button.on_click = show_quality_dialog
+        quality_button.on_click = show_quality_bottomsheet
         
         # ========== FORM FIELDS ==========
         name_field = ft.TextField(label="Name *", width=field_width, bgcolor=self.card_color)
@@ -3291,7 +3294,7 @@ class StoreApp:
                 page.snack_bar.open = True
                 page.update()
         
-        # Layout
+        # Main dialog content
         dialog_content = ft.Column([
             ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
             ft.Divider(),
