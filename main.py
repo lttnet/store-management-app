@@ -3079,13 +3079,13 @@ class StoreApp:
         page.update()
             
     def open_add_modal(self, page: ft.Page):
-        """STEP 6 FIXED: BottomSheet with proper spacing, buttons visible"""
+        """STEP 6 FIXED: Properly saves category and quality to database"""
         
         import random
         import string
         
         print("=" * 50)
-        print("STEP 6 FIXED: BottomSheet with proper spacing")
+        print("STEP 6 FIXED: Saving category and quality correctly")
         print("=" * 50)
         
         def generate_barcode():
@@ -3112,9 +3112,9 @@ class StoreApp:
             dialog_width = 500
             dialog_height = 600
         
-        # Store selected values
-        selected_category = "Raw Material"
-        selected_quality = "New"
+        # Store selected values - make sure these are accessible in save function
+        selected_category = ["Raw Material"]  # Use list to allow modification in nested function
+        selected_quality = ["New"]  # Use list to allow modification in nested function
         
         # Quality color mapping
         quality_icons = {
@@ -3128,7 +3128,7 @@ class StoreApp:
         category_button = ft.ElevatedButton(
             content=ft.Row([
                 ft.Text("📦", size=16),
-                ft.Text(selected_category, size=14),
+                ft.Text(selected_category[0], size=14),
                 ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
             ], spacing=8),
             style=ft.ButtonStyle(bgcolor=self.card_color, color=self.text_color),
@@ -3138,8 +3138,7 @@ class StoreApp:
             """Open BottomSheet for category selection"""
             
             def select_category(name, icon):
-                nonlocal selected_category
-                selected_category = name
+                selected_category[0] = name  # Update the list value
                 category_button.content = ft.Row([
                     ft.Text(icon, size=16),
                     ft.Text(name, size=14),
@@ -3151,6 +3150,7 @@ class StoreApp:
                     if isinstance(overlay, ft.BottomSheet):
                         overlay.open = False
                 page.update()
+                print(f"DEBUG: Category selected: {name}")
             
             categories = [
                 ("📦", "Raw Material"),
@@ -3165,7 +3165,7 @@ class StoreApp:
             
             category_items = []
             for icon, name in categories:
-                is_selected = (name == selected_category)
+                is_selected = (name == selected_category[0])
                 category_items.append(
                     ft.Container(
                         content=ft.Row([
@@ -3200,8 +3200,8 @@ class StoreApp:
         # ========== QUALITY BUTTON ==========
         quality_button = ft.ElevatedButton(
             content=ft.Row([
-                ft.Text(quality_icons[selected_quality], size=16),
-                ft.Text(selected_quality, size=14),
+                ft.Text(quality_icons[selected_quality[0]], size=16),
+                ft.Text(selected_quality[0], size=14),
                 ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
             ], spacing=8),
             style=ft.ButtonStyle(bgcolor=self.card_color, color=self.text_color),
@@ -3211,8 +3211,7 @@ class StoreApp:
             """Open BottomSheet for quality selection"""
             
             def select_quality(quality):
-                nonlocal selected_quality
-                selected_quality = quality
+                selected_quality[0] = quality  # Update the list value
                 quality_button.content = ft.Row([
                     ft.Text(quality_icons[quality], size=16),
                     ft.Text(quality, size=14),
@@ -3224,11 +3223,12 @@ class StoreApp:
                     if isinstance(overlay, ft.BottomSheet):
                         overlay.open = False
                 page.update()
+                print(f"DEBUG: Quality selected: {quality}")
             
             quality_options = ["New", "Used", "Damaged", "Repaired"]
             quality_items = []
             for quality in quality_options:
-                is_selected = (quality == selected_quality)
+                is_selected = (quality == selected_quality[0])
                 quality_items.append(
                     ft.Container(
                         content=ft.Row([
@@ -3279,9 +3279,11 @@ class StoreApp:
             print("=" * 50)
             print(f"Save clicked!")
             print(f"  Name: {name_field.value}")
-            print(f"  Category: {selected_category}")
-            print(f"  Quality: {selected_quality}")
+            print(f"  Category: {selected_category[0]}")
+            print(f"  Quality: {selected_quality[0]}")
             print(f"  Quantity: {quantity_field.value}")
+            print(f"  Location: {location_field.value}")
+            print(f"  Barcode: {barcode_field.value}")
             print("=" * 50)
             
             if not name_field.value:
@@ -3290,14 +3292,17 @@ class StoreApp:
                 page.update()
                 return
             
+            # Prepare data with selected category and quality
             data = {
                 'name': name_field.value,
-                'category': selected_category,
+                'category': selected_category[0],  # Use the selected category
                 'quantity': int(quantity_field.value) if quantity_field.value else 0,
-                'quality': selected_quality,
+                'quality': selected_quality[0],  # Use the selected quality
                 'location_ids': location_field.value,
                 'barcode_value': barcode_field.value,
             }
+            
+            print(f"DEBUG: Saving data: {data}")
             
             result = MaterialManager.create(data)
             
@@ -3307,7 +3312,7 @@ class StoreApp:
                     if isinstance(overlay, ft.BottomSheet):
                         overlay.open = False
                 page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color)
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value} (Category: {selected_category[0]}, Quality: {selected_quality[0]})"), bgcolor=self.success_color, duration=3000)
                 page.snack_bar.open = True
                 self.show_materials_screen(page)
             else:
