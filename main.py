@@ -3079,7 +3079,9 @@ class StoreApp:
         page.update()
         
     def open_add_modal(self, page: ft.Page):
-        """DEBUG STEP 3: Add dropdown - This might be the problem"""
+        """DEBUG STEP 4: Add scroll to content"""
+        
+        is_mobile = page.width < 800 if page.width else False
         
         name_field = ft.TextField(label="Name", width=300, bgcolor=self.card_color)
         quantity_field = ft.TextField(label="Quantity", width=300, bgcolor=self.card_color, value="0")
@@ -3094,21 +3096,32 @@ class StoreApp:
             value="New", bgcolor=self.card_color,
         )
         
+        # Add many dummy fields to force scroll
+        dummy_fields = []
+        for i in range(10):
+            dummy_fields.append(ft.TextField(label=f"Dummy Field {i+1}", width=300, bgcolor=self.card_color))
+        
         def close_dialog(e):
             page.dialog.open = False
             page.update()
         
         def save_material(e):
-            page.snack_bar = ft.SnackBar(ft.Text(f"Name: {name_field.value}, Quality: {quality_field.value}"), bgcolor=self.success_color)
+            page.snack_bar = ft.SnackBar(ft.Text(f"Name: {name_field.value}"), bgcolor=self.success_color)
             page.snack_bar.open = True
             page.update()
         
-        dialog_content = ft.Column([
-            ft.Text("Add Material - DEBUG 3", size=18, weight=ft.FontWeight.BOLD),
-            ft.Divider(),
+        # Create scrollable content
+        scrollable_content = ft.Column([
             name_field,
             quantity_field,
             quality_field,
+            *dummy_fields,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=400)
+        
+        dialog_content = ft.Column([
+            ft.Text("Add Material - DEBUG 4 (With Scroll)", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            scrollable_content,
             ft.Divider(),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog),
@@ -3116,9 +3129,11 @@ class StoreApp:
             ], alignment=ft.MainAxisAlignment.END, spacing=10),
         ], spacing=12)
         
+        dialog_width = page.width - 40 if is_mobile and page.width else 400
+        
         dialog = ft.AlertDialog(
             title=ft.Text("Test"),
-            content=ft.Container(content=dialog_content, width=400, padding=15),
+            content=ft.Container(content=dialog_content, width=dialog_width, padding=15),
         )
         
         page.dialog = dialog
