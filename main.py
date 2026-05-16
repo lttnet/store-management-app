@@ -3079,12 +3079,45 @@ class StoreApp:
         page.update()
         
     def open_add_modal(self, page: ft.Page):
-        """DEBUG STEP 4: Add scroll to content"""
+        """DEBUG STEP 5: Add category dropdown with many options"""
+        
+        import sqlite3
+        from database import DB_PATH
         
         is_mobile = page.width < 800 if page.width else False
         
+        # Get categories
+        current_user_id = self.current_user.get('id') if self.current_user else 0
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name, icon FROM custom_categories WHERE user_id = ? OR user_id IS NULL ORDER BY name", (current_user_id,))
+        custom_cats = cursor.fetchall()
+        conn.close()
+        
+        predefined_categories = [
+            "Raw Material", "Hardware", "Tools", "Electrical", "Plumbing",
+            "Wood", "Metal", "Plastic", "Glass", "Paint", "Fasteners",
+            "Safety Equipment", "Packaging", "Office Supplies", "Other"
+        ]
+        
+        all_categories = predefined_categories.copy()
+        for cat in custom_cats:
+            cat_name = cat[0]
+            if cat_name not in all_categories:
+                all_categories.append(cat_name)
+        
+        all_categories.sort()
+        
         name_field = ft.TextField(label="Name", width=300, bgcolor=self.card_color)
         quantity_field = ft.TextField(label="Quantity", width=300, bgcolor=self.card_color, value="0")
+        
+        # Category dropdown
+        category_field = ft.Dropdown(
+            label="Category", width=300,
+            options=[ft.dropdown.Option(cat, cat) for cat in all_categories],
+            value="Raw Material", bgcolor=self.card_color,
+        )
+        
         quality_field = ft.Dropdown(
             label="Quality", width=300,
             options=[
@@ -3096,30 +3129,24 @@ class StoreApp:
             value="New", bgcolor=self.card_color,
         )
         
-        # Add many dummy fields to force scroll
-        dummy_fields = []
-        for i in range(10):
-            dummy_fields.append(ft.TextField(label=f"Dummy Field {i+1}", width=300, bgcolor=self.card_color))
-        
         def close_dialog(e):
             page.dialog.open = False
             page.update()
         
         def save_material(e):
-            page.snack_bar = ft.SnackBar(ft.Text(f"Name: {name_field.value}"), bgcolor=self.success_color)
+            page.snack_bar = ft.SnackBar(ft.Text(f"Category: {category_field.value}"), bgcolor=self.success_color)
             page.snack_bar.open = True
             page.update()
         
-        # Create scrollable content
         scrollable_content = ft.Column([
             name_field,
+            category_field,
             quantity_field,
             quality_field,
-            *dummy_fields,
-        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=400)
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=350)
         
         dialog_content = ft.Column([
-            ft.Text("Add Material - DEBUG 4 (With Scroll)", size=18, weight=ft.FontWeight.BOLD),
+            ft.Text("Add Material - DEBUG 5 (With Category)", size=18, weight=ft.FontWeight.BOLD),
             ft.Divider(),
             scrollable_content,
             ft.Divider(),
