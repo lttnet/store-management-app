@@ -1386,11 +1386,14 @@ class StoreApp:
             border_radius=15,
         )
     def show_materials_screen(self, page: ft.Page):
-        """Materials screen - Click card to see details"""
+        """Materials screen - Click card to see details in dialog (mobile friendly)"""
         page.controls.clear()
         
         materials = self.dict_list(MaterialManager.get_all())
         nav = self.create_bottom_nav(page)
+        
+        # Check if mobile
+        is_mobile = page.width < 800 if page.width else False
         
         # Get categories
         categories = ["All"]
@@ -2847,7 +2850,18 @@ class StoreApp:
         return None
     
     def show_material_detail_dialog(self, page: ft.Page, material):
-        """Show material details in a dialog with edit/delete options"""
+        """Show material details in a dialog with edit/delete options (Like Accessories)"""
+        
+        # Check if mobile
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Dialog dimensions
+        if is_mobile:
+            dialog_width = page.width - 40
+            dialog_height = 550
+        else:
+            dialog_width = 450
+            dialog_height = 550
         
         # Get material data
         name = material.get('name', 'N/A')
@@ -2866,7 +2880,9 @@ class StoreApp:
         
         # Get image
         image_path = material.get('image_path', '')
-        has_image = image_path and os.path.exists(image_path) if image_path else False
+        has_image = False
+        if image_path and os.path.exists(image_path):
+            has_image = True
         
         def close_dialog(e):
             page.dialog.open = False
@@ -2883,7 +2899,7 @@ class StoreApp:
         def show_barcode(e):
             self.show_barcode_dialog(page, material)
         
-        # Build dialog content
+        # Build content items
         content_items = []
         
         # Image if exists
@@ -2895,8 +2911,20 @@ class StoreApp:
                     margin=ft.margin.only(bottom=10),
                 )
             )
+        else:
+            content_items.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.icons.IMAGE, size=50, color="#888888"),
+                        ft.Text("No Image", size=12, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.center,
+                    margin=ft.margin.only(bottom=10),
+                )
+            )
         
         content_items.extend([
+            ft.Divider(),
             ft.Row([
                 ft.Text("📁 Category:", size=14, color="#CCCCCC", width=100),
                 ft.Text(f"{cat_icon} {category}", size=14, color=self.accent_color),
@@ -2905,6 +2933,10 @@ class StoreApp:
                 ft.Text("📝 Code:", size=14, color="#CCCCCC", width=100),
                 ft.Text(code, size=14, color=self.text_color),
             ], spacing=8),
+            ft.Row([
+                ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.warning_color, color=self.text_color)),
+            ], spacing=10),
             ft.Row([
                 ft.Text("🏷️ Quality:", size=14, color="#CCCCCC", width=100),
                 ft.Container(
@@ -2959,28 +2991,24 @@ class StoreApp:
                 ft.ElevatedButton("🗑️ DELETE", on_click=delete_material, expand=True,
                                 style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
             ], spacing=10),
-            ft.Row([
-                ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
-                                style=ft.ButtonStyle(bgcolor=self.warning_color, color=self.text_color)),
-            ], spacing=10),
         ])
+        
+        # Create scrollable content
+        scrollable_content = ft.Column(content_items, spacing=10, scroll=ft.ScrollMode.AUTO, height=dialog_height - 80)
         
         dialog = ft.AlertDialog(
             title=ft.Row([
                 ft.Text(name, size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ], spacing=0),
-            content=ft.Container(
-                content=ft.Column(content_items, spacing=10, scroll=ft.ScrollMode.AUTO),
-                width=400,
-                height=500,
-            ),
+            content=ft.Container(content=scrollable_content, width=dialog_width, padding=15),
             actions_alignment=ft.MainAxisAlignment.END,
         )
         
         page.dialog = dialog
         dialog.open = True
         page.update()
+    
     def show_barcode_dialog(self, page: ft.Page, item):
         """Show barcode dialog for material or accessory"""
         import webbrowser
@@ -3051,7 +3079,7 @@ class StoreApp:
         page.update()
         
     def open_add_modal(self, page: ft.Page):
-        """Open add material modal - Mobile optimized with working buttons"""
+        """Open add material modal - Buttons always visible at bottom"""
         
         import random
         import string
@@ -3061,23 +3089,22 @@ class StoreApp:
         import sqlite3
         from database import DB_PATH
         
-        # Check if mobile for responsive sizing
+        # Check if mobile
         is_mobile = page.width < 800 if page.width else False
         
-        # Responsive field width
+        # Responsive sizing
         if is_mobile:
             field_width = page.width - 60 if page.width else 300
             modal_width = page.width - 40 if page.width else 400
-            modal_height = 550  # Taller on mobile to show all fields
             preview_size = 100
+            scroll_height = 450
         else:
-            field_width = 380
-            modal_width = 520
-            modal_height = 600
-            preview_size = 150
+            field_width = 350
+            modal_width = 480
+            preview_size = 120
+            scroll_height = 500
         
         def generate_barcode():
-            """Generate a unique 13-digit barcode"""
             prefix = "890"
             random_numbers = ''.join(random.choices(string.digits, k=9))
             barcode_without_checksum = prefix + random_numbers
@@ -3090,7 +3117,7 @@ class StoreApp:
             checksum = (10 - (total % 10)) % 10
             return barcode_without_checksum + str(checksum)
         
-        # Create images folder if not exists
+        # Create images folder
         images_folder = "images"
         if not os.path.exists(images_folder):
             os.makedirs(images_folder)
@@ -3098,7 +3125,7 @@ class StoreApp:
         # Get current user ID
         current_user_id = self.current_user.get('id') if self.current_user else 0
         
-        # Get custom categories for this user
+        # Get custom categories
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute('''
@@ -3138,11 +3165,11 @@ class StoreApp:
         
         all_categories.sort(key=lambda x: x["name"])
         
-        # Form fields
+        # Create form fields
         name_field = ft.TextField(label="Name *", width=field_width, bgcolor=self.card_color)
         
         category_field = ft.Dropdown(
-            label="Category *",
+            label="Category",
             width=field_width,
             options=[ft.dropdown.Option(cat["name"], f"{cat['icon']} {cat['name']}") for cat in all_categories],
             value="Raw Material",
@@ -3166,7 +3193,7 @@ class StoreApp:
         )
         
         quality_field = ft.Dropdown(
-            label="Quality *", 
+            label="Quality", 
             width=field_width,
             options=[
                 ft.dropdown.Option("New"),
@@ -3198,7 +3225,7 @@ class StoreApp:
                 ft.Text("No Image", size=10, color="#888888"),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
             width=preview_size,
-            height=preview_size - 30,
+            height=preview_size - 20,
             bgcolor="#2C2C2C",
             border_radius=8,
         )
@@ -3212,15 +3239,12 @@ class StoreApp:
                 selected_temp_image = file.path
                 try:
                     image_preview.content = ft.Column([
-                        ft.Image(src=selected_temp_image, width=preview_size - 10, height=preview_size - 40, fit=ft.ImageFit.CONTAIN),
+                        ft.Image(src=selected_temp_image, width=preview_size - 10, height=preview_size - 30, fit=ft.ImageFit.CONTAIN),
                         ft.Text("Image selected", size=8, color=self.success_color),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
                     page.update()
                 except:
                     pass
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Image selected: {file.name}"), bgcolor=self.success_color, duration=2000)
-                page.snack_bar.open = True
-                page.update()
         
         image_picker = ft.FilePicker(on_result=on_image_picked)
         page.overlay.append(image_picker)
@@ -3231,8 +3255,7 @@ class StoreApp:
                 allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"],
             )
         
-        upload_btn = ft.ElevatedButton("📁 Upload Image", on_click=upload_image, icon=ft.icons.UPLOAD_FILE, 
-                                    style=ft.ButtonStyle(bgcolor=self.accent_color))
+        upload_btn = ft.TextButton("📁 Upload Image", on_click=upload_image)
         
         def regenerate_barcode(e):
             barcode_field.value = generate_barcode()
@@ -3275,10 +3298,7 @@ class StoreApp:
                 page.update()
                 return
             
-            # Save image if uploaded
             saved_image_path = save_uploaded_image() if selected_temp_image else None
-            
-            # Calculate length
             size_value = size_field.value
             length_value = self.convert_size_to_length(size_value) if size_value else None
             
@@ -3300,7 +3320,7 @@ class StoreApp:
             
             if result:
                 page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=3000)
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color)
                 page.snack_bar.open = True
                 self.show_materials_screen(page)
             else:
@@ -3308,53 +3328,47 @@ class StoreApp:
                 page.snack_bar.open = True
                 page.update()
         
-        # Create all form fields in a list
-        form_fields = [
+        # Create scrollable fields column (WITH scroll parameter directly on Column)
+        scrollable_fields = ft.Column([
             name_field,
             category_field,
             quantity_field,
             size_field,
             length_field,
             quality_field,
-            barcode_field,
-            regenerate_btn,
             location_field,
             color_field,
+            barcode_field,
+            regenerate_btn,
             upload_btn,
             image_preview,
             notes_field,
-        ]
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=scroll_height)
         
-        # Add a container for the image preview with a border on mobile
-        if is_mobile:
-            image_preview.margin = ft.margin.only(top=5, bottom=5)
-        
-        # Simple layout with scroll
-        dialog_content = ft.Column(
-            form_fields + [
-                ft.Divider(),
-                ft.Row([
-                    ft.TextButton("Cancel", on_click=close_dialog),
-                    ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
-                ], alignment=ft.MainAxisAlignment.END, spacing=10),
-            ],
-            spacing=12,
-            scroll=ft.ScrollMode.AUTO,
-        )
+        # Main dialog layout
+        dialog_content = ft.Column([
+            ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            scrollable_fields,
+            ft.Divider(),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=12)
         
         dialog = ft.AlertDialog(
             title=ft.Text("Add Material"),
-            content=ft.Container(content=dialog_content, width=modal_width, height=modal_height, padding=15),
-            actions_alignment=ft.MainAxisAlignment.END,
+            content=ft.Container(content=dialog_content, width=modal_width, padding=15),
         )
         
         page.dialog = dialog
         dialog.open = True
         page.update()
             # ============ STUB METHODS ============
-    
+        
     def open_edit_modal(self, page: ft.Page, material_id):
-        """Open edit material modal - Mobile optimized with working buttons"""
+        """Open edit material modal - Buttons always visible at bottom"""
         
         import os
         import shutil
@@ -3362,20 +3376,20 @@ class StoreApp:
         import sqlite3
         from database import DB_PATH
         
-        # Check if mobile for responsive sizing
+        # Check if mobile
         is_mobile = page.width < 800 if page.width else False
         
-        # Responsive field width
+        # Responsive sizing
         if is_mobile:
             field_width = page.width - 60 if page.width else 300
             modal_width = page.width - 40 if page.width else 400
-            modal_height = 580  # Taller on mobile
             preview_size = 100
+            scroll_height = 450
         else:
-            field_width = 380
-            modal_width = 520
-            modal_height = 620
-            preview_size = 150
+            field_width = 350
+            modal_width = 480
+            preview_size = 120
+            scroll_height = 500
         
         material = MaterialManager.get_by_id(material_id)
         if not material:
@@ -3425,7 +3439,7 @@ class StoreApp:
         name_field = ft.TextField(label="Name *", value=material_dict.get('name', ''), width=field_width, bgcolor=self.card_color)
         
         category_field = ft.Dropdown(
-            label="Category *",
+            label="Category",
             width=field_width,
             options=[ft.dropdown.Option(cat["name"], f"{cat['icon']} {cat['name']}") for cat in all_categories],
             value=material_dict.get('category', 'Raw Material'),
@@ -3451,7 +3465,7 @@ class StoreApp:
         )
         
         quality_field = ft.Dropdown(
-            label="Quality *", 
+            label="Quality", 
             width=field_width,
             options=[
                 ft.dropdown.Option("New"),
@@ -3480,17 +3494,13 @@ class StoreApp:
         current_image_path = material_dict.get('image_path', '')
         has_current_image = current_image_path and os.path.exists(current_image_path) if current_image_path else False
         
-        # Debug print
-        print(f"Current image path: {current_image_path}")
-        print(f"Has current image: {has_current_image}")
-        
         image_preview = ft.Container(
             content=ft.Column([
                 ft.Text("📷", size=40),
                 ft.Text("No Image", size=10, color="#888888"),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
             width=preview_size,
-            height=preview_size - 30,
+            height=preview_size - 20,
             bgcolor="#2C2C2C",
             border_radius=8,
         )
@@ -3498,12 +3508,11 @@ class StoreApp:
         if has_current_image:
             try:
                 image_preview.content = ft.Column([
-                    ft.Image(src=current_image_path, width=preview_size - 10, height=preview_size - 40, fit=ft.ImageFit.CONTAIN),
+                    ft.Image(src=current_image_path, width=preview_size - 10, height=preview_size - 30, fit=ft.ImageFit.CONTAIN),
                     ft.Text("Current image", size=8, color=self.accent_color),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
-                print("Image preview loaded successfully")
-            except Exception as e:
-                print(f"Error loading preview: {e}")
+            except:
+                pass
         
         selected_temp_image = None
         delete_current = False
@@ -3516,15 +3525,12 @@ class StoreApp:
                 delete_current = False
                 try:
                     image_preview.content = ft.Column([
-                        ft.Image(src=selected_temp_image, width=preview_size - 10, height=preview_size - 40, fit=ft.ImageFit.CONTAIN),
+                        ft.Image(src=selected_temp_image, width=preview_size - 10, height=preview_size - 30, fit=ft.ImageFit.CONTAIN),
                         ft.Text("New image selected", size=8, color=self.success_color),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
                     page.update()
                 except:
                     pass
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Image selected: {file.name}"), bgcolor=self.success_color, duration=2000)
-                page.snack_bar.open = True
-                page.update()
         
         image_picker = ft.FilePicker(on_result=on_image_picked)
         page.overlay.append(image_picker)
@@ -3544,14 +3550,9 @@ class StoreApp:
                 ft.Text("Image will be deleted", size=10, color=self.danger_color),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5)
             page.update()
-            page.snack_bar = ft.SnackBar(ft.Text("✓ Image will be deleted on save"), bgcolor=self.warning_color, duration=2000)
-            page.snack_bar.open = True
-            page.update()
         
-        upload_btn = ft.ElevatedButton("📁 Upload New", on_click=upload_image, icon=ft.icons.UPLOAD_FILE,
-                                    style=ft.ButtonStyle(bgcolor=self.accent_color))
-        delete_btn = ft.ElevatedButton("🗑️ Delete", on_click=delete_image, icon=ft.icons.DELETE,
-                                    style=ft.ButtonStyle(bgcolor=self.danger_color))
+        upload_btn = ft.TextButton("📁 Upload New", on_click=upload_image)
+        delete_btn = ft.TextButton("🗑️ Delete", on_click=delete_image, style=ft.ButtonStyle(color=self.danger_color))
         
         def regenerate_barcode(e):
             import random
@@ -3648,7 +3649,7 @@ class StoreApp:
             
             if result:
                 page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Updated: {name_field.value}"), bgcolor=self.success_color, duration=3000)
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Updated: {name_field.value}"), bgcolor=self.success_color)
                 page.snack_bar.open = True
                 self.show_materials_screen(page)
             else:
@@ -3656,47 +3657,41 @@ class StoreApp:
                 page.snack_bar.open = True
                 page.update()
         
-        # Create image buttons row
-        image_buttons_row = ft.Row([upload_btn, delete_btn], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
+        # Image buttons row
+        image_buttons_row = ft.Row([upload_btn, delete_btn], spacing=10)
         
-        # Add a container for the image preview with a border on mobile
-        if is_mobile:
-            image_preview.margin = ft.margin.only(top=5, bottom=5)
-        
-        # Create all form fields in a list
-        form_fields = [
+        # Create scrollable fields column (WITH scroll parameter directly on Column)
+        scrollable_fields = ft.Column([
             name_field,
             category_field,
             quantity_field,
             size_field,
             length_field,
             quality_field,
-            barcode_field,
-            regenerate_btn,
             location_field,
             color_field,
+            barcode_field,
+            regenerate_btn,
             image_buttons_row,
             image_preview,
             notes_field,
-        ]
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=scroll_height)
         
-        # Simple layout with scroll
-        dialog_content = ft.Column(
-            form_fields + [
-                ft.Divider(),
-                ft.Row([
-                    ft.TextButton("Cancel", on_click=close_dialog),
-                    ft.FilledButton("Update", on_click=update_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
-                ], alignment=ft.MainAxisAlignment.END, spacing=10),
-            ],
-            spacing=12,
-            scroll=ft.ScrollMode.AUTO,
-        )
+        # Main dialog layout
+        dialog_content = ft.Column([
+            ft.Text("Edit Material", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            scrollable_fields,
+            ft.Divider(),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Update", on_click=update_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=12)
         
         dialog = ft.AlertDialog(
             title=ft.Text("Edit Material"),
-            content=ft.Container(content=dialog_content, width=modal_width, height=modal_height, padding=15),
-            actions_alignment=ft.MainAxisAlignment.END,
+            content=ft.Container(content=dialog_content, width=modal_width, padding=15),
         )
         
         page.dialog = dialog
