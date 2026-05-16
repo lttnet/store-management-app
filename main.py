@@ -3079,10 +3079,12 @@ class StoreApp:
         page.update()
         
     def open_add_modal(self, page: ft.Page):
-        """STEP 1: Basic version - Only essential fields"""
+        """STEP 2: Add Category field"""
         
         import random
         import string
+        import sqlite3
+        from database import DB_PATH
         
         def generate_barcode():
             prefix = "890"
@@ -3100,12 +3102,42 @@ class StoreApp:
         is_mobile = page.width < 800 if page.width else False
         field_width = page.width - 60 if is_mobile and page.width else 350
         
+        # Get categories
+        current_user_id = self.current_user.get('id') if self.current_user else 0
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name, icon FROM custom_categories WHERE user_id = ? OR user_id IS NULL ORDER BY name", (current_user_id,))
+        custom_cats = cursor.fetchall()
+        conn.close()
+        
+        predefined_categories = ["Raw Material", "Hardware", "Tools", "Electrical", "Plumbing",
+                                "Wood", "Metal", "Plastic", "Glass", "Paint", "Other"]
+        
+        all_categories = []
+        for cat in predefined_categories:
+            all_categories.append({"name": cat, "icon": self.get_category_icon(cat)})
+        
+        for cat in custom_cats:
+            cat_name = cat[0]
+            cat_icon = cat[1] if len(cat) > 1 else "📁"
+            if cat_name not in [c["name"] for c in all_categories]:
+                all_categories.append({"name": cat_name, "icon": cat_icon})
+        
+        all_categories.sort(key=lambda x: x["name"])
+        
         def close_modal(e):
             page.dialog.open = False
             page.update()
         
-        # ONLY BASIC FIELDS
         name_field = ft.TextField(label="Name", width=field_width, bgcolor=self.card_color)
+        
+        # ADDED CATEGORY FIELD
+        category_field = ft.Dropdown(
+            label="Category", width=field_width,
+            options=[ft.dropdown.Option(cat["name"], f"{cat['icon']} {cat['name']}") for cat in all_categories],
+            value="Raw Material", bgcolor=self.card_color,
+        )
+        
         quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
         quality_field = ft.Dropdown(
             label="Quality", width=field_width,
@@ -3128,11 +3160,11 @@ class StoreApp:
             
             data = {
                 'name': name_field.value,
+                'category': category_field.value,
                 'quantity': int(quantity_field.value) if quantity_field.value else 0,
                 'quality': quality_field.value,
                 'location_ids': location_field.value,
                 'barcode_value': barcode_field.value,
-                'category': 'Uncategorized',
             }
             
             result = MaterialManager.create(data)
@@ -3151,6 +3183,7 @@ class StoreApp:
             ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
             ft.Divider(),
             name_field,
+            category_field,  # ADDED
             quantity_field,
             quality_field,
             location_field,
