@@ -3079,7 +3079,7 @@ class StoreApp:
         page.update()
         
     def open_add_modal(self, page: ft.Page):
-        """STEP 2: Add Category field"""
+        """STEP 2 FIXED: Category field using alternative approach for mobile"""
         
         import random
         import string
@@ -3131,12 +3131,17 @@ class StoreApp:
         
         name_field = ft.TextField(label="Name", width=field_width, bgcolor=self.card_color)
         
-        # ADDED CATEGORY FIELD
-        category_field = ft.Dropdown(
-            label="Category", width=field_width,
+        # FIXED: Use Container with Dropdown, not directly in Column
+        category_dropdown = ft.Dropdown(
+            label="Category",
+            width=field_width,
             options=[ft.dropdown.Option(cat["name"], f"{cat['icon']} {cat['name']}") for cat in all_categories],
-            value="Raw Material", bgcolor=self.card_color,
+            value="Raw Material",
+            bgcolor=self.card_color,
         )
+        
+        # Wrap dropdown in a Container to isolate it
+        category_field = ft.Container(content=category_dropdown, width=field_width)
         
         quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
         quality_field = ft.Dropdown(
@@ -3160,7 +3165,7 @@ class StoreApp:
             
             data = {
                 'name': name_field.value,
-                'category': category_field.value,
+                'category': category_dropdown.value,  # Get value from the dropdown
                 'quantity': int(quantity_field.value) if quantity_field.value else 0,
                 'quality': quality_field.value,
                 'location_ids': location_field.value,
@@ -3179,22 +3184,27 @@ class StoreApp:
                 page.snack_bar.open = True
                 page.update()
         
-        dialog_content = ft.Column([
-            ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
-            ft.Divider(),
-            name_field,
-            category_field,  # ADDED
-            quantity_field,
-            quality_field,
-            location_field,
-            barcode_field,
-            regenerate_btn,
-            ft.Container(height=10),
-            ft.Row([
-                ft.TextButton("Cancel", on_click=close_modal),
-                ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
-            ], alignment=ft.MainAxisAlignment.END, spacing=10),
-        ], spacing=12)
+        # Use ListView instead of Column for better mobile scrolling
+        dialog_content = ft.ListView(
+            controls=[
+                ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
+                ft.Divider(),
+                name_field,
+                category_field,  # Wrapped in Container
+                quantity_field,
+                quality_field,
+                location_field,
+                barcode_field,
+                regenerate_btn,
+                ft.Container(height=10),
+                ft.Row([
+                    ft.TextButton("Cancel", on_click=close_modal),
+                    ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                ], alignment=ft.MainAxisAlignment.END, spacing=10),
+            ],
+            spacing=12,
+            height=500 if is_mobile else None,
+        )
         
         dialog_width = page.width - 40 if is_mobile and page.width else 450
         
