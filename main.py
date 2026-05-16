@@ -3079,22 +3079,25 @@ class StoreApp:
         page.update()
         
     def open_add_modal(self, page: ft.Page):
-        """DEBUG STEP 1: Only name field - Test if dialog opens and buttons work"""
+        """DEBUG STEP 2: Add quantity field"""
+        
+        name_field = ft.TextField(label="Name", width=300, bgcolor=self.card_color)
+        quantity_field = ft.TextField(label="Quantity", width=300, bgcolor=self.card_color, value="0")
         
         def close_dialog(e):
             page.dialog.open = False
             page.update()
         
         def save_material(e):
-            page.snack_bar = ft.SnackBar(ft.Text("DEBUG: Save button works!"), bgcolor=self.success_color)
+            page.snack_bar = ft.SnackBar(ft.Text(f"Name: {name_field.value}, Qty: {quantity_field.value}"), bgcolor=self.success_color)
             page.snack_bar.open = True
             page.update()
         
-        # Simple content
         dialog_content = ft.Column([
-            ft.Text("Add Material - DEBUG 1", size=18, weight=ft.FontWeight.BOLD),
+            ft.Text("Add Material - DEBUG 2", size=18, weight=ft.FontWeight.BOLD),
             ft.Divider(),
-            ft.TextField(label="Name", width=300, bgcolor=self.card_color),
+            name_field,
+            quantity_field,
             ft.Divider(),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog),
