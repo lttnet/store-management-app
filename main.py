@@ -3077,15 +3077,15 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
-        
+            
     def open_add_modal(self, page: ft.Page):
-        """STEP 6 FIXED: Category and Quality using BottomSheet (returns correctly)"""
+        """STEP 6 FIXED: BottomSheet with proper spacing, buttons visible"""
         
         import random
         import string
         
         print("=" * 50)
-        print("STEP 6 FIXED: Using BottomSheet for selections")
+        print("STEP 6 FIXED: BottomSheet with proper spacing")
         print("=" * 50)
         
         def generate_barcode():
@@ -3102,8 +3102,15 @@ class StoreApp:
             return barcode_without_checksum + str(checksum)
         
         is_mobile = page.width < 800 if page.width else False
-        field_width = page.width - 60 if is_mobile and page.width else 350
-        dialog_width = page.width - 40 if is_mobile and page.width else 450
+        
+        if is_mobile:
+            field_width = page.width - 60 if page.width else 300
+            dialog_width = page.width - 40 if page.width else 400
+            dialog_height = 550
+        else:
+            field_width = 350
+            dialog_width = 500
+            dialog_height = 600
         
         # Store selected values
         selected_category = "Raw Material"
@@ -3139,7 +3146,10 @@ class StoreApp:
                     ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
                 ], spacing=8)
                 page.update()
-                bottomsheet.open = False
+                # Close bottomsheet
+                for overlay in page.overlay[:]:
+                    if isinstance(overlay, ft.BottomSheet):
+                        overlay.open = False
                 page.update()
             
             categories = [
@@ -3209,7 +3219,10 @@ class StoreApp:
                     ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
                 ], spacing=8)
                 page.update()
-                bottomsheet.open = False
+                # Close bottomsheet
+                for overlay in page.overlay[:]:
+                    if isinstance(overlay, ft.BottomSheet):
+                        overlay.open = False
                 page.update()
             
             quality_options = ["New", "Used", "Damaged", "Repaired"]
@@ -3255,6 +3268,10 @@ class StoreApp:
         regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=lambda e: setattr(barcode_field, 'value', generate_barcode()) or page.update())
         
         def close_dialog(e):
+            # Close any open bottomsheets first
+            for overlay in page.overlay[:]:
+                if isinstance(overlay, ft.BottomSheet):
+                    overlay.open = False
             page.dialog.open = False
             page.update()
         
@@ -3285,6 +3302,10 @@ class StoreApp:
             result = MaterialManager.create(data)
             
             if result:
+                # Close any open bottomsheets
+                for overlay in page.overlay[:]:
+                    if isinstance(overlay, ft.BottomSheet):
+                        overlay.open = False
                 page.dialog.open = False
                 page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color)
                 page.snack_bar.open = True
@@ -3294,10 +3315,8 @@ class StoreApp:
                 page.snack_bar.open = True
                 page.update()
         
-        # Main dialog content
-        dialog_content = ft.Column([
-            ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
-            ft.Divider(),
+        # Create scrollable content for fields
+        scroll_content = ft.Column([
             name_field,
             ft.Text("Category", size=12, color="#888888"),
             category_button,
@@ -3309,6 +3328,13 @@ class StoreApp:
             location_field,
             barcode_field,
             regenerate_btn,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO)
+        
+        # Main dialog content with proper height
+        dialog_content = ft.Column([
+            ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            ft.Container(content=scroll_content, height=dialog_height - 150),
             ft.Divider(),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog, expand=True),
