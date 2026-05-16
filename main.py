@@ -3079,25 +3079,36 @@ class StoreApp:
         page.update()
         
     def open_add_modal(self, page: ft.Page):
-        """DEBUG STEP 2: Add quantity field"""
+        """DEBUG STEP 3: Add dropdown - This might be the problem"""
         
         name_field = ft.TextField(label="Name", width=300, bgcolor=self.card_color)
         quantity_field = ft.TextField(label="Quantity", width=300, bgcolor=self.card_color, value="0")
+        quality_field = ft.Dropdown(
+            label="Quality", width=300,
+            options=[
+                ft.dropdown.Option("New"),
+                ft.dropdown.Option("Used"),
+                ft.dropdown.Option("Damaged"),
+                ft.dropdown.Option("Repaired"),
+            ],
+            value="New", bgcolor=self.card_color,
+        )
         
         def close_dialog(e):
             page.dialog.open = False
             page.update()
         
         def save_material(e):
-            page.snack_bar = ft.SnackBar(ft.Text(f"Name: {name_field.value}, Qty: {quantity_field.value}"), bgcolor=self.success_color)
+            page.snack_bar = ft.SnackBar(ft.Text(f"Name: {name_field.value}, Quality: {quality_field.value}"), bgcolor=self.success_color)
             page.snack_bar.open = True
             page.update()
         
         dialog_content = ft.Column([
-            ft.Text("Add Material - DEBUG 2", size=18, weight=ft.FontWeight.BOLD),
+            ft.Text("Add Material - DEBUG 3", size=18, weight=ft.FontWeight.BOLD),
             ft.Divider(),
             name_field,
             quantity_field,
+            quality_field,
             ft.Divider(),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog),
@@ -3113,7 +3124,6 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
-            # ============ STUB METHODS ============
         
     def open_edit_modal(self, page: ft.Page, material_id):
         """Edit material using full-screen dialog - Best for mobile with many fields"""
