@@ -3079,13 +3079,13 @@ class StoreApp:
         page.update()
         
     def open_add_modal(self, page: ft.Page):
-        """STEP 5: Add Category button only - Test if button dialog works"""
+        """STEP 6: Add Category + Quality buttons"""
         
         import random
         import string
         
         print("=" * 50)
-        print("STEP 5: Testing Category Button")
+        print("STEP 6: Testing Category + Quality Buttons")
         print("=" * 50)
         
         def generate_barcode():
@@ -3105,10 +3105,19 @@ class StoreApp:
         field_width = page.width - 60 if is_mobile and page.width else 350
         dialog_width = page.width - 40 if is_mobile and page.width else 450
         
-        # Store selected category
+        # Store selected values
         selected_category = "Raw Material"
+        selected_quality = "New"
         
-        # Category Button
+        # Quality color mapping
+        quality_icons = {
+            "New": "🟢",
+            "Used": "🟠",
+            "Damaged": "🔴",
+            "Repaired": "🔵"
+        }
+        
+        # ========== CATEGORY BUTTON ==========
         category_button = ft.ElevatedButton(
             content=ft.Row([
                 ft.Text("📦", size=16),
@@ -3119,8 +3128,6 @@ class StoreApp:
         )
         
         def show_category_dialog(e):
-            print("DEBUG: Category button clicked!")
-            
             def select_category(name, icon):
                 nonlocal selected_category
                 selected_category = name
@@ -3132,9 +3139,7 @@ class StoreApp:
                 page.update()
                 category_dialog.open = False
                 page.update()
-                print(f"DEBUG: Selected category: {name}")
             
-            # Simple category list
             categories = [
                 ("📦", "Raw Material"),
                 ("🔩", "Hardware"),
@@ -3181,14 +3186,72 @@ class StoreApp:
         
         category_button.on_click = show_category_dialog
         
-        # Simple form fields
+        # ========== QUALITY BUTTON ==========
+        quality_button = ft.ElevatedButton(
+            content=ft.Row([
+                ft.Text(quality_icons[selected_quality], size=16),
+                ft.Text(selected_quality, size=14),
+                ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
+            ], spacing=8),
+            style=ft.ButtonStyle(bgcolor=self.card_color, color=self.text_color),
+        )
+        
+        def show_quality_dialog(e):
+            def select_quality(quality):
+                nonlocal selected_quality
+                selected_quality = quality
+                quality_button.content = ft.Row([
+                    ft.Text(quality_icons[quality], size=16),
+                    ft.Text(quality, size=14),
+                    ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
+                ], spacing=8)
+                page.update()
+                quality_dialog.open = False
+                page.update()
+            
+            quality_options = ["New", "Used", "Damaged", "Repaired"]
+            quality_items = []
+            for quality in quality_options:
+                is_selected = (quality == selected_quality)
+                quality_items.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Text(quality_icons[quality], size=20),
+                            ft.Text(quality, size=14, expand=True),
+                            ft.Icon(ft.icons.CHECK, size=16, color=self.success_color, visible=is_selected),
+                        ], spacing=10),
+                        padding=12,
+                        on_click=lambda e, q=quality: select_quality(q),
+                        ink=True,
+                    )
+                )
+            
+            quality_dialog = ft.AlertDialog(
+                title=ft.Text("Select Quality", size=16, weight=ft.FontWeight.BOLD),
+                content=ft.Container(
+                    content=ft.Column(quality_items, spacing=5),
+                    width=300,
+                    padding=10,
+                ),
+                actions=[
+                    ft.TextButton("Close", on_click=lambda e: setattr(quality_dialog, 'open', False)),
+                ],
+            )
+            
+            page.dialog = quality_dialog
+            quality_dialog.open = True
+            page.update()
+        
+        quality_button.on_click = show_quality_dialog
+        
+        # ========== FORM FIELDS ==========
         name_field = ft.TextField(label="Name *", width=field_width, bgcolor=self.card_color)
         quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
         location_field = ft.TextField(label="Location", width=field_width, bgcolor=self.card_color)
         barcode_field = ft.TextField(label="Barcode", width=field_width, bgcolor=self.card_color, value=generate_barcode(), read_only=True)
+        regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=lambda e: setattr(barcode_field, 'value', generate_barcode()) or page.update())
         
         def close_dialog(e):
-            print("Cancel clicked")
             page.dialog.open = False
             page.update()
         
@@ -3197,8 +3260,8 @@ class StoreApp:
             print(f"Save clicked!")
             print(f"  Name: {name_field.value}")
             print(f"  Category: {selected_category}")
+            print(f"  Quality: {selected_quality}")
             print(f"  Quantity: {quantity_field.value}")
-            print(f"  Location: {location_field.value}")
             print("=" * 50)
             
             if not name_field.value:
@@ -3211,16 +3274,16 @@ class StoreApp:
                 'name': name_field.value,
                 'category': selected_category,
                 'quantity': int(quantity_field.value) if quantity_field.value else 0,
+                'quality': selected_quality,
                 'location_ids': location_field.value,
                 'barcode_value': barcode_field.value,
-                'quality': 'New',
             }
             
             result = MaterialManager.create(data)
             
             if result:
                 page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value} (Category: {selected_category})"), bgcolor=self.success_color)
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color)
                 page.snack_bar.open = True
                 self.show_materials_screen(page)
             else:
@@ -3228,7 +3291,7 @@ class StoreApp:
                 page.snack_bar.open = True
                 page.update()
         
-        # Simple layout
+        # Layout
         dialog_content = ft.Column([
             ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
             ft.Divider(),
@@ -3236,9 +3299,13 @@ class StoreApp:
             ft.Text("Category", size=12, color="#888888"),
             category_button,
             ft.Container(height=5),
+            ft.Text("Quality", size=12, color="#888888"),
+            quality_button,
+            ft.Container(height=5),
             quantity_field,
             location_field,
             barcode_field,
+            regenerate_btn,
             ft.Divider(),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog, expand=True),
