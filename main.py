@@ -3079,15 +3079,16 @@ class StoreApp:
         page.update()
         
     def open_add_modal(self, page: ft.Page):
-        """Add material - Category using TextField with BottomSheet picker (Mobile friendly)"""
+        """DEBUG VERSION - Prints everything to console"""
         
         import random
         import string
-        import os
-        import shutil
-        from datetime import datetime
-        import sqlite3
-        from database import DB_PATH
+        import traceback
+        
+        print("=" * 50)
+        print("DEBUG: open_add_modal called")
+        print(f"Page width: {page.width}, is_mobile: {page.width < 800 if page.width else 'unknown'}")
+        print("=" * 50)
         
         def generate_barcode():
             prefix = "890"
@@ -3103,169 +3104,25 @@ class StoreApp:
             return barcode_without_checksum + str(checksum)
         
         is_mobile = page.width < 800 if page.width else False
-        field_width = page.width - 60 if is_mobile and page.width else 350
-        dialog_width = page.width - 40 if is_mobile and page.width else 450
+        print(f"is_mobile: {is_mobile}")
         
-        # Create images folder
-        images_folder = "images"
-        if not os.path.exists(images_folder):
-            os.makedirs(images_folder)
+        if is_mobile:
+            field_width = page.width - 60 if page.width else 300
+            dialog_width = page.width - 40 if page.width else 400
+        else:
+            field_width = 350
+            dialog_width = 450
         
-        # Get categories
-        current_user_id = self.current_user.get('id') if self.current_user else 0
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS custom_categories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                icon TEXT DEFAULT '📁',
-                color TEXT DEFAULT '#1976D2',
-                created_by TEXT,
-                user_id INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
+        print(f"field_width: {field_width}, dialog_width: {dialog_width}")
         
-        cursor.execute("SELECT name, icon FROM custom_categories WHERE user_id = ? OR user_id IS NULL ORDER BY name", (current_user_id,))
-        custom_cats = cursor.fetchall()
-        conn.close()
+        # Create all form fields
+        print("Creating form fields...")
         
-        # Predefined categories
-        predefined_categories = [
-            "Raw Material", "Hardware", "Tools", "Electrical", "Plumbing",
-            "Wood", "Metal", "Plastic", "Glass", "Paint", "Fasteners",
-            "Safety Equipment", "Packaging", "Office Supplies", "Other"
-        ]
-        
-        all_categories = []
-        for cat in predefined_categories:
-            all_categories.append({"name": cat, "icon": self.get_category_icon(cat)})
-        
-        for cat in custom_cats:
-            cat_name = cat[0]
-            cat_icon = cat[1] if len(cat) > 1 else "📁"
-            if cat_name not in [c["name"] for c in all_categories]:
-                all_categories.append({"name": cat_name, "icon": cat_icon})
-        
-        all_categories.sort(key=lambda x: x["name"])
-        
-        # Store selected category
-        selected_category_value = "Raw Material"
-        
-        # Category TextField (looks like dropdown but opens picker)
-        category_field = ft.TextField(
-            label="Category",
-            width=field_width,
-            value="📦 Raw Material",
-            bgcolor=self.card_color,
-            read_only=True,
-            suffix=ft.Icon(ft.icons.ARROW_DROP_DOWN),
-        )
-        
-        def show_category_picker(e):
-            # Create category selection items
-            category_items = []
-            
-            for cat in all_categories:
-                category_items.append(
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Text(cat['icon'], size=20),
-                            ft.Text(cat['name'], size=14, expand=True),
-                            ft.Icon(ft.icons.CHECK, size=16, color=self.success_color, 
-                                visible=(cat['name'] == selected_category_value)),
-                        ], spacing=10),
-                        padding=12,
-                        on_click=lambda e, name=cat['name'], icon=cat['icon']: select_category(name, icon),
-                        ink=True,
-                    )
-                )
-            
-            # Add "Add New Category" option
-            category_items.append(
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text("➕", size=20),
-                        ft.Text("Add New Category", size=14, expand=True, color=self.accent_color),
-                    ], spacing=10),
-                    padding=12,
-                    on_click=lambda e: show_add_category_dialog(),
-                    ink=True,
-                )
-            )
-            
-            picker_sheet = ft.BottomSheet(
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Text("Select Category", size=18, weight=ft.FontWeight.BOLD),
-                        ft.Divider(),
-                        ft.Column(category_items, spacing=5, scroll=ft.ScrollMode.AUTO),
-                    ], spacing=10),
-                    padding=20,
-                    height=400,
-                ),
-            )
-            
-            page.overlay.append(picker_sheet)
-            picker_sheet.open = True
-            page.update()
-            
-            def select_category(name, icon):
-                nonlocal selected_category_value
-                selected_category_value = name
-                category_field.value = f"{icon} {name}"
-                picker_sheet.open = False
-                page.update()
-            
-            def show_add_category_dialog():
-                picker_sheet.open = False
-                
-                def add_category():
-                    new_name = new_category_field.value.strip()
-                    if new_name:
-                        import sqlite3
-                        from database import DB_PATH
-                        conn = sqlite3.connect(DB_PATH)
-                        cursor = conn.cursor()
-                        try:
-                            cursor.execute(
-                                "INSERT INTO custom_categories (name, icon, user_id) VALUES (?, ?, ?)",
-                                (new_name, "📁", current_user_id)
-                            )
-                            conn.commit()
-                            all_categories.append({"name": new_name, "icon": "📁"})
-                            all_categories.sort(key=lambda x: x["name"])
-                            selected_category_value = new_name
-                            category_field.value = f"📁 {new_name}"
-                        except:
-                            pass
-                        conn.close()
-                        add_dialog.open = False
-                        page.update()
-                
-                new_category_field = ft.TextField(label="Category Name", width=250)
-                add_dialog = ft.AlertDialog(
-                    title=ft.Text("Add New Category"),
-                    content=ft.Container(content=new_category_field, padding=20, width=300),
-                    actions=[
-                        ft.TextButton("Cancel", on_click=lambda e: setattr(add_dialog, 'open', False)),
-                        ft.FilledButton("Add", on_click=lambda e: add_category()),
-                    ],
-                )
-                page.dialog = add_dialog
-                add_dialog.open = True
-                page.update()
-        
-        category_field.on_click = show_category_picker
-        
-        # Rest of the form fields
         name_field = ft.TextField(label="Name *", width=field_width, bgcolor=self.card_color)
-        quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
+        print("  - name_field created")
         
-        size_field = ft.TextField(label="Size", width=field_width, bgcolor=self.card_color, hint_text="e.g., 34 1/2 or 24.5")
-        length_field = ft.TextField(label="Length (auto)", width=field_width, bgcolor=self.card_color, read_only=True)
+        quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
+        print("  - quantity_field created")
         
         quality_field = ft.Dropdown(
             label="Quality", width=field_width,
@@ -3277,160 +3134,103 @@ class StoreApp:
             ],
             value="New", bgcolor=self.card_color,
         )
+        print("  - quality_field created")
         
         location_field = ft.TextField(label="Location", width=field_width, bgcolor=self.card_color)
-        color_field = ft.TextField(label="Colors", width=field_width, bgcolor=self.card_color)
-        notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2)
+        print("  - location_field created")
         
-        barcode_field = ft.TextField(label="Barcode", width=field_width, bgcolor=self.card_color, value=generate_barcode(), read_only=True)
-        
-        # Image preview
-        preview_size = 100 if is_mobile else 120
-        image_preview = ft.Container(
-            content=ft.Column([
-                ft.Text("📷", size=40),
-                ft.Text("No Image", size=10, color="#888888"),
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-            width=preview_size, height=preview_size - 20,
-            bgcolor="#2C2C2C", border_radius=8,
+        barcode_field = ft.TextField(
+            label="Barcode", width=field_width, bgcolor=self.card_color, 
+            value=generate_barcode(), read_only=True
         )
+        print("  - barcode_field created")
         
-        selected_temp_image = None
+        regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=lambda e: setattr(barcode_field, 'value', generate_barcode()) or page.update())
+        print("  - regenerate_btn created")
         
-        def on_image_picked(e: ft.FilePickerResultEvent):
-            nonlocal selected_temp_image
-            if e.files:
-                file = e.files[0]
-                selected_temp_image = file.path
-                try:
-                    image_preview.content = ft.Column([
-                        ft.Image(src=selected_temp_image, width=preview_size - 10, height=preview_size - 30, fit=ft.ImageFit.CONTAIN),
-                        ft.Text("Image selected", size=8, color=self.success_color),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
-                    page.update()
-                except:
-                    pass
-        
-        image_picker = ft.FilePicker(on_result=on_image_picked)
-        page.overlay.append(image_picker)
-        
-        def upload_image(e):
-            image_picker.pick_files(allow_multiple=False, allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
-        
-        upload_btn = ft.TextButton("📁 Upload Image", on_click=upload_image)
-        
-        def regenerate_barcode(e):
-            barcode_field.value = generate_barcode()
-            page.update()
-        
-        regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=regenerate_barcode)
-        
-        def update_length(e):
-            size_value = size_field.value
-            if size_value:
-                converted = self.convert_size_to_length(size_value)
-                if converted is not None:
-                    length_field.value = str(converted)
-                else:
-                    length_field.value = ""
-            else:
-                length_field.value = ""
-            page.update()
-        
-        size_field.on_change = update_length
-        
-        def save_uploaded_image():
-            if selected_temp_image and os.path.exists(selected_temp_image):
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                file_ext = os.path.splitext(selected_temp_image)[1]
-                new_filename = f"material_{timestamp}{file_ext}"
-                new_path = os.path.join(images_folder, new_filename)
-                shutil.copy2(selected_temp_image, new_path)
-                return new_path
-            return None
-        
+        # Simple close function
         def close_dialog(e):
+            print("DEBUG: Cancel button clicked")
             page.dialog.open = False
             page.update()
         
+        # Simple save function
         def save_material(e):
+            print("=" * 50)
+            print("DEBUG: Save button clicked!")
+            print(f"  Name: {name_field.value}")
+            print(f"  Quantity: {quantity_field.value}")
+            print(f"  Quality: {quality_field.value}")
+            print(f"  Location: {location_field.value}")
+            print(f"  Barcode: {barcode_field.value}")
+            print("=" * 50)
+            
             if not name_field.value:
+                print("ERROR: Name is empty")
                 page.snack_bar = ft.SnackBar(ft.Text("Please enter a name!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
                 return
             
-            saved_image_path = save_uploaded_image() if selected_temp_image else None
-            size_value = size_field.value
-            length_value = self.convert_size_to_length(size_value) if size_value else None
-            
             data = {
                 'name': name_field.value,
-                'category': selected_category_value,
                 'quantity': int(quantity_field.value) if quantity_field.value else 0,
-                'size': size_value,
-                'length': length_value,
                 'quality': quality_field.value,
                 'location_ids': location_field.value,
-                'colors': color_field.value,
-                'notes': notes_field.value,
                 'barcode_value': barcode_field.value,
-                'image_path': saved_image_path,
+                'category': 'Uncategorized',
             }
             
+            print(f"Creating material with data: {data}")
+            
             result = MaterialManager.create(data)
+            print(f"MaterialManager.create result: {result}")
             
             if result:
+                print("SUCCESS: Material created")
                 page.dialog.open = False
                 page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color)
                 page.snack_bar.open = True
                 self.show_materials_screen(page)
             else:
+                print("ERROR: Failed to create material")
                 page.snack_bar = ft.SnackBar(ft.Text("Error creating material!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
         
-        # Create scrollable content
-        scrollable_content = ft.Column([
-            name_field,
-            category_field,  # Now using TextField instead of Dropdown
-            quantity_field,
-            size_field,
-            length_field,
-            quality_field,
-            location_field,
-            color_field,
-            barcode_field,
-            regenerate_btn,
-            upload_btn,
-            image_preview,
-            notes_field,
-        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=500)
+        # Build dialog content - SIMPLE layout
+        print("Building dialog content...")
         
         dialog_content = ft.Column([
-            ft.Row([
-                ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, on_click=close_dialog),
-            ]),
+            ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
             ft.Divider(),
-            scrollable_content,
-            ft.Divider(),
+            name_field,
+            quantity_field,
+            quality_field,
+            location_field,
+            barcode_field,
+            regenerate_btn,
+            ft.Container(height=10),
             ft.Row([
-                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
-                ft.FilledButton("Save", on_click=save_material, 
-                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
-            ], spacing=10),
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
         ], spacing=12)
         
+        print("Creating AlertDialog...")
+        
         dialog = ft.AlertDialog(
-            title=ft.Text(""),
+            title=ft.Text("Add Material"),
             content=ft.Container(content=dialog_content, width=dialog_width, padding=15),
-            modal=True,
         )
         
+        print("Opening dialog...")
         page.dialog = dialog
         dialog.open = True
         page.update()
+        
+        print("DEBUG: Dialog should now be visible")
+        print("=" * 50)
         
     def open_edit_modal(self, page: ft.Page, material_id):
         """Edit material using full-screen dialog - Best for mobile with many fields"""
