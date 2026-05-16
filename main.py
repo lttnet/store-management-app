@@ -3068,9 +3068,13 @@ class StoreApp:
         if is_mobile:
             field_width = page.width - 60 if page.width else 300
             modal_width = page.width - 40 if page.width else 400
+            modal_height = 550  # Taller on mobile to show all fields
+            preview_size = 100
         else:
             field_width = 380
             modal_width = 520
+            modal_height = 600
+            preview_size = 150
         
         def generate_barcode():
             """Generate a unique 13-digit barcode"""
@@ -3188,7 +3192,6 @@ class StoreApp:
         )
         
         # Image preview
-        preview_size = 120 if is_mobile else 150
         image_preview = ft.Container(
             content=ft.Column([
                 ft.Text("📷", size=40),
@@ -3215,6 +3218,9 @@ class StoreApp:
                     page.update()
                 except:
                     pass
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Image selected: {file.name}"), bgcolor=self.success_color, duration=2000)
+                page.snack_bar.open = True
+                page.update()
         
         image_picker = ft.FilePicker(on_result=on_image_picked)
         page.overlay.append(image_picker)
@@ -3225,7 +3231,8 @@ class StoreApp:
                 allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"],
             )
         
-        upload_btn = ft.TextButton("📁 Upload Image", on_click=upload_image)
+        upload_btn = ft.ElevatedButton("📁 Upload Image", on_click=upload_image, icon=ft.icons.UPLOAD_FILE, 
+                                    style=ft.ButtonStyle(bgcolor=self.accent_color))
         
         def regenerate_barcode(e):
             barcode_field.value = generate_barcode()
@@ -3293,7 +3300,7 @@ class StoreApp:
             
             if result:
                 page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color)
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=3000)
                 page.snack_bar.open = True
                 self.show_materials_screen(page)
             else:
@@ -3301,10 +3308,8 @@ class StoreApp:
                 page.snack_bar.open = True
                 page.update()
         
-        # Simple layout - NO nested scroll containers
-        dialog_content = ft.Column([
-            ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
-            ft.Divider(),
+        # Create all form fields in a list
+        form_fields = [
             name_field,
             category_field,
             quantity_field,
@@ -3318,16 +3323,29 @@ class StoreApp:
             upload_btn,
             image_preview,
             notes_field,
-            ft.Divider(),
-            ft.Row([
-                ft.TextButton("Cancel", on_click=close_dialog),
-                ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
-            ], alignment=ft.MainAxisAlignment.END, spacing=10),
-        ], spacing=12, scroll=ft.ScrollMode.AUTO)
+        ]
+        
+        # Add a container for the image preview with a border on mobile
+        if is_mobile:
+            image_preview.margin = ft.margin.only(top=5, bottom=5)
+        
+        # Simple layout with scroll
+        dialog_content = ft.Column(
+            form_fields + [
+                ft.Divider(),
+                ft.Row([
+                    ft.TextButton("Cancel", on_click=close_dialog),
+                    ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                ], alignment=ft.MainAxisAlignment.END, spacing=10),
+            ],
+            spacing=12,
+            scroll=ft.ScrollMode.AUTO,
+        )
         
         dialog = ft.AlertDialog(
             title=ft.Text("Add Material"),
-            content=ft.Container(content=dialog_content, width=modal_width, height=500, padding=15),
+            content=ft.Container(content=dialog_content, width=modal_width, height=modal_height, padding=15),
+            actions_alignment=ft.MainAxisAlignment.END,
         )
         
         page.dialog = dialog
@@ -3351,9 +3369,13 @@ class StoreApp:
         if is_mobile:
             field_width = page.width - 60 if page.width else 300
             modal_width = page.width - 40 if page.width else 400
+            modal_height = 580  # Taller on mobile
+            preview_size = 100
         else:
             field_width = 380
             modal_width = 520
+            modal_height = 620
+            preview_size = 150
         
         material = MaterialManager.get_by_id(material_id)
         if not material:
@@ -3458,7 +3480,10 @@ class StoreApp:
         current_image_path = material_dict.get('image_path', '')
         has_current_image = current_image_path and os.path.exists(current_image_path) if current_image_path else False
         
-        preview_size = 120 if is_mobile else 150
+        # Debug print
+        print(f"Current image path: {current_image_path}")
+        print(f"Has current image: {has_current_image}")
+        
         image_preview = ft.Container(
             content=ft.Column([
                 ft.Text("📷", size=40),
@@ -3476,8 +3501,9 @@ class StoreApp:
                     ft.Image(src=current_image_path, width=preview_size - 10, height=preview_size - 40, fit=ft.ImageFit.CONTAIN),
                     ft.Text("Current image", size=8, color=self.accent_color),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
-            except:
-                pass
+                print("Image preview loaded successfully")
+            except Exception as e:
+                print(f"Error loading preview: {e}")
         
         selected_temp_image = None
         delete_current = False
@@ -3496,6 +3522,9 @@ class StoreApp:
                     page.update()
                 except:
                     pass
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Image selected: {file.name}"), bgcolor=self.success_color, duration=2000)
+                page.snack_bar.open = True
+                page.update()
         
         image_picker = ft.FilePicker(on_result=on_image_picked)
         page.overlay.append(image_picker)
@@ -3515,9 +3544,14 @@ class StoreApp:
                 ft.Text("Image will be deleted", size=10, color=self.danger_color),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5)
             page.update()
+            page.snack_bar = ft.SnackBar(ft.Text("✓ Image will be deleted on save"), bgcolor=self.warning_color, duration=2000)
+            page.snack_bar.open = True
+            page.update()
         
-        upload_btn = ft.TextButton("📁 Upload New", on_click=upload_image)
-        delete_btn = ft.TextButton("🗑️ Delete", on_click=delete_image, style=ft.ButtonStyle(color=self.danger_color))
+        upload_btn = ft.ElevatedButton("📁 Upload New", on_click=upload_image, icon=ft.icons.UPLOAD_FILE,
+                                    style=ft.ButtonStyle(bgcolor=self.accent_color))
+        delete_btn = ft.ElevatedButton("🗑️ Delete", on_click=delete_image, icon=ft.icons.DELETE,
+                                    style=ft.ButtonStyle(bgcolor=self.danger_color))
         
         def regenerate_barcode(e):
             import random
@@ -3614,7 +3648,7 @@ class StoreApp:
             
             if result:
                 page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Updated: {name_field.value}"), bgcolor=self.success_color)
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Updated: {name_field.value}"), bgcolor=self.success_color, duration=3000)
                 page.snack_bar.open = True
                 self.show_materials_screen(page)
             else:
@@ -3625,10 +3659,12 @@ class StoreApp:
         # Create image buttons row
         image_buttons_row = ft.Row([upload_btn, delete_btn], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
         
-        # Simple layout - NO nested scroll containers
-        dialog_content = ft.Column([
-            ft.Text("Edit Material", size=18, weight=ft.FontWeight.BOLD),
-            ft.Divider(),
+        # Add a container for the image preview with a border on mobile
+        if is_mobile:
+            image_preview.margin = ft.margin.only(top=5, bottom=5)
+        
+        # Create all form fields in a list
+        form_fields = [
             name_field,
             category_field,
             quantity_field,
@@ -3642,16 +3678,25 @@ class StoreApp:
             image_buttons_row,
             image_preview,
             notes_field,
-            ft.Divider(),
-            ft.Row([
-                ft.TextButton("Cancel", on_click=close_dialog),
-                ft.FilledButton("Update", on_click=update_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
-            ], alignment=ft.MainAxisAlignment.END, spacing=10),
-        ], spacing=12, scroll=ft.ScrollMode.AUTO)
+        ]
+        
+        # Simple layout with scroll
+        dialog_content = ft.Column(
+            form_fields + [
+                ft.Divider(),
+                ft.Row([
+                    ft.TextButton("Cancel", on_click=close_dialog),
+                    ft.FilledButton("Update", on_click=update_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                ], alignment=ft.MainAxisAlignment.END, spacing=10),
+            ],
+            spacing=12,
+            scroll=ft.ScrollMode.AUTO,
+        )
         
         dialog = ft.AlertDialog(
             title=ft.Text("Edit Material"),
-            content=ft.Container(content=dialog_content, width=modal_width, height=500, padding=15),
+            content=ft.Container(content=dialog_content, width=modal_width, height=modal_height, padding=15),
+            actions_alignment=ft.MainAxisAlignment.END,
         )
         
         page.dialog = dialog
