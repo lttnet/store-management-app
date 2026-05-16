@@ -3079,7 +3079,7 @@ class StoreApp:
         page.update()
         
     def open_add_modal(self, page: ft.Page):
-        """STEP 2 FIXED: Category field using alternative approach for mobile"""
+        """STEP 2 ALTERNATIVE: Category using TextField with dialog picker"""
         
         import random
         import string
@@ -3131,17 +3131,51 @@ class StoreApp:
         
         name_field = ft.TextField(label="Name", width=field_width, bgcolor=self.card_color)
         
-        # FIXED: Use Container with Dropdown, not directly in Column
-        category_dropdown = ft.Dropdown(
+        # Category as TextField with dropdown arrow
+        category_value = ft.TextField(
             label="Category",
             width=field_width,
-            options=[ft.dropdown.Option(cat["name"], f"{cat['icon']} {cat['name']}") for cat in all_categories],
             value="Raw Material",
             bgcolor=self.card_color,
+            read_only=True,
+            suffix=ft.IconButton(icon=ft.icons.ARROW_DROP_DOWN, on_click=None),
         )
         
-        # Wrap dropdown in a Container to isolate it
-        category_field = ft.Container(content=category_dropdown, width=field_width)
+        def show_category_picker(e):
+            def select_category(cat_name):
+                category_value.value = cat_name
+                page.dialog.open = False
+                page.update()
+            
+            # Create category selection dialog
+            category_buttons = []
+            for cat in all_categories:
+                category_buttons.append(
+                    ft.ListTile(
+                        leading=ft.Text(cat['icon'], size=20),
+                        title=ft.Text(cat['name']),
+                        on_click=lambda e, name=cat['name']: select_category(name),
+                    )
+                )
+            
+            picker_dialog = ft.AlertDialog(
+                title=ft.Text("Select Category"),
+                content=ft.Container(
+                    content=ft.Column(category_buttons, spacing=5, scroll=ft.ScrollMode.AUTO),
+                    width=300,
+                    height=400,
+                    padding=10,
+                ),
+                actions=[ft.TextButton("Cancel", on_click=lambda e: setattr(page.dialog, 'open', False))],
+            )
+            
+            # Close current dialog and open picker
+            page.dialog.open = False
+            page.dialog = picker_dialog
+            picker_dialog.open = True
+            page.update()
+        
+        category_value.suffix.on_click = show_category_picker
         
         quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
         quality_field = ft.Dropdown(
@@ -3165,7 +3199,7 @@ class StoreApp:
             
             data = {
                 'name': name_field.value,
-                'category': category_dropdown.value,  # Get value from the dropdown
+                'category': category_value.value,
                 'quantity': int(quantity_field.value) if quantity_field.value else 0,
                 'quality': quality_field.value,
                 'location_ids': location_field.value,
@@ -3184,13 +3218,13 @@ class StoreApp:
                 page.snack_bar.open = True
                 page.update()
         
-        # Use ListView instead of Column for better mobile scrolling
+        # Use ListView for better mobile scrolling
         dialog_content = ft.ListView(
             controls=[
                 ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
                 ft.Divider(),
                 name_field,
-                category_field,  # Wrapped in Container
+                category_value,
                 quantity_field,
                 quality_field,
                 location_field,
