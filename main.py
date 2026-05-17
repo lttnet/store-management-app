@@ -3079,7 +3079,7 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Add material - Simple version with dropdown only"""
+        """Add material - Image status side by side with upload button"""
         
         import random
         import string
@@ -3108,9 +3108,15 @@ class StoreApp:
         if is_mobile:
             field_width = page.width - 40 if page.width else 340
             dialog_width = page.width - 20 if page.width else 380
+            # Fixed height for mobile - leave space for buttons
+            scroll_height = 420
+            # Smaller button width on mobile
+            button_width = field_width - 100 if field_width > 100 else field_width
         else:
             field_width = 350
             dialog_width = 500
+            scroll_height = 500
+            button_width = 200
         
         # Create images folder
         images_folder = "images"
@@ -3188,13 +3194,13 @@ class StoreApp:
         
         location_field = ft.TextField(label="Location", width=field_width, bgcolor=self.card_color)
         color_field = ft.TextField(label="Colors", width=field_width, bgcolor=self.card_color)
-        notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2)
+        notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
         barcode_field = ft.TextField(label="Barcode", width=field_width, bgcolor=self.card_color, value=generate_barcode(), read_only=True)
         regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=lambda e: setattr(barcode_field, 'value', generate_barcode()) or page.update())
         
         # Image selection status text
-        image_status_text = ft.Text("No image selected", size=12, color="#888888")
+        image_status_text = ft.Text("No image", size=11, color="#888888")
         selected_temp_image = None
         
         def on_image_picked(e: ft.FilePickerResultEvent):
@@ -3202,7 +3208,9 @@ class StoreApp:
             if e.files:
                 file = e.files[0]
                 selected_temp_image = file.path
-                image_status_text.value = f"✓ Image selected: {file.name[:30]}{'...' if len(file.name) > 30 else ''}"
+                # Short filename for status
+                short_name = file.name[:20] + '...' if len(file.name) > 20 else file.name
+                image_status_text.value = f"✓ {short_name}"
                 image_status_text.color = self.success_color
                 page.update()
                 page.snack_bar = ft.SnackBar(ft.Text(f"✓ Image selected: {file.name}"), bgcolor=self.success_color, duration=2000)
@@ -3216,11 +3224,17 @@ class StoreApp:
             image_picker.pick_files(allow_multiple=False, allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
         
         upload_btn = ft.ElevatedButton(
-            "📁 Upload Image", 
+            "📁 Upload", 
             on_click=upload_image,
             icon=ft.icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
         )
+        
+        # Image row - button and status side by side
+        image_row = ft.Row([
+            upload_btn,
+            image_status_text,
+        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         
         def update_length(e):
             size_value = size_field.value
@@ -3299,36 +3313,32 @@ class StoreApp:
             color_field,
             barcode_field,
             regenerate_btn,
-            upload_btn,
-            image_status_text,
+            image_row,  # Upload button + status side by side
             notes_field,
-        ], spacing=12, scroll=ft.ScrollMode.AUTO)
+        ], spacing=10, scroll=ft.ScrollMode.AUTO)
         
-        # For mobile, use full height
-        content_height = page.height - 100 if is_mobile and page.height else 500
-        
-        # Dialog content
+        # Dialog content with fixed height scroll area
         dialog_content = ft.Column([
             ft.Row([
-                ft.Text("Add New Material", size=20, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, on_click=close_dialog),
+                ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ]),
-            ft.Divider(),
+            ft.Divider(height=1),
             ft.Container(
                 content=scroll_content,
-                height=content_height,
+                height=scroll_height,
             ),
-            ft.Divider(),
+            ft.Divider(height=1),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog, expand=True),
                 ft.FilledButton("Save", on_click=save_material, 
                             style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
             ], spacing=10),
-        ], spacing=12)
+        ], spacing=10)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=dialog_width, padding=15),
+            content=ft.Container(content=dialog_content, width=dialog_width, padding=12),
             modal=True,
         )
         
