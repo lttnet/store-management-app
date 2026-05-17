@@ -63,87 +63,7 @@ class ScaleHelper:
         return max(scaled, 8)
     
 class StoreApp:
-    def debug_database(self, page: ft.Page):
-        """Debug method to check database content"""
-        import sqlite3
-        from database import DB_PATH
-        
-        debug_info = []
-        debug_info.append(f"DB Path: {DB_PATH}")
-        debug_info.append(f"DB Exists: {os.path.exists(DB_PATH)}")
-        
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            # Check materials table
-            cursor.execute("SELECT COUNT(*) FROM materials")
-            count = cursor.fetchone()[0]
-            debug_info.append(f"Materials count: {count}")
-            
-            # Get all materials
-            cursor.execute("SELECT id, name, category, quantity FROM materials")
-            for row in cursor.fetchall():
-                debug_info.append(f"  ID:{row[0]}, Name:{row[1]}, Category:{row[2]}, Qty:{row[3]}")
-            
-            # Check table structure
-            cursor.execute("PRAGMA table_info(materials)")
-            debug_info.append("Table columns:")
-            for col in cursor.fetchall():
-                debug_info.append(f"  - {col[1]}: {col[2]}")
-            
-            conn.close()
-        except Exception as e:
-            debug_info.append(f"Error: {e}")
-        
-        # Show debug dialog
-        dialog = ft.AlertDialog(
-            title=ft.Text("Database Debug"),
-            content=ft.Container(
-                content=ft.Column([ft.Text(line) for line in debug_info], scroll=ft.ScrollMode.AUTO),
-                width=400,
-                height=500,
-                padding=10,
-            ),
-            actions=[
-                ft.TextButton("Close", on_click=lambda e: setattr(dialog, 'open', False))
-            ],
-        )
-        page.dialog = dialog
-        dialog.open = True
-        page.update()
     def __init__(self):
-     """Main entry point"""
-        
-        # ========== FIX: Ensure database is properly initialized for APK ==========
-        import os
-        import sqlite3
-        from database import DB_PATH, init_database
-        
-        print(f"DEBUG: Database path = {DB_PATH}")
-        print(f"DEBUG: Database exists = {os.path.exists(DB_PATH)}")
-        
-        # Force database initialization
-        if not os.path.exists(DB_PATH):
-            print("Database not found, creating...")
-            init_database()
-        else:
-            # Verify category column exists
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute("PRAGMA table_info(materials)")
-                columns = [col[1] for col in cursor.fetchall()]
-                if 'category' not in columns:
-                    print("Category column missing, adding...")
-                    cursor.execute("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
-                    conn.commit()
-                conn.close()
-                print("Database verified")
-            except Exception as e:
-                print(f"Database error: {e}")
-                init_database()
-        
         self.current_user = None
         self.current_view = "dashboard"
         self.selected_material_detail = None
@@ -1468,114 +1388,52 @@ class StoreApp:
         )
     
     def show_materials_screen(self, page: ft.Page):
-        """STEP 3: Materials screen with category display"""
-        
         page.controls.clear()
         
         materials = self.dict_list(MaterialManager.get_all())
         
-        print(f"DEBUG: Loading {len(materials)} materials")
+        # Debug print
         for m in materials:
-            print(f"  - {m.get('name')}: Category = {m.get('category', 'None')}")
+            print(f"Material: {m.get('name')}, Category: {m.get('category')}")
         
         nav = self.create_bottom_nav(page)
         is_mobile = page.width < 800 if page.width else False
         
         main_column = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+        main_column.controls.append(ft.Text("Materials", size=28, weight=ft.FontWeight.BOLD, color=self.text_color))
         
-        # Title
-        main_column.controls.append(
-            ft.Text("Materials", size=28, weight=ft.FontWeight.BOLD, color=self.text_color)
-        )
-        
-        # Get unique categories for filter
-        all_categories = ["All"]
-        for m in materials:
-            cat = m.get('category', 'Uncategorized')
-            if cat and cat not in all_categories:
-                all_categories.append(cat)
-        all_categories.sort()
-        
-        # Category filter dropdown
-        category_filter = ft.Dropdown(
-            label="Filter by Category",
-            width=200,
-            options=[ft.dropdown.Option(cat, cat) for cat in all_categories],
-            value="All",
-            bgcolor=self.card_color,
-        )
-        
-        main_column.controls.append(category_filter)
-        main_column.controls.append(ft.Container(height=5))
-        
-        # Refresh button
-        refresh_btn = ft.IconButton(
-            icon=ft.icons.REFRESH,
-            icon_size=24,
-            icon_color=self.accent_color,
-            on_click=lambda e: self.show_materials_screen(page),
-        )
-        main_column.controls.append(ft.Row([refresh_btn], alignment=ft.MainAxisAlignment.END))
-        
-        # Cards container
         cards_container = ft.Column(spacing=10)
         
-        def update_cards():
-            cards_container.controls.clear()
-            selected_category = category_filter.value
+        for m in materials:
+            cat_name = m.get('category', 'Uncategorized')
+            cat_icon = self.get_category_icon(cat_name)
+            qty = m.get('quantity', 0)
             
-            filtered_count = 0
-            for m in materials:
-                # Category filter
-                if selected_category != "All" and m.get('category', 'Uncategorized') != selected_category:
-                    continue
-                
-                filtered_count += 1
-                qty = m.get('quantity', 0)
-                qty_color = self.danger_color if qty < 10 else self.text_color
-                category_name = m.get('category', 'Uncategorized')
-                category_icon = self.get_category_icon(category_name)
-                
-                card = ft.Card(
-                    content=ft.Container(
-                        content=ft.Column([
-                            ft.Row([
-                                ft.Text(m.get('name', 'N/A'), size=16, weight=ft.FontWeight.BOLD, expand=True),
-                                ft.Text(f"Qty: {qty}", size=14, weight=ft.FontWeight.BOLD, color=qty_color),
-                            ]),
-                            ft.Row([
-                                ft.Text(f"{category_icon} {category_name}", size=12, color=self.accent_color, expand=True),
-                                ft.Container(
-                                    content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
-                                    bgcolor=self.get_quality_color(m.get('quality', 'Used')),
-                                    border_radius=8,
-                                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
-                                ),
-                            ]),
-                            ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=11, color="#888888"),
-                        ], spacing=5),
-                        padding=12,
-                        on_click=lambda e, mat=m: self.show_material_detail_dialog(page, mat),
-                    ),
-                    elevation=2,
-                )
-                cards_container.controls.append(card)
-            
-            if filtered_count == 0:
-                cards_container.controls.append(
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Icon(ft.icons.INBOX, size=60, color="#888888"),
-                            ft.Text("No materials found", size=14, color="#888888"),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                        padding=40,
-                    )
-                )
-            
-            page.update()
-        
-        category_filter.on_change = lambda e: update_cards()
-        update_cards()
+            card = ft.Card(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Text(m.get('name', 'N/A'), size=16, weight=ft.FontWeight.BOLD, expand=True),
+                            ft.Text(f"Qty: {qty}", size=14, weight=ft.FontWeight.BOLD,
+                                color=self.danger_color if qty < 10 else self.text_color),
+                        ]),
+                        ft.Row([
+                            ft.Text(f"{cat_icon} {cat_name}", size=12, color=self.accent_color),
+                            ft.Container(
+                                content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
+                                bgcolor=self.get_quality_color(m.get('quality', 'Used')),
+                                border_radius=8,
+                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                            ),
+                        ]),
+                        ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=11, color="#888888"),
+                    ], spacing=5),
+                    padding=12,
+                    on_click=lambda e, mat=m: self.show_material_detail_dialog(page, mat),
+                ),
+                elevation=2,
+            )
+            cards_container.controls.append(card)
         
         main_column.controls.append(cards_container)
         
@@ -1589,20 +1447,16 @@ class StoreApp:
         main_container = ft.Container(content=main_column, expand=True, padding=20)
         
         if is_mobile:
-            page.add(
-                ft.Stack([
-                    ft.Column([main_container, nav], spacing=0, expand=True),
-                    ft.Container(content=add_button, right=16, bottom=80),
-                ], expand=True)
-            )
+            page.add(ft.Stack([
+                ft.Column([main_container, nav], spacing=0, expand=True),
+                ft.Container(content=add_button, right=16, bottom=80),
+            ], expand=True))
         else:
             sidebar = self.create_sidebar(page)
-            page.add(
-                ft.Stack([
-                    ft.Row([sidebar, main_container], spacing=0, expand=True),
-                    ft.Container(content=add_button, right=16, bottom=80),
-                ], expand=True)
-            )
+            page.add(ft.Stack([
+                ft.Row([sidebar, main_container], spacing=0, expand=True),
+                ft.Container(content=add_button, right=16, bottom=80),
+            ], expand=True))
         
         self.current_view = "materials"
         page.update()
@@ -3023,8 +2877,6 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """STEP 2: Add modal with SIMPLE category dropdown (hardcoded categories)"""
-        
         import random
         import string
         
@@ -3044,16 +2896,9 @@ class StoreApp:
         is_mobile = page.width < 800 if page.width else False
         field_width = page.width - 40 if is_mobile and page.width else 350
         
-        def close_dialog(e):
-            page.dialog.open = False
-            page.update()
-        
-        # SIMPLE hardcoded categories
         categories = ["Raw Material", "Hardware", "Tools", "Electrical", "Plumbing", "Wood", "Metal", "Other"]
         
         name_field = ft.TextField(label="Name *", width=field_width, bgcolor=self.card_color)
-        
-        # SIMPLE category dropdown
         category_field = ft.Dropdown(
             label="Category",
             width=field_width,
@@ -3061,20 +2906,18 @@ class StoreApp:
             value="Raw Material",
             bgcolor=self.card_color,
         )
-        
         quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
         quality_field = ft.Dropdown(
             label="Quality", width=field_width,
-            options=[
-                ft.dropdown.Option("New"),
-                ft.dropdown.Option("Used"),
-                ft.dropdown.Option("Damaged"),
-                ft.dropdown.Option("Repaired"),
-            ],
-            value="New",
-            bgcolor=self.card_color,
+            options=[ft.dropdown.Option("New"), ft.dropdown.Option("Used"), 
+                    ft.dropdown.Option("Damaged"), ft.dropdown.Option("Repaired")],
+            value="New", bgcolor=self.card_color,
         )
         location_field = ft.TextField(label="Location", width=field_width, bgcolor=self.card_color)
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
         
         def save_material(e):
             if not name_field.value:
@@ -3083,59 +2926,48 @@ class StoreApp:
                 page.update()
                 return
             
-            print(f"DEBUG: Saving category = {category_field.value}")
-            
             data = {
                 'name': name_field.value,
                 'category': category_field.value,
                 'quantity': int(quantity_field.value) if quantity_field.value else 0,
                 'quality': quality_field.value,
                 'location_ids': location_field.value,
+                'barcode_value': generate_barcode(),
             }
             
             result = MaterialManager.create(data)
             
             if result:
                 page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value} (Category: {category_field.value})"), 
-                                            bgcolor=self.success_color, duration=3000)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Added: {name_field.value} ({category_field.value})"), 
+                    bgcolor=self.success_color
+                )
                 page.snack_bar.open = True
                 self.show_materials_screen(page)
             else:
-                page.snack_bar = ft.SnackBar(ft.Text("Error creating material!"), bgcolor=self.danger_color)
+                page.snack_bar = ft.SnackBar(ft.Text("Error!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
         
-        # Scrollable content
-        scroll_content = ft.Column([
+        dialog_content = ft.Column([
+            ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
             name_field,
             category_field,
             quantity_field,
             quality_field,
             location_field,
-        ], spacing=12, scroll=ft.ScrollMode.AUTO)
-        
-        scroll_height = 400 if is_mobile else 450
-        
-        dialog_content = ft.Column([
-            ft.Row([
-                ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
-            ]),
-            ft.Divider(),
-            ft.Container(content=scroll_content, height=scroll_height),
             ft.Divider(),
             ft.Row([
-                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
-                ft.FilledButton("Save", on_click=save_material, 
-                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
-            ], spacing=10),
-        ], spacing=10)
+                ft.TextButton("Cancel", on_click=close_dialog),
+                ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=12)
         
         dialog = ft.AlertDialog(
-            title=ft.Text(""),
+            title=ft.Text("Add Material"),
             content=ft.Container(content=dialog_content, width=400, padding=15),
-            modal=True,
         )
         
         page.dialog = dialog
