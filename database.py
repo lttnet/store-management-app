@@ -32,7 +32,7 @@ def init_database():
         )
     ''')
     
-    # Create materials table with all columns including category
+    # Create materials table with all columns including category and image
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,22 +103,33 @@ def init_database():
         )
     ''')
     
-    # Check if category column exists, if not add it
+    # Check and add missing columns to materials table
     cursor.execute("PRAGMA table_info(materials)")
     columns = [col[1] for col in cursor.fetchall()]
+    
     if 'category' not in columns:
         print("Adding category column to materials table...")
         cursor.execute("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
     
-    # Check if colors column exists
     if 'colors' not in columns:
         print("Adding colors column to materials table...")
         cursor.execute("ALTER TABLE materials ADD COLUMN colors TEXT")
     
-    # Check if notes column exists
     if 'notes' not in columns:
         print("Adding notes column to materials table...")
         cursor.execute("ALTER TABLE materials ADD COLUMN notes TEXT")
+    
+    if 'image_path' not in columns:
+        print("Adding image_path column to materials table...")
+        cursor.execute("ALTER TABLE materials ADD COLUMN image_path TEXT")
+    
+    if 'size' not in columns:
+        print("Adding size column to materials table...")
+        cursor.execute("ALTER TABLE materials ADD COLUMN size TEXT")
+    
+    if 'length' not in columns:
+        print("Adding length column to materials table...")
+        cursor.execute("ALTER TABLE materials ADD COLUMN length REAL")
     
     # Create default admin user if not exists
     import hashlib
@@ -137,54 +148,78 @@ class MaterialManager:
     
     @staticmethod
     def create(data):
-        """Create a new material with category support"""
+        """Create a new material with full field support"""
         conn = get_db_connection()
         cursor = conn.cursor()
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
         try:
-            # Ensure category column exists
+            # Ensure all columns exist
             cursor.execute("PRAGMA table_info(materials)")
             columns = [col[1] for col in cursor.fetchall()]
             
-            if 'category' not in columns:
-                cursor.execute("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
-                conn.commit()
+            # Build insert query with all available fields
+            insert_fields = ['name', 'quantity', 'quality', 'location_ids', 'barcode_value', 'created_at', 'updated_at']
+            insert_values = [
+                data.get('name', ''),
+                data.get('quantity', 0),
+                data.get('quality', 'New'),
+                data.get('location_ids', ''),
+                data.get('barcode_value', ''),
+                current_time,
+                current_time
+            ]
             
-            # Prepare insert data
-            insert_data = {
-                'name': data.get('name', ''),
-                'category': data.get('category', 'Uncategorized'),
-                'quantity': data.get('quantity', 0),
-                'quality': data.get('quality', 'New'),
-                'location_ids': data.get('location_ids', ''),
-                'barcode_value': data.get('barcode_value', ''),
-                'created_at': current_time,
-                'updated_at': current_time
-            }
+            # Add category if provided
+            if 'category' in data and data.get('category'):
+                if 'category' in columns:
+                    insert_fields.append('category')
+                    insert_values.append(data.get('category'))
+                print(f"DEBUG: Saving category: {data.get('category')}")
             
-            # Add optional fields if they exist in data
-            optional_fields = ['size', 'length', 'colors', 'notes', 'image_path', 'item_code']
-            for field in optional_fields:
-                if field in data and data.get(field):
-                    insert_data[field] = data[field]
+            # Add size if provided
+            if 'size' in data and data.get('size'):
+                if 'size' in columns:
+                    insert_fields.append('size')
+                    insert_values.append(data.get('size'))
             
-            # Build INSERT query
-            fields = list(insert_data.keys())
-            placeholders = ','.join(['?' for _ in fields])
-            values = [insert_data[field] for field in fields]
+            # Add length if provided
+            if 'length' in data and data.get('length'):
+                if 'length' in columns:
+                    insert_fields.append('length')
+                    insert_values.append(data.get('length'))
             
-            query = f"INSERT INTO materials ({','.join(fields)}) VALUES ({placeholders})"
+            # Add colors if provided
+            if 'colors' in data and data.get('colors'):
+                if 'colors' in columns:
+                    insert_fields.append('colors')
+                    insert_values.append(data.get('colors'))
             
-            print(f"DEBUG MaterialManager.create: {query}")
-            print(f"DEBUG Values: {values}")
+            # Add notes if provided
+            if 'notes' in data and data.get('notes'):
+                if 'notes' in columns:
+                    insert_fields.append('notes')
+                    insert_values.append(data.get('notes'))
             
-            cursor.execute(query, values)
+            # Add image_path if provided
+            if 'image_path' in data and data.get('image_path'):
+                if 'image_path' in columns:
+                    insert_fields.append('image_path')
+                    insert_values.append(data.get('image_path'))
+                print(f"DEBUG: Saving image path: {data.get('image_path')}")
+            
+            placeholders = ','.join(['?' for _ in insert_fields])
+            query = f"INSERT INTO materials ({','.join(insert_fields)}) VALUES ({placeholders})"
+            
+            print(f"DEBUG: INSERT Query: {query}")
+            print(f"DEBUG: Values: {insert_values}")
+            
+            cursor.execute(query, insert_values)
             conn.commit()
             material_id = cursor.lastrowid
-            
             conn.close()
-            print(f"DEBUG Material created with ID: {material_id}, Category: {insert_data['category']}")
+            
+            print(f"DEBUG: Material created successfully with ID: {material_id}")
             return {'id': material_id}
             
         except Exception as e:
@@ -196,7 +231,7 @@ class MaterialManager:
     
     @staticmethod
     def get_by_id(material_id):
-        """Get material by ID"""
+        """Get material by ID with all fields"""
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM materials WHERE id = ?", (material_id,))
@@ -206,7 +241,7 @@ class MaterialManager:
     
     @staticmethod
     def get_all():
-        """Get all materials"""
+        """Get all materials with all fields"""
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM materials ORDER BY id DESC")
@@ -216,24 +251,28 @@ class MaterialManager:
     
     @staticmethod
     def update(material_id, data, user_id=None):
-        """Update material"""
+        """Update material with full field support"""
         conn = get_db_connection()
         cursor = conn.cursor()
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
         try:
-            # Build update query
             update_fields = []
             values = []
             
+            # Define all possible fields
             allowed_fields = ['name', 'category', 'quantity', 'size', 'length', 
                             'quality', 'location_ids', 'colors', 'notes', 
                             'barcode_value', 'image_path']
             
             for field in allowed_fields:
-                if field in data:
+                if field in data and data.get(field) is not None:
                     update_fields.append(f"{field} = ?")
                     values.append(data[field])
+                    if field == 'category':
+                        print(f"DEBUG: Updating category to: {data[field]}")
+                    if field == 'image_path':
+                        print(f"DEBUG: Updating image path to: {data[field]}")
             
             update_fields.append("updated_at = ?")
             values.append(current_time)
@@ -241,19 +280,21 @@ class MaterialManager:
             
             query = f"UPDATE materials SET {','.join(update_fields)} WHERE id = ?"
             
-            print(f"DEBUG MaterialManager.update: {query}")
-            print(f"DEBUG Values: {values}")
+            print(f"DEBUG: UPDATE Query: {query}")
+            print(f"DEBUG: Values: {values}")
             
             cursor.execute(query, values)
             conn.commit()
             success = cursor.rowcount > 0
             conn.close()
             
-            print(f"DEBUG Update success: {success}")
+            print(f"DEBUG: Update success: {success}")
             return success
             
         except Exception as e:
             print(f"ERROR in MaterialManager.update: {e}")
+            import traceback
+            traceback.print_exc()
             conn.close()
             return False
     
@@ -323,6 +364,7 @@ class AccessoryManager:
             conn.commit()
             accessory_id = cursor.lastrowid
             conn.close()
+            print(f"DEBUG: Accessory created with ID: {accessory_id}")
             return {'id': accessory_id}
         except Exception as e:
             print(f"ERROR in AccessoryManager.create: {e}")
@@ -364,7 +406,7 @@ class AccessoryManager:
                             'location', 'notes', 'barcode_value', 'image_path']
             
             for field in allowed_fields:
-                if field in data:
+                if field in data and data.get(field) is not None:
                     update_fields.append(f"{field} = ?")
                     values.append(data[field])
             
@@ -484,6 +526,9 @@ class UserManager:
             if 'role' in data:
                 update_fields.append("role = ?")
                 values.append(data['role'])
+            if 'password_hash' in data:
+                update_fields.append("password_hash = ?")
+                values.append(data['password_hash'])
             
             update_fields.append("updated_at = ?")
             values.append(current_time)
