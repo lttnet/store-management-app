@@ -3349,7 +3349,7 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Add material - Image status side by side with upload button"""
+        """Add material - Fixed for mobile category display"""
         
         import random
         import string
@@ -3374,31 +3374,30 @@ class StoreApp:
         
         is_mobile = page.width < 800 if page.width else False
         
-        # Full width on mobile
+        # Responsive sizing
         if is_mobile:
             field_width = page.width - 40 if page.width else 340
             dialog_width = page.width - 20 if page.width else 380
-            # Fixed height for mobile - leave space for buttons
-            scroll_height = 420
-            # Smaller button width on mobile
-            button_width = field_width - 100 if field_width > 100 else field_width
+            scroll_height = 450
         else:
             field_width = 350
             dialog_width = 500
             scroll_height = 500
-            button_width = 200
         
         # Create images folder
         images_folder = "images"
         if not os.path.exists(images_folder):
             os.makedirs(images_folder)
         
-        # Get current user ID
+        # Get current user ID - CRITICAL for categories
         current_user_id = self.current_user.get('id') if self.current_user else 0
+        print(f"DEBUG: Current user ID: {current_user_id}")
         
-        # Get categories
+        # Get categories - include both predefined and user's custom categories
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
+        
+        # Ensure custom_categories table exists with user_id
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS custom_categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3412,16 +3411,21 @@ class StoreApp:
         ''')
         conn.commit()
         
-        cursor.execute("SELECT name, icon FROM custom_categories WHERE user_id = ? OR user_id IS NULL ORDER BY name", (current_user_id,))
+        # Get user's custom categories
+        cursor.execute("SELECT name, icon FROM custom_categories WHERE user_id = ? ORDER BY name", (current_user_id,))
         custom_cats = cursor.fetchall()
+        print(f"DEBUG: Found {len(custom_cats)} custom categories for user {current_user_id}")
+        
         conn.close()
         
+        # Predefined categories
         predefined_categories = [
             "Raw Material", "Hardware", "Tools", "Electrical", "Plumbing",
             "Wood", "Metal", "Plastic", "Glass", "Paint", "Fasteners",
             "Safety Equipment", "Packaging", "Office Supplies", "Other"
         ]
         
+        # Build categories list with icons
         all_categories = []
         for cat in predefined_categories:
             all_categories.append({"name": cat, "icon": self.get_category_icon(cat)})
@@ -3433,6 +3437,8 @@ class StoreApp:
                 all_categories.append({"name": cat_name, "icon": cat_icon})
         
         all_categories.sort(key=lambda x: x["name"])
+        
+        print(f"DEBUG: Total categories available: {len(all_categories)}")
         
         # Form fields
         name_field = ft.TextField(label="Name *", width=field_width, bgcolor=self.card_color)
@@ -3469,7 +3475,7 @@ class StoreApp:
         barcode_field = ft.TextField(label="Barcode", width=field_width, bgcolor=self.card_color, value=generate_barcode(), read_only=True)
         regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=lambda e: setattr(barcode_field, 'value', generate_barcode()) or page.update())
         
-        # Image selection status text
+        # Image selection status
         image_status_text = ft.Text("No image", size=11, color="#888888")
         selected_temp_image = None
         
@@ -3478,13 +3484,9 @@ class StoreApp:
             if e.files:
                 file = e.files[0]
                 selected_temp_image = file.path
-                # Short filename for status
                 short_name = file.name[:20] + '...' if len(file.name) > 20 else file.name
                 image_status_text.value = f"✓ {short_name}"
                 image_status_text.color = self.success_color
-                page.update()
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Image selected: {file.name}"), bgcolor=self.success_color, duration=2000)
-                page.snack_bar.open = True
                 page.update()
         
         image_picker = ft.FilePicker(on_result=on_image_picked)
@@ -3500,11 +3502,7 @@ class StoreApp:
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
         )
         
-        # Image row - button and status side by side
-        image_row = ft.Row([
-            upload_btn,
-            image_status_text,
-        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        image_row = ft.Row([upload_btn, image_status_text], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         
         def update_length(e):
             size_value = size_field.value
@@ -3545,9 +3543,12 @@ class StoreApp:
             size_value = size_field.value
             length_value = self.convert_size_to_length(size_value) if size_value else None
             
+            selected_category = category_dropdown.value
+            print(f"DEBUG SAVE: Selected category = '{selected_category}'")
+            
             data = {
                 'name': name_field.value,
-                'category': category_dropdown.value,
+                'category': selected_category,
                 'quantity': int(quantity_field.value) if quantity_field.value else 0,
                 'size': size_value,
                 'length': length_value,
@@ -3557,14 +3558,20 @@ class StoreApp:
                 'notes': notes_field.value,
                 'barcode_value': barcode_field.value,
                 'image_path': saved_image_path,
+                'user_id': current_user_id,
             }
             
             result = MaterialManager.create(data)
             
             if result:
                 page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=3000)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Added: {name_field.value} (Category: {selected_category})"), 
+                    bgcolor=self.success_color, 
+                    duration=3000
+                )
                 page.snack_bar.open = True
+                # Force refresh the materials screen
                 self.show_materials_screen(page)
             else:
                 page.snack_bar = ft.SnackBar(ft.Text("Error creating material!"), bgcolor=self.danger_color)
@@ -3583,21 +3590,18 @@ class StoreApp:
             color_field,
             barcode_field,
             regenerate_btn,
-            image_row,  # Upload button + status side by side
+            image_row,
             notes_field,
         ], spacing=10, scroll=ft.ScrollMode.AUTO)
         
-        # Dialog content with fixed height scroll area
+        # Dialog content
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ]),
             ft.Divider(height=1),
-            ft.Container(
-                content=scroll_content,
-                height=scroll_height,
-            ),
+            ft.Container(content=scroll_content, height=scroll_height),
             ft.Divider(height=1),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog, expand=True),
@@ -7358,7 +7362,7 @@ class StoreApp:
         page.update()
 
     def show_category_manager(self, page: ft.Page):
-        """Show category manager screen - Mobile optimized with full CRUD"""
+        """Show category manager - Fixed for mobile"""
         
         import sqlite3
         from database import DB_PATH
@@ -7367,37 +7371,32 @@ class StoreApp:
         
         is_mobile = page.width < 800 if page.width else False
         
-        # Responsive sizing
+        print(f"DEBUG: Category Manager - is_mobile: {is_mobile}, page width: {page.width}")
+        
         if is_mobile:
             padding_size = 12
-            font_title = 24
+            font_title = 22
             font_normal = 16
-            font_small = 14
-            card_padding = 12
         else:
             padding_size = 20
             font_title = 28
             font_normal = 18
-            font_small = 14
-            card_padding = 15
         
         # Navigation
         if is_mobile:
             nav = self.create_bottom_nav(page)
-            sidebar = None
         else:
             sidebar = self.create_sidebar(page)
             nav = None
         
-        # Get current user info
+        # Get current user
         current_user_id = self.current_user.get('id') if self.current_user else 0
-        current_user_name = self.current_user.get('name', 'User') if self.current_user else 'Guest'
+        print(f"DEBUG: Current user ID: {current_user_id}")
         
-        # Get custom categories from database
+        # Get custom categories
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        # Ensure custom_categories table exists
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS custom_categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -7411,18 +7410,19 @@ class StoreApp:
         ''')
         conn.commit()
         
-        # Get custom categories for current user
-        cursor.execute("SELECT id, name, icon, color, created_at FROM custom_categories WHERE user_id = ? ORDER BY name", (current_user_id,))
+        cursor.execute("SELECT id, name, icon, created_at FROM custom_categories WHERE user_id = ? ORDER BY name", (current_user_id,))
         custom_categories = cursor.fetchall()
+        print(f"DEBUG: Found {len(custom_categories)} custom categories")
         
-        # Get count of items using each category
-        cursor.execute("PRAGMA table_info(materials)")
-        material_columns = [col[1] for col in cursor.fetchall()]
-        has_category_column = 'category' in material_columns
+        # Get item counts
+        cursor.execute("SELECT category, COUNT(*) FROM materials GROUP BY category")
+        material_counts = dict(cursor.fetchall())
+        cursor.execute("SELECT category, COUNT(*) FROM accessories GROUP BY category")
+        accessory_counts = dict(cursor.fetchall())
         
         conn.close()
         
-        # Predefined categories with icons
+        # Predefined categories
         predefined_categories = [
             {"name": "Raw Material", "icon": "📦", "color": "#1976D2"},
             {"name": "Hardware", "icon": "🔩", "color": "#757575"},
@@ -7441,10 +7441,10 @@ class StoreApp:
             {"name": "Other", "icon": "📁", "color": "#607D8B"},
         ]
         
-        # Create scrollable content
-        scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+        # Main scrollable content
+        scroll_content = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         
-        # Header with title and add button
+        # Header
         header_row = ft.Row([
             ft.Text("Category Manager", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
             ft.Container(expand=True),
@@ -7452,163 +7452,93 @@ class StoreApp:
                 icon=ft.icons.ADD_CIRCLE,
                 icon_size=28,
                 icon_color=self.success_color,
-                on_click=lambda e: self.show_add_category_dialog(page, refresh_callback=load_categories),
-                tooltip="Add Custom Category",
+                on_click=lambda e: self.show_add_category_dialog(page, lambda: self.show_category_manager(page)),
+                tooltip="Add Category",
             ),
         ])
         scroll_content.controls.append(header_row)
-        scroll_content.controls.append(ft.Container(height=10))
-        scroll_content.controls.append(ft.Text("Manage your inventory categories", size=font_small, color="#888888"))
-        scroll_content.controls.append(ft.Container(height=20))
+        scroll_content.controls.append(ft.Divider())
         
-        # Container for categories
-        categories_container = ft.Column(spacing=10)
-        scroll_content.controls.append(categories_container)
-        scroll_content.controls.append(ft.Container(height=80))
-        
-        def load_categories():
-            """Load and display all categories"""
-            categories_container.controls.clear()
-            
-            # Get fresh custom categories
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, name, icon, color, created_at FROM custom_categories WHERE user_id = ? ORDER BY name", (current_user_id,))
-            fresh_custom_categories = cursor.fetchall()
-            
-            # Get item counts for each category
-            item_counts = {}
-            if has_category_column:
-                cursor.execute("SELECT category, COUNT(*) FROM materials GROUP BY category")
-                for row in cursor.fetchall():
-                    item_counts[row[0]] = row[1]
-                cursor.execute("SELECT category, COUNT(*) FROM accessories GROUP BY category")
-                for row in cursor.fetchall():
-                    item_counts[row[0]] = item_counts.get(row[0], 0) + row[1]
-            
-            conn.close()
-            
-            # Custom Categories Section
-            if fresh_custom_categories:
-                categories_container.controls.append(
-                    ft.Text("🔒 My Custom Categories", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color)
-                )
-                categories_container.controls.append(ft.Divider())
-                categories_container.controls.append(ft.Container(height=5))
-                
-                for cat in fresh_custom_categories:
-                    cat_id, name, icon, color, created_at = cat
-                    item_count = item_counts.get(name, 0)
-                    
-                    # Create category card
-                    category_card = ft.Card(
-                        content=ft.Container(
-                            content=ft.Column([
-                                ft.Row([
-                                    ft.Text(icon, size=28),
-                                    ft.Column([
-                                        ft.Text(name, size=font_normal, weight=ft.FontWeight.BOLD),
-                                        ft.Text(f"📦 {item_count} items", size=font_small - 2, color="#888888"),
-                                    ], spacing=2, expand=True),
-                                    ft.Row([
-                                        ft.IconButton(
-                                            icon=ft.icons.EDIT,
-                                            icon_size=20,
-                                            icon_color=self.accent_color,
-                                            on_click=lambda e, cid=cat_id, n=name, i=icon: self.show_edit_category_dialog(page, cid, n, i, refresh_callback=load_categories),
-                                            tooltip="Edit Category",
-                                        ),
-                                        ft.IconButton(
-                                            icon=ft.icons.DELETE,
-                                            icon_size=20,
-                                            icon_color=self.danger_color,
-                                            on_click=lambda e, cid=cat_id, n=name: self.show_delete_category_dialog(page, cid, n, refresh_callback=load_categories),
-                                            tooltip="Delete Category",
-                                            visible=(item_count == 0),
-                                        ),
-                                    ], spacing=0),
-                                ]),
-                                ft.Container(height=3, bgcolor=color, border_radius=2, width=50),
-                            ], spacing=8),
-                            padding=card_padding,
-                        ),
-                        elevation=2,
-                        margin=ft.margin.only(bottom=8),
-                    )
-                    categories_container.controls.append(category_card)
-                
-                categories_container.controls.append(ft.Container(height=15))
-            
-            # Predefined Categories Section
-            categories_container.controls.append(
-                ft.Text("📁 Default Categories", size=font_normal, weight=ft.FontWeight.BOLD, color="#888888")
+        # Custom Categories Section
+        if custom_categories:
+            scroll_content.controls.append(
+                ft.Text("📌 My Categories", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color)
             )
-            categories_container.controls.append(ft.Divider())
-            categories_container.controls.append(ft.Container(height=5))
+            scroll_content.controls.append(ft.Container(height=5))
             
-            # Display predefined categories in responsive grid
-            if is_mobile:
-                # Stack vertically on mobile
-                for cat in predefined_categories:
-                    name = cat["name"]
-                    icon = cat["icon"]
-                    color = cat["color"]
-                    item_count = item_counts.get(name, 0)
-                    
-                    category_card = ft.Card(
-                        content=ft.Container(
-                            content=ft.Row([
-                                ft.Text(icon, size=24),
-                                ft.Column([
-                                    ft.Text(name, size=font_small, weight=ft.FontWeight.BOLD),
-                                    ft.Text(f"{item_count} items", size=font_small - 2, color="#888888"),
-                                ], spacing=2, expand=True),
-                                ft.Container(width=30, height=3, bgcolor=color, border_radius=2),
-                            ], spacing=10),
-                            padding=card_padding,
-                        ),
-                        elevation=1,
-                        margin=ft.margin.only(bottom=6),
-                    )
-                    categories_container.controls.append(category_card)
-            else:
-                # Grid layout for desktop
-                category_grid = ft.ResponsiveRow(spacing=10, run_spacing=10)
-                for cat in predefined_categories:
-                    name = cat["name"]
-                    icon = cat["icon"]
-                    color = cat["color"]
-                    item_count = item_counts.get(name, 0)
-                    
-                    category_grid.controls.append(
-                        ft.Container(
-                            content=ft.Card(
-                                content=ft.Container(
-                                    content=ft.Column([
-                                        ft.Text(icon, size=32),
-                                        ft.Text(name, size=font_small, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
-                                        ft.Text(f"{item_count} items", size=font_small - 2, color="#888888"),
-                                        ft.Container(width=40, height=3, bgcolor=color, border_radius=2),
-                                    ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                                    padding=card_padding,
+            for cat in custom_categories:
+                cat_id, name, icon, created_at = cat
+                total_count = material_counts.get(name, 0) + accessory_counts.get(name, 0)
+                
+                cat_card = ft.Card(
+                    content=ft.Container(
+                        content=ft.Row([
+                            ft.Text(icon, size=28),
+                            ft.Column([
+                                ft.Text(name, size=15, weight=ft.FontWeight.BOLD),
+                                ft.Text(f"{total_count} items", size=11, color="#888888"),
+                            ], spacing=2, expand=True),
+                            ft.Row([
+                                ft.IconButton(
+                                    icon=ft.icons.EDIT,
+                                    icon_size=20,
+                                    icon_color=self.accent_color,
+                                    on_click=lambda e, cid=cat_id, n=name, i=icon: self.show_edit_category_dialog(
+                                        page, cid, n, i, lambda: self.show_category_manager(page)
+                                    ),
                                 ),
-                                elevation=1,
-                            ),
-                            col={"xs": 6, "sm": 4, "md": 3, "lg": 2},
-                            padding=5,
-                        )
-                    )
-                categories_container.controls.append(category_grid)
+                                ft.IconButton(
+                                    icon=ft.icons.DELETE,
+                                    icon_size=20,
+                                    icon_color=self.danger_color,
+                                    on_click=lambda e, cid=cat_id, n=name: self.show_delete_category_dialog(
+                                        page, cid, n, lambda: self.show_category_manager(page)
+                                    ),
+                                    visible=(total_count == 0),
+                                ),
+                            ], spacing=0),
+                        ], spacing=10),
+                        padding=12,
+                    ),
+                    elevation=1,
+                )
+                scroll_content.controls.append(cat_card)
             
-            page.update()
+            scroll_content.controls.append(ft.Container(height=10))
         
-        # Initial load
-        load_categories()
+        # Default Categories Section
+        scroll_content.controls.append(
+            ft.Text("📁 Default Categories", size=font_normal, weight=ft.FontWeight.BOLD, color="#888888")
+        )
+        scroll_content.controls.append(ft.Container(height=5))
+        
+        # Display default categories
+        for cat in predefined_categories:
+            name = cat["name"]
+            icon = cat["icon"]
+            total_count = material_counts.get(name, 0) + accessory_counts.get(name, 0)
+            
+            cat_card = ft.Card(
+                content=ft.Container(
+                    content=ft.Row([
+                        ft.Text(icon, size=24),
+                        ft.Column([
+                            ft.Text(name, size=14, weight=ft.FontWeight.BOLD),
+                            ft.Text(f"{total_count} items", size=11, color="#888888"),
+                        ], spacing=2, expand=True),
+                    ], spacing=10),
+                    padding=12,
+                ),
+                elevation=0,
+            )
+            scroll_content.controls.append(cat_card)
+        
+        scroll_content.controls.append(ft.Container(height=80))
         
         main_container = ft.Container(content=scroll_content, expand=True, padding=padding_size)
         
         # Layout
-        if is_mobile and nav:
+        if is_mobile:
             page.add(ft.Column([main_container, nav], spacing=0, expand=True))
         else:
             page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
@@ -7616,7 +7546,7 @@ class StoreApp:
         page.update()
 
     def show_add_category_dialog(self, page: ft.Page, refresh_callback=None):
-        """Dialog to add new custom category"""
+        """Dialog to add new custom category - Mobile friendly"""
         
         import sqlite3
         from database import DB_PATH
@@ -7624,16 +7554,19 @@ class StoreApp:
         current_user_id = self.current_user.get('id') if self.current_user else 0
         current_user_name = self.current_user.get('name', 'User') if self.current_user else 'Guest'
         
-        # Icon options
-        icon_options = [
-            "📦", "🔩", "🔧", "⚡", "💧", "🪵", "⚙️", "🧴", "🔮", "🎨", 
-            "📎", "🦺", "📁", "🔨", "🪚", "📏", "🔬", "🧪", "📖", "🏷️"
-        ]
+        is_mobile = page.width < 800 if page.width else False
         
-        name_field = ft.TextField(label="Category Name", width=300, bgcolor=self.card_color)
+        if is_mobile:
+            dialog_width = page.width - 40
+        else:
+            dialog_width = 400
+        
+        icon_options = ["📦", "🔩", "🔧", "⚡", "💧", "🪵", "⚙️", "🧴", "🔮", "🎨", "📎", "🦺", "📁"]
+        
+        name_field = ft.TextField(label="Category Name", width=dialog_width - 40, bgcolor=self.card_color)
         icon_dropdown = ft.Dropdown(
             label="Icon",
-            width=120,
+            width=100,
             options=[ft.dropdown.Option(icon, icon) for icon in icon_options],
             value="📁",
             bgcolor=self.card_color,
@@ -7652,6 +7585,8 @@ class StoreApp:
                 page.update()
                 return
             
+            print(f"DEBUG: Adding category '{name}' for user {current_user_id}")
+            
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             try:
@@ -7660,6 +7595,7 @@ class StoreApp:
                     (name, icon_dropdown.value, current_user_id, current_user_name)
                 )
                 conn.commit()
+                print(f"DEBUG: Category '{name}' added successfully")
                 page.dialog.open = False
                 page.snack_bar = ft.SnackBar(ft.Text(f"✓ Category '{name}' added!"), bgcolor=self.success_color, duration=2000)
                 page.snack_bar.open = True
@@ -7671,6 +7607,7 @@ class StoreApp:
                 status_text.color = self.danger_color
                 page.update()
             except Exception as ex:
+                print(f"DEBUG: Error adding category: {ex}")
                 status_text.value = f"Error: {str(ex)}"
                 status_text.color = self.danger_color
                 page.update()
@@ -7683,17 +7620,17 @@ class StoreApp:
             name_field,
             icon_dropdown,
             status_text,
-            ft.Text("Custom categories are saved to your account", size=11, color="#888888"),
+            ft.Text("Categories are saved to your account", size=11, color="#888888"),
             ft.Container(height=10),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog),
-                ft.FilledButton("Add Category", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
+                ft.FilledButton("Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
             ], alignment=ft.MainAxisAlignment.END, spacing=10),
         ], spacing=12)
         
         dialog = ft.AlertDialog(
             title=ft.Text("New Category"),
-            content=ft.Container(content=dialog_content, width=400, height=350, padding=15),
+            content=ft.Container(content=dialog_content, width=dialog_width, padding=15),
         )
         
         page.dialog = dialog
