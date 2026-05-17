@@ -15,11 +15,15 @@ def get_db_connection():
     return conn
 
 def init_database():
-    """Initialize database with all required tables"""
-    conn = get_db_connection()
+    """Initialize database with all required tables and columns"""
+    import hashlib
+    import os
+    from database import DB_PATH
+    
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Create users table
+    # ========== USERS TABLE ==========
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,11 +36,12 @@ def init_database():
         )
     ''')
     
-    # Create materials table - SIMPLE, NO CATEGORY
+    # ========== MATERIALS TABLE ==========
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
+            category TEXT DEFAULT 'Uncategorized',
             quantity INTEGER DEFAULT 0,
             quality TEXT DEFAULT 'New',
             location_ids TEXT,
@@ -53,11 +58,12 @@ def init_database():
         )
     ''')
     
-    # Create accessories table - SIMPLE, NO CATEGORY
+    # ========== ACCESSORIES TABLE ==========
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS accessories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
+            category TEXT DEFAULT 'Uncategorized',
             quantity INTEGER DEFAULT 0,
             price REAL DEFAULT 0,
             quality TEXT DEFAULT 'New',
@@ -72,20 +78,122 @@ def init_database():
         )
     ''')
     
-    # Create default admin user if not exists
-    import hashlib
+    # ========== CUSTOM CATEGORIES TABLE ==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS custom_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            icon TEXT DEFAULT '📁',
+            color TEXT DEFAULT '#1976D2',
+            created_by TEXT,
+            user_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    ''')
+    
+    # ========== ADD MISSING COLUMNS TO MATERIALS (for existing databases) ==========
+    cursor.execute("PRAGMA table_info(materials)")
+    existing_columns = [col[1] for col in cursor.fetchall()]
+    
+    # Add category column if missing
+    if 'category' not in existing_columns:
+        print("Adding 'category' column to materials table...")
+        cursor.execute("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
+    
+    # Add size column if missing
+    if 'size' not in existing_columns:
+        print("Adding 'size' column to materials table...")
+        cursor.execute("ALTER TABLE materials ADD COLUMN size TEXT")
+    
+    # Add length column if missing
+    if 'length' not in existing_columns:
+        print("Adding 'length' column to materials table...")
+        cursor.execute("ALTER TABLE materials ADD COLUMN length REAL")
+    
+    # Add colors column if missing
+    if 'colors' not in existing_columns:
+        print("Adding 'colors' column to materials table...")
+        cursor.execute("ALTER TABLE materials ADD COLUMN colors TEXT")
+    
+    # Add notes column if missing
+    if 'notes' not in existing_columns:
+        print("Adding 'notes' column to materials table...")
+        cursor.execute("ALTER TABLE materials ADD COLUMN notes TEXT")
+    
+    # Add barcode_value column if missing
+    if 'barcode_value' not in existing_columns:
+        print("Adding 'barcode_value' column to materials table...")
+        cursor.execute("ALTER TABLE materials ADD COLUMN barcode_value TEXT UNIQUE")
+    
+    # Add image_path column if missing
+    if 'image_path' not in existing_columns:
+        print("Adding 'image_path' column to materials table...")
+        cursor.execute("ALTER TABLE materials ADD COLUMN image_path TEXT")
+    
+    # Add user_id column if missing
+    if 'user_id' not in existing_columns:
+        print("Adding 'user_id' column to materials table...")
+        cursor.execute("ALTER TABLE materials ADD COLUMN user_id INTEGER REFERENCES users(id)")
+    
+    # ========== ADD MISSING COLUMNS TO ACCESSORIES ==========
+    cursor.execute("PRAGMA table_info(accessories)")
+    existing_accessory_columns = [col[1] for col in cursor.fetchall()]
+    
+    if 'category' not in existing_accessory_columns:
+        print("Adding 'category' column to accessories table...")
+        cursor.execute("ALTER TABLE accessories ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
+    
+    if 'image_path' not in existing_accessory_columns:
+        print("Adding 'image_path' column to accessories table...")
+        cursor.execute("ALTER TABLE accessories ADD COLUMN image_path TEXT")
+    
+    # ========== CREATE DEFAULT ADMIN USER ==========
     admin_password = hashlib.sha256("admin123".encode()).hexdigest()
     cursor.execute('''
         INSERT OR IGNORE INTO users (id, name, email, password_hash, role)
         VALUES (1, 'Administrator', 'admin@store.com', ?, 'admin')
     ''', (admin_password,))
     
+    # ========== CREATE DEFAULT PREDEFINED CATEGORIES FOR ADMIN ==========
+    predefined_categories = [
+        ("Raw Material", "📦", "#1976D2"),
+        ("Hardware", "🔩", "#757575"),
+        ("Tools", "🔧", "#FF9800"),
+        ("Electrical", "⚡", "#FFC107"),
+        ("Plumbing", "💧", "#00BCD4"),
+        ("Wood", "🪵", "#8D6E63"),
+        ("Metal", "⚙️", "#9E9E9E"),
+        ("Plastic", "🧴", "#9C27B0"),
+        ("Glass", "🔮", "#E91E63"),
+        ("Paint", "🎨", "#FF5722"),
+        ("Fasteners", "📎", "#4CAF50"),
+        ("Safety Equipment", "🦺", "#F44336"),
+        ("Packaging", "📦", "#009688"),
+        ("Office Supplies", "📎", "#3F51B5"),
+        ("Other", "📁", "#607D8B"),
+    ]
+    
+    for name, icon, color in predefined_categories:
+        cursor.execute('''
+            INSERT OR IGNORE INTO custom_categories (name, icon, color, user_id, created_by)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (name, icon, color, 1, 'System'))
+    
     conn.commit()
     conn.close()
-    print("Database initialized successfully")
+    
+    print("=" * 50)
+    print("Database initialized successfully!")
+    print("  - Users table ready")
+    print("  - Materials table ready (with category column)")
+    print("  - Accessories table ready")
+    print("  - Custom categories table ready")
+    print("  - Default admin user: admin@store.com / admin123")
+    print("=" * 50)
 
 class MaterialManager:
-    """Manager for material operations - SIMPLE VERSION"""
+    """Manager for material operations"""
     
     @staticmethod
     def create(data):
@@ -96,10 +204,15 @@ class MaterialManager:
         
         try:
             cursor.execute('''
-                INSERT INTO materials (name, quantity, quality, location_ids, size, length, colors, notes, barcode_value, image_path, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO materials (
+                    name, category, quantity, quality, location_ids, 
+                    size, length, colors, notes, barcode_value, image_path,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 data.get('name', ''),
+                data.get('category', 'Uncategorized'),
                 data.get('quantity', 0),
                 data.get('quality', 'New'),
                 data.get('location_ids', ''),
@@ -115,7 +228,7 @@ class MaterialManager:
             conn.commit()
             material_id = cursor.lastrowid
             conn.close()
-            print(f"Material created with ID: {material_id}")
+            print(f"DEBUG: Material created - ID: {material_id}, Category: {data.get('category', 'Uncategorized')}")
             return {'id': material_id}
         except Exception as e:
             print(f"ERROR in create: {e}")
@@ -152,10 +265,13 @@ class MaterialManager:
         try:
             cursor.execute('''
                 UPDATE materials 
-                SET name = ?, quantity = ?, quality = ?, location_ids = ?, size = ?, length = ?, colors = ?, notes = ?, barcode_value = ?, image_path = ?, updated_at = ?
+                SET name = ?, category = ?, quantity = ?, quality = ?, location_ids = ?,
+                    size = ?, length = ?, colors = ?, notes = ?, barcode_value = ?, 
+                    image_path = ?, updated_at = ?
                 WHERE id = ?
             ''', (
                 data.get('name', ''),
+                data.get('category', 'Uncategorized'),
                 data.get('quantity', 0),
                 data.get('quality', 'New'),
                 data.get('location_ids', ''),
@@ -171,6 +287,7 @@ class MaterialManager:
             conn.commit()
             success = cursor.rowcount > 0
             conn.close()
+            print(f"DEBUG: Material updated - ID: {material_id}, Category: {data.get('category', 'Uncategorized')}")
             return success
         except Exception as e:
             print(f"ERROR in update: {e}")
@@ -197,6 +314,26 @@ class MaterialManager:
         result = cursor.fetchone()
         conn.close()
         return result
+    
+    @staticmethod
+    def get_by_category(category):
+        """Get materials by category"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM materials WHERE category = ? ORDER BY name", (category,))
+        results = cursor.fetchall()
+        conn.close()
+        return results
+    
+    @staticmethod
+    def get_all_categories():
+        """Get all unique categories from materials"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT category FROM materials WHERE category IS NOT NULL ORDER BY category")
+        results = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return results
 
 class AccessoryManager:
     """Manager for accessory operations - SIMPLE VERSION"""
