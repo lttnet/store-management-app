@@ -13,7 +13,7 @@ def init_database():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Create users table
+    # Users table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,25 +25,56 @@ def init_database():
         )
     ''')
     
-    # Create materials table with category
+    # Categories table (NEW)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            icon TEXT DEFAULT '📦',
+            color TEXT DEFAULT '#1976D2',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Materials table with category_id (foreign key)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
-            category TEXT DEFAULT 'Uncategorized',
+            category_id INTEGER,
             quantity INTEGER DEFAULT 0,
             quality TEXT DEFAULT 'New',
             location_ids TEXT,
+            size TEXT,
+            length REAL,
+            colors TEXT,
+            notes TEXT,
+            barcode_value TEXT UNIQUE,
+            image_path TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            user_id INTEGER,
+            FOREIGN KEY (category_id) REFERENCES categories(id)
         )
     ''')
     
-    # IMPORTANT: Force add category column if missing
-    try:
-        cursor.execute("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
-    except:
-        pass  # Column already exists
+    # Insert default categories
+    default_categories = [
+        (1, "Raw Material", "📦", "#1976D2"),
+        (2, "Hardware", "🔩", "#757575"),
+        (3, "Tools", "🔧", "#FF9800"),
+        (4, "Electrical", "⚡", "#FFC107"),
+        (5, "Plumbing", "💧", "#00BCD4"),
+        (6, "Wood", "🪵", "#8D6E63"),
+        (7, "Metal", "⚙️", "#9E9E9E"),
+        (8, "Other", "📁", "#607D8B"),
+    ]
+    
+    for cat_id, name, icon, color in default_categories:
+        cursor.execute('''
+            INSERT OR IGNORE INTO categories (id, name, icon, color)
+            VALUES (?, ?, ?, ?)
+        ''', (cat_id, name, icon, color))
     
     # Create admin user
     import hashlib
@@ -55,6 +86,7 @@ def init_database():
     
     conn.commit()
     conn.close()
+    print("Database initialized with categories table")
 
 class MaterialManager:
     @staticmethod
@@ -63,21 +95,27 @@ class MaterialManager:
         cursor = conn.cursor()
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        # Ensure category column exists
-        try:
-            cursor.execute("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
-        except:
-            pass
+        # Get category_id from category name
+        category_name = data.get('category', 'Other')
+        cursor.execute("SELECT id FROM categories WHERE name = ?", (category_name,))
+        cat_result = cursor.fetchone()
+        category_id = cat_result[0] if cat_result else 8  # Default to Other (id=8)
         
         cursor.execute('''
-            INSERT INTO materials (name, category, quantity, quality, location_ids, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO materials (name, category_id, quantity, quality, location_ids, size, length, colors, notes, barcode_value, image_path, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('name', ''),
-            data.get('category', 'Uncategorized'),
+            category_id,
             data.get('quantity', 0),
             data.get('quality', 'New'),
             data.get('location_ids', ''),
+            data.get('size', ''),
+            data.get('length', None),
+            data.get('colors', ''),
+            data.get('notes', ''),
+            data.get('barcode_value', ''),
+            data.get('image_path', ''),
             current_time,
             current_time
         ))
@@ -88,18 +126,30 @@ class MaterialManager:
     
     @staticmethod
     def get_all():
+        """Get all materials with category info"""
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM materials ORDER BY id DESC")
+        cursor.execute('''
+            SELECT m.*, c.name as category_name, c.icon as category_icon
+            FROM materials m
+            LEFT JOIN categories c ON m.category_id = c.id
+            ORDER BY m.id DESC
+        ''')
         results = cursor.fetchall()
         conn.close()
         return results
     
     @staticmethod
     def get_by_id(material_id):
+        """Get material by ID with category info"""
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM materials WHERE id = ?", (material_id,))
+        cursor.execute('''
+            SELECT m.*, c.name as category_name, c.icon as category_icon
+            FROM materials m
+            LEFT JOIN categories c ON m.category_id = c.id
+            WHERE m.id = ?
+        ''', (material_id,))
         result = cursor.fetchone()
         conn.close()
         return result
@@ -110,16 +160,28 @@ class MaterialManager:
         cursor = conn.cursor()
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
+        # Get category_id from category name
+        category_name = data.get('category', 'Other')
+        cursor.execute("SELECT id FROM categories WHERE name = ?", (category_name,))
+        cat_result = cursor.fetchone()
+        category_id = cat_result[0] if cat_result else 8
+        
         cursor.execute('''
             UPDATE materials 
-            SET name = ?, category = ?, quantity = ?, quality = ?, location_ids = ?, updated_at = ?
+            SET name = ?, category_id = ?, quantity = ?, quality = ?, location_ids = ?, size = ?, length = ?, colors = ?, notes = ?, barcode_value = ?, image_path = ?, updated_at = ?
             WHERE id = ?
         ''', (
             data.get('name', ''),
-            data.get('category', 'Uncategorized'),
+            category_id,
             data.get('quantity', 0),
             data.get('quality', 'New'),
             data.get('location_ids', ''),
+            data.get('size', ''),
+            data.get('length', None),
+            data.get('colors', ''),
+            data.get('notes', ''),
+            data.get('barcode_value', ''),
+            data.get('image_path', ''),
             current_time,
             material_id
         ))
@@ -137,6 +199,16 @@ class MaterialManager:
         success = cursor.rowcount > 0
         conn.close()
         return success
+    
+    @staticmethod
+    def get_all_categories():
+        """Get all categories"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM categories ORDER BY name")
+        results = cursor.fetchall()
+        conn.close()
+        return results
 
 class UserManager:
     @staticmethod
