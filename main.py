@@ -64,6 +64,37 @@ class ScaleHelper:
     
 class StoreApp:
     def __init__(self):
+     """Main entry point"""
+        
+        # ========== FIX: Ensure database is properly initialized for APK ==========
+        import os
+        import sqlite3
+        from database import DB_PATH, init_database
+        
+        print(f"DEBUG: Database path = {DB_PATH}")
+        print(f"DEBUG: Database exists = {os.path.exists(DB_PATH)}")
+        
+        # Force database initialization
+        if not os.path.exists(DB_PATH):
+            print("Database not found, creating...")
+            init_database()
+        else:
+            # Verify category column exists
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA table_info(materials)")
+                columns = [col[1] for col in cursor.fetchall()]
+                if 'category' not in columns:
+                    print("Category column missing, adding...")
+                    cursor.execute("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
+                    conn.commit()
+                conn.close()
+                print("Database verified")
+            except Exception as e:
+                print(f"Database error: {e}")
+                init_database()
+        
         self.current_user = None
         self.current_view = "dashboard"
         self.selected_material_detail = None
