@@ -2,7 +2,8 @@
 import sys
 import warnings
 import traceback
-
+import sqlite3
+from database import DB_PATH
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
@@ -1386,28 +1387,45 @@ class StoreApp:
             border_radius=15,
         )
     def show_materials_screen(self, page: ft.Page):
-        """Materials screen - Click card to see details in dialog (mobile friendly)"""
+        """Materials screen - Force refresh from database on every load"""
+        
+        import sqlite3
+        from database import DB_PATH
+        
+        # IMPORTANT: Clear and reload from database EVERY TIME
         page.controls.clear()
         
-        # Get fresh data from database
-        materials = self.dict_list(MaterialManager.get_all())
+        # Force fresh data from database - NO CACHING
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM materials ORDER BY id DESC")
+        materials_rows = cursor.fetchall()
+        conn.close()
+        
+        # Convert to list of dicts
+        materials = []
+        for row in materials_rows:
+            materials.append(dict(row))
         
         print(f"DEBUG: Loading materials screen - {len(materials)} materials found")
         for m in materials:
-            print(f"  - {m.get('name')}: Category={m.get('category')}, Image={m.get('image_path')}")
+            print(f"  - ID: {m.get('id')}, Name: {m.get('name')}, Category: {m.get('category', 'None')}")
         
         nav = self.create_bottom_nav(page)
         
         # Check if mobile
         is_mobile = page.width < 800 if page.width else False
         
-        # Get categories from materials
+        # Get unique categories from current materials
         categories = ["All"]
         for m in materials:
             cat = m.get('category', 'Uncategorized')
-            if cat and cat not in categories:
+            if cat and cat not in categories and cat != 'None':
                 categories.append(cat)
         categories.sort()
+        
+        print(f"DEBUG: Available categories: {categories}")
         
         # Create mutable filter state
         filter_state = {
@@ -1489,10 +1507,7 @@ class StoreApp:
         )
         category_row.controls.append(category_manager_btn)
         
-        main_column.controls.append(category_row)
-        main_column.controls.append(ft.Container(height=5))
-        
-        # Refresh button
+        # Refresh Button
         refresh_btn = ft.IconButton(
             icon=ft.icons.REFRESH,
             icon_size=20,
@@ -1500,19 +1515,21 @@ class StoreApp:
             tooltip="Refresh",
             on_click=lambda e: self.show_materials_screen(page),
         )
+        category_row.controls.append(refresh_btn)
+        
+        main_column.controls.append(category_row)
+        main_column.controls.append(ft.Container(height=5))
         
         # Cards container
         cards_container = ft.Column(spacing=10)
         
         def update_cards():
+            """Update cards based on filters - uses the materials list"""
             search_query = search_field.value.lower() if search_field.value else ""
             cards_container.controls.clear()
             
-            # Get fresh data for filtering
-            fresh_materials = self.dict_list(MaterialManager.get_all())
-            
             filtered_count = 0
-            for m in fresh_materials:
+            for m in materials:
                 # Quality filter
                 if filter_state['current_quality'] != "All" and m.get('quality') != filter_state['current_quality']:
                     continue
@@ -1521,7 +1538,7 @@ class StoreApp:
                 if filter_state['current_category'] != "All" and cat_value != filter_state['current_category']:
                     continue
                 # Search filter
-                if search_query and search_query not in m.get('name', '').lower() and search_query not in m.get('item_code', '').lower():
+                if search_query and search_query not in m.get('name', '').lower() and search_query not in str(m.get('item_code', '')).lower():
                     continue
                 
                 filtered_count += 1
@@ -1530,7 +1547,7 @@ class StoreApp:
                 qty = m.get('quantity', 0)
                 qty_color = self.danger_color if qty < 10 else self.text_color
                 
-                # Get image for preview
+                # Get image
                 image_path = m.get('image_path', '')
                 has_image = image_path and os.path.exists(image_path) if image_path else False
                 
@@ -1538,38 +1555,15 @@ class StoreApp:
                 material_data = m
                 
                 # Create card content
-                card_content = ft.Column([
-                    ft.Row([
-                        ft.Icon(ft.icons.INVENTORY, size=20, color=self.accent_color),
-                        ft.Text(m.get('name', 'N/A'), size=16, weight=ft.FontWeight.BOLD, expand=True),
-                        ft.Text(f"Qty: {qty}", size=14, weight=ft.FontWeight.BOLD, color=qty_color),
-                    ], spacing=8),
-                    ft.Row([
-                        ft.Text(f"{cat_icon} {cat_name}", size=12, color=self.accent_color, expand=True),
-                        ft.Container(
-                            content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
-                            bgcolor=self.get_quality_color(m.get('quality', 'Used')),
-                            border_radius=8,
-                            padding=ft.padding.symmetric(horizontal=8, vertical=2),
-                        ),
-                    ]),
-                    ft.Row([
-                        ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=12, color="#888888", expand=True),
-                        ft.Text(f"📝 {m.get('item_code', 'N/A')}", size=10, color="#888888"),
-                    ]),
-                ], spacing=5)
-                
-                # Add image thumbnail if exists
                 if has_image:
                     try:
                         thumbnail = ft.Container(
-                            content=ft.Image(src=image_path, width=40, height=40, fit=ft.ImageFit.COVER),
-                            width=40,
-                            height=40,
+                            content=ft.Image(src=image_path, width=45, height=45, fit=ft.ImageFit.COVER),
+                            width=45,
+                            height=45,
                             border_radius=8,
                             margin=ft.margin.only(right=10),
                         )
-                        # Rebuild card with image
                         card_content = ft.Row([
                             thumbnail,
                             ft.Column([
@@ -1587,13 +1581,51 @@ class StoreApp:
                                     ),
                                 ]),
                                 ft.Row([
-                                    ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=12, color="#888888", expand=True),
+                                    ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=11, color="#888888", expand=True),
                                     ft.Text(f"📝 {m.get('item_code', 'N/A')}", size=10, color="#888888"),
                                 ]),
                             ], spacing=5, expand=True),
                         ], spacing=5)
                     except:
-                        pass
+                        card_content = ft.Column([
+                            ft.Row([
+                                ft.Text(m.get('name', 'N/A'), size=16, weight=ft.FontWeight.BOLD, expand=True),
+                                ft.Text(f"Qty: {qty}", size=14, weight=ft.FontWeight.BOLD, color=qty_color),
+                            ], spacing=8),
+                            ft.Row([
+                                ft.Text(f"{cat_icon} {cat_name}", size=12, color=self.accent_color, expand=True),
+                                ft.Container(
+                                    content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
+                                    bgcolor=self.get_quality_color(m.get('quality', 'Used')),
+                                    border_radius=8,
+                                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                                ),
+                            ]),
+                            ft.Row([
+                                ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=11, color="#888888", expand=True),
+                                ft.Text(f"📝 {m.get('item_code', 'N/A')}", size=10, color="#888888"),
+                            ]),
+                        ], spacing=5)
+                else:
+                    card_content = ft.Column([
+                        ft.Row([
+                            ft.Text(m.get('name', 'N/A'), size=16, weight=ft.FontWeight.BOLD, expand=True),
+                            ft.Text(f"Qty: {qty}", size=14, weight=ft.FontWeight.BOLD, color=qty_color),
+                        ], spacing=8),
+                        ft.Row([
+                            ft.Text(f"{cat_icon} {cat_name}", size=12, color=self.accent_color, expand=True),
+                            ft.Container(
+                                content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
+                                bgcolor=self.get_quality_color(m.get('quality', 'Used')),
+                                border_radius=8,
+                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                            ),
+                        ]),
+                        ft.Row([
+                            ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=11, color="#888888", expand=True),
+                            ft.Text(f"📝 {m.get('item_code', 'N/A')}", size=10, color="#888888"),
+                        ]),
+                    ], spacing=5)
                 
                 card = ft.Card(
                     content=ft.Container(
@@ -1606,12 +1638,8 @@ class StoreApp:
                 )
                 cards_container.controls.append(card)
             
-            # Show count
-            count_text = ft.Text(f"Showing {filtered_count} of {len(fresh_materials)} materials", size=11, color="#888888")
-            if len(cards_container.controls) > 0:
-                cards_container.controls.insert(0, count_text)
-            else:
-                cards_container.controls.append(count_text)
+            # Show count or empty message
+            if filtered_count == 0:
                 cards_container.controls.append(
                     ft.Container(
                         content=ft.Column([
@@ -1623,6 +1651,10 @@ class StoreApp:
                         alignment=ft.alignment.center,
                     )
                 )
+            else:
+                # Add count at top
+                count_text = ft.Text(f"Showing {filtered_count} of {len(materials)} materials", size=11, color="#888888")
+                cards_container.controls.insert(0, count_text)
             
             page.update()
         
@@ -1651,16 +1683,6 @@ class StoreApp:
         
         # Layout
         if is_mobile:
-            # Add refresh button to top bar on mobile
-            top_bar = ft.Row([
-                ft.Text("Materials", size=24, weight=ft.FontWeight.BOLD, color=self.text_color),
-                refresh_btn,
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-            
-            # Rebuild main column with top bar
-            main_column.controls.insert(0, top_bar)
-            main_column.controls.insert(1, ft.Container(height=5))
-            
             page.add(
                 ft.Stack([
                     ft.Column([main_container, nav], spacing=0, expand=True),
@@ -3558,7 +3580,6 @@ class StoreApp:
                 'notes': notes_field.value,
                 'barcode_value': barcode_field.value,
                 'image_path': saved_image_path,
-                'user_id': current_user_id,
             }
             
             result = MaterialManager.create(data)
@@ -3571,54 +3592,14 @@ class StoreApp:
                     duration=3000
                 )
                 page.snack_bar.open = True
-                # Force refresh the materials screen
+                
+                # IMPORTANT: Force refresh the materials screen
+                # Clear any cached data and reload from database
                 self.show_materials_screen(page)
             else:
                 page.snack_bar = ft.SnackBar(ft.Text("Error creating material!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
-        
-        # Create scrollable content
-        scroll_content = ft.Column([
-            name_field,
-            category_dropdown,
-            quantity_field,
-            size_field,
-            length_field,
-            quality_field,
-            location_field,
-            color_field,
-            barcode_field,
-            regenerate_btn,
-            image_row,
-            notes_field,
-        ], spacing=10, scroll=ft.ScrollMode.AUTO)
-        
-        # Dialog content
-        dialog_content = ft.Column([
-            ft.Row([
-                ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
-            ]),
-            ft.Divider(height=1),
-            ft.Container(content=scroll_content, height=scroll_height),
-            ft.Divider(height=1),
-            ft.Row([
-                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
-                ft.FilledButton("Save", on_click=save_material, 
-                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
-            ], spacing=10),
-        ], spacing=10)
-        
-        dialog = ft.AlertDialog(
-            title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=dialog_width, padding=12),
-            modal=True,
-        )
-        
-        page.dialog = dialog
-        dialog.open = True
-        page.update()
         
     def open_edit_modal(self, page: ft.Page, material_id):
         """Edit material using full-screen dialog - Best for mobile with many fields"""
