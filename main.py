@@ -63,6 +63,55 @@ class ScaleHelper:
         return max(scaled, 8)
     
 class StoreApp:
+    def debug_database(self, page: ft.Page):
+        """Debug method to check database content"""
+        import sqlite3
+        from database import DB_PATH
+        
+        debug_info = []
+        debug_info.append(f"DB Path: {DB_PATH}")
+        debug_info.append(f"DB Exists: {os.path.exists(DB_PATH)}")
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Check materials table
+            cursor.execute("SELECT COUNT(*) FROM materials")
+            count = cursor.fetchone()[0]
+            debug_info.append(f"Materials count: {count}")
+            
+            # Get all materials
+            cursor.execute("SELECT id, name, category, quantity FROM materials")
+            for row in cursor.fetchall():
+                debug_info.append(f"  ID:{row[0]}, Name:{row[1]}, Category:{row[2]}, Qty:{row[3]}")
+            
+            # Check table structure
+            cursor.execute("PRAGMA table_info(materials)")
+            debug_info.append("Table columns:")
+            for col in cursor.fetchall():
+                debug_info.append(f"  - {col[1]}: {col[2]}")
+            
+            conn.close()
+        except Exception as e:
+            debug_info.append(f"Error: {e}")
+        
+        # Show debug dialog
+        dialog = ft.AlertDialog(
+            title=ft.Text("Database Debug"),
+            content=ft.Container(
+                content=ft.Column([ft.Text(line) for line in debug_info], scroll=ft.ScrollMode.AUTO),
+                width=400,
+                height=500,
+                padding=10,
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: setattr(dialog, 'open', False))
+            ],
+        )
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
     def __init__(self):
      """Main entry point"""
         
