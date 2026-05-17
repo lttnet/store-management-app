@@ -3079,13 +3079,13 @@ class StoreApp:
         page.update()
             
     def open_add_modal(self, page: ft.Page):
-        """STEP 6 FIXED: Properly saves category and quality to database"""
+        """STEP 6 FIXED - Mobile working version with proper category saving"""
         
         import random
         import string
         
         print("=" * 50)
-        print("STEP 6 FIXED: Saving category and quality correctly")
+        print("STEP 6 FIXED - Mobile version with proper saving")
         print("=" * 50)
         
         def generate_barcode():
@@ -3112,9 +3112,14 @@ class StoreApp:
             dialog_width = 500
             dialog_height = 600
         
-        # Store selected values - make sure these are accessible in save function
-        selected_category = ["Raw Material"]  # Use list to allow modification in nested function
-        selected_quality = ["New"]  # Use list to allow modification in nested function
+        # Use class-level variables or instance variables
+        # Create a simple object to hold values
+        class SelectedData:
+            def __init__(self):
+                self.category = "Raw Material"
+                self.quality = "New"
+        
+        selected = SelectedData()
         
         # Quality color mapping
         quality_icons = {
@@ -3124,11 +3129,18 @@ class StoreApp:
             "Repaired": "🔵"
         }
         
+        # Create references to update UI
+        category_icon_text = ft.Text("📦", size=16)
+        category_name_text = ft.Text(selected.category, size=14)
+        
+        quality_icon_text = ft.Text(quality_icons[selected.quality], size=16)
+        quality_name_text = ft.Text(selected.quality, size=14)
+        
         # ========== CATEGORY BUTTON ==========
         category_button = ft.ElevatedButton(
             content=ft.Row([
-                ft.Text("📦", size=16),
-                ft.Text(selected_category[0], size=14),
+                category_icon_text,
+                category_name_text,
                 ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
             ], spacing=8),
             style=ft.ButtonStyle(bgcolor=self.card_color, color=self.text_color),
@@ -3138,19 +3150,16 @@ class StoreApp:
             """Open BottomSheet for category selection"""
             
             def select_category(name, icon):
-                selected_category[0] = name  # Update the list value
-                category_button.content = ft.Row([
-                    ft.Text(icon, size=16),
-                    ft.Text(name, size=14),
-                    ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
-                ], spacing=8)
+                print(f"DEBUG: Category selected - Name: {name}, Icon: {icon}")
+                selected.category = name
+                category_icon_text.value = icon
+                category_name_text.value = name
                 page.update()
                 # Close bottomsheet
                 for overlay in page.overlay[:]:
                     if isinstance(overlay, ft.BottomSheet):
                         overlay.open = False
                 page.update()
-                print(f"DEBUG: Category selected: {name}")
             
             categories = [
                 ("📦", "Raw Material"),
@@ -3165,7 +3174,7 @@ class StoreApp:
             
             category_items = []
             for icon, name in categories:
-                is_selected = (name == selected_category[0])
+                is_selected = (name == selected.category)
                 category_items.append(
                     ft.Container(
                         content=ft.Row([
@@ -3200,8 +3209,8 @@ class StoreApp:
         # ========== QUALITY BUTTON ==========
         quality_button = ft.ElevatedButton(
             content=ft.Row([
-                ft.Text(quality_icons[selected_quality[0]], size=16),
-                ft.Text(selected_quality[0], size=14),
+                quality_icon_text,
+                quality_name_text,
                 ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
             ], spacing=8),
             style=ft.ButtonStyle(bgcolor=self.card_color, color=self.text_color),
@@ -3211,24 +3220,21 @@ class StoreApp:
             """Open BottomSheet for quality selection"""
             
             def select_quality(quality):
-                selected_quality[0] = quality  # Update the list value
-                quality_button.content = ft.Row([
-                    ft.Text(quality_icons[quality], size=16),
-                    ft.Text(quality, size=14),
-                    ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
-                ], spacing=8)
+                print(f"DEBUG: Quality selected: {quality}")
+                selected.quality = quality
+                quality_icon_text.value = quality_icons[quality]
+                quality_name_text.value = quality
                 page.update()
                 # Close bottomsheet
                 for overlay in page.overlay[:]:
                     if isinstance(overlay, ft.BottomSheet):
                         overlay.open = False
                 page.update()
-                print(f"DEBUG: Quality selected: {quality}")
             
             quality_options = ["New", "Used", "Damaged", "Repaired"]
             quality_items = []
             for quality in quality_options:
-                is_selected = (quality == selected_quality[0])
+                is_selected = (quality == selected.quality)
                 quality_items.append(
                     ft.Container(
                         content=ft.Row([
@@ -3265,7 +3271,12 @@ class StoreApp:
         quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
         location_field = ft.TextField(label="Location", width=field_width, bgcolor=self.card_color)
         barcode_field = ft.TextField(label="Barcode", width=field_width, bgcolor=self.card_color, value=generate_barcode(), read_only=True)
-        regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=lambda e: setattr(barcode_field, 'value', generate_barcode()) or page.update())
+        
+        def regenerate_barcode(e):
+            barcode_field.value = generate_barcode()
+            page.update()
+        
+        regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=regenerate_barcode)
         
         def close_dialog(e):
             # Close any open bottomsheets first
@@ -3277,10 +3288,10 @@ class StoreApp:
         
         def save_material(e):
             print("=" * 50)
-            print(f"Save clicked!")
+            print(f"SAVE MATERIAL - Mobile Debug")
             print(f"  Name: {name_field.value}")
-            print(f"  Category: {selected_category[0]}")
-            print(f"  Quality: {selected_quality[0]}")
+            print(f"  Category from selected object: {selected.category}")
+            print(f"  Quality from selected object: {selected.quality}")
             print(f"  Quantity: {quantity_field.value}")
             print(f"  Location: {location_field.value}")
             print(f"  Barcode: {barcode_field.value}")
@@ -3292,30 +3303,36 @@ class StoreApp:
                 page.update()
                 return
             
-            # Prepare data with selected category and quality
+            # Prepare data - USE THE SELECTED OBJECT VALUES
             data = {
                 'name': name_field.value,
-                'category': selected_category[0],  # Use the selected category
+                'category': selected.category,  # This should be the selected category
                 'quantity': int(quantity_field.value) if quantity_field.value else 0,
-                'quality': selected_quality[0],  # Use the selected quality
+                'quality': selected.quality,  # This should be the selected quality
                 'location_ids': location_field.value,
                 'barcode_value': barcode_field.value,
             }
             
-            print(f"DEBUG: Saving data: {data}")
+            print(f"FINAL DATA BEING SAVED: {data}")
             
             result = MaterialManager.create(data)
             
             if result:
+                print("SUCCESS: Material saved to database")
                 # Close any open bottomsheets
                 for overlay in page.overlay[:]:
                     if isinstance(overlay, ft.BottomSheet):
                         overlay.open = False
                 page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value} (Category: {selected_category[0]}, Quality: {selected_quality[0]})"), bgcolor=self.success_color, duration=3000)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Added: {name_field.value} (Category: {selected.category})"), 
+                    bgcolor=self.success_color, 
+                    duration=3000
+                )
                 page.snack_bar.open = True
                 self.show_materials_screen(page)
             else:
+                print("ERROR: Failed to save material")
                 page.snack_bar = ft.SnackBar(ft.Text("Error creating material!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
