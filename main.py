@@ -3077,16 +3077,17 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
-            
+
     def open_add_modal(self, page: ft.Page):
-        """STEP 6 FIXED - Mobile working version with proper category saving"""
+        """Add material - Simple version with dropdown only"""
         
         import random
         import string
-        
-        print("=" * 50)
-        print("STEP 6 FIXED - Mobile version with proper saving")
-        print("=" * 50)
+        import os
+        import shutil
+        from datetime import datetime
+        import sqlite3
+        from database import DB_PATH
         
         def generate_barcode():
             prefix = "890"
@@ -3103,260 +3104,220 @@ class StoreApp:
         
         is_mobile = page.width < 800 if page.width else False
         
+        # Full width on mobile
         if is_mobile:
-            field_width = page.width - 60 if page.width else 300
-            dialog_width = page.width - 40 if page.width else 400
-            dialog_height = 550
+            field_width = page.width - 40 if page.width else 340
+            dialog_width = page.width - 20 if page.width else 380
         else:
             field_width = 350
             dialog_width = 500
-            dialog_height = 600
         
-        # Use class-level variables or instance variables
-        # Create a simple object to hold values
-        class SelectedData:
-            def __init__(self):
-                self.category = "Raw Material"
-                self.quality = "New"
+        # Create images folder
+        images_folder = "images"
+        if not os.path.exists(images_folder):
+            os.makedirs(images_folder)
         
-        selected = SelectedData()
+        # Get current user ID
+        current_user_id = self.current_user.get('id') if self.current_user else 0
         
-        # Quality color mapping
-        quality_icons = {
-            "New": "🟢",
-            "Used": "🟠",
-            "Damaged": "🔴",
-            "Repaired": "🔵"
-        }
-        
-        # Create references to update UI
-        category_icon_text = ft.Text("📦", size=16)
-        category_name_text = ft.Text(selected.category, size=14)
-        
-        quality_icon_text = ft.Text(quality_icons[selected.quality], size=16)
-        quality_name_text = ft.Text(selected.quality, size=14)
-        
-        # ========== CATEGORY BUTTON ==========
-        category_button = ft.ElevatedButton(
-            content=ft.Row([
-                category_icon_text,
-                category_name_text,
-                ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
-            ], spacing=8),
-            style=ft.ButtonStyle(bgcolor=self.card_color, color=self.text_color),
-        )
-        
-        def show_category_bottomsheet(e):
-            """Open BottomSheet for category selection"""
-            
-            def select_category(name, icon):
-                print(f"DEBUG: Category selected - Name: {name}, Icon: {icon}")
-                selected.category = name
-                category_icon_text.value = icon
-                category_name_text.value = name
-                page.update()
-                # Close bottomsheet
-                for overlay in page.overlay[:]:
-                    if isinstance(overlay, ft.BottomSheet):
-                        overlay.open = False
-                page.update()
-            
-            categories = [
-                ("📦", "Raw Material"),
-                ("🔩", "Hardware"),
-                ("🔧", "Tools"),
-                ("⚡", "Electrical"),
-                ("💧", "Plumbing"),
-                ("🪵", "Wood"),
-                ("⚙️", "Metal"),
-                ("📁", "Other"),
-            ]
-            
-            category_items = []
-            for icon, name in categories:
-                is_selected = (name == selected.category)
-                category_items.append(
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Text(icon, size=20),
-                            ft.Text(name, size=14, expand=True),
-                            ft.Icon(ft.icons.CHECK, size=16, color=self.success_color, visible=is_selected),
-                        ], spacing=10),
-                        padding=12,
-                        on_click=lambda e, n=name, i=icon: select_category(n, i),
-                        ink=True,
-                    )
-                )
-            
-            bottomsheet = ft.BottomSheet(
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Text("Select Category", size=18, weight=ft.FontWeight.BOLD),
-                        ft.Divider(),
-                        ft.Column(category_items, spacing=5, scroll=ft.ScrollMode.AUTO),
-                    ], spacing=10),
-                    padding=20,
-                    height=400,
-                ),
-                open=True,
+        # Get categories
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS custom_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                icon TEXT DEFAULT '📁',
+                color TEXT DEFAULT '#1976D2',
+                created_by TEXT,
+                user_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-            
-            page.overlay.append(bottomsheet)
-            page.update()
+        ''')
+        conn.commit()
         
-        category_button.on_click = show_category_bottomsheet
+        cursor.execute("SELECT name, icon FROM custom_categories WHERE user_id = ? OR user_id IS NULL ORDER BY name", (current_user_id,))
+        custom_cats = cursor.fetchall()
+        conn.close()
         
-        # ========== QUALITY BUTTON ==========
-        quality_button = ft.ElevatedButton(
-            content=ft.Row([
-                quality_icon_text,
-                quality_name_text,
-                ft.Icon(ft.icons.ARROW_DROP_DOWN, size=18),
-            ], spacing=8),
-            style=ft.ButtonStyle(bgcolor=self.card_color, color=self.text_color),
-        )
+        predefined_categories = [
+            "Raw Material", "Hardware", "Tools", "Electrical", "Plumbing",
+            "Wood", "Metal", "Plastic", "Glass", "Paint", "Fasteners",
+            "Safety Equipment", "Packaging", "Office Supplies", "Other"
+        ]
         
-        def show_quality_bottomsheet(e):
-            """Open BottomSheet for quality selection"""
-            
-            def select_quality(quality):
-                print(f"DEBUG: Quality selected: {quality}")
-                selected.quality = quality
-                quality_icon_text.value = quality_icons[quality]
-                quality_name_text.value = quality
-                page.update()
-                # Close bottomsheet
-                for overlay in page.overlay[:]:
-                    if isinstance(overlay, ft.BottomSheet):
-                        overlay.open = False
-                page.update()
-            
-            quality_options = ["New", "Used", "Damaged", "Repaired"]
-            quality_items = []
-            for quality in quality_options:
-                is_selected = (quality == selected.quality)
-                quality_items.append(
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Text(quality_icons[quality], size=20),
-                            ft.Text(quality, size=14, expand=True),
-                            ft.Icon(ft.icons.CHECK, size=16, color=self.success_color, visible=is_selected),
-                        ], spacing=10),
-                        padding=12,
-                        on_click=lambda e, q=quality: select_quality(q),
-                        ink=True,
-                    )
-                )
-            
-            bottomsheet = ft.BottomSheet(
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Text("Select Quality", size=18, weight=ft.FontWeight.BOLD),
-                        ft.Divider(),
-                        ft.Column(quality_items, spacing=5),
-                    ], spacing=10),
-                    padding=20,
-                    height=350,
-                ),
-                open=True,
-            )
-            
-            page.overlay.append(bottomsheet)
-            page.update()
+        all_categories = []
+        for cat in predefined_categories:
+            all_categories.append({"name": cat, "icon": self.get_category_icon(cat)})
         
-        quality_button.on_click = show_quality_bottomsheet
+        for cat in custom_cats:
+            cat_name = cat[0]
+            cat_icon = cat[1] if len(cat) > 1 else "📁"
+            if cat_name not in [c["name"] for c in all_categories]:
+                all_categories.append({"name": cat_name, "icon": cat_icon})
         
-        # ========== FORM FIELDS ==========
+        all_categories.sort(key=lambda x: x["name"])
+        
+        # Form fields
         name_field = ft.TextField(label="Name *", width=field_width, bgcolor=self.card_color)
-        quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
-        location_field = ft.TextField(label="Location", width=field_width, bgcolor=self.card_color)
-        barcode_field = ft.TextField(label="Barcode", width=field_width, bgcolor=self.card_color, value=generate_barcode(), read_only=True)
         
-        def regenerate_barcode(e):
-            barcode_field.value = generate_barcode()
+        category_dropdown = ft.Dropdown(
+            label="Category",
+            width=field_width,
+            options=[ft.dropdown.Option(cat["name"], f"{cat['icon']} {cat['name']}") for cat in all_categories],
+            value="Raw Material",
+            bgcolor=self.card_color,
+        )
+        
+        quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
+        
+        size_field = ft.TextField(label="Size", width=field_width, bgcolor=self.card_color, hint_text="e.g., 34 1/2 or 24.5")
+        length_field = ft.TextField(label="Length (auto)", width=field_width, bgcolor=self.card_color, read_only=True)
+        
+        quality_field = ft.Dropdown(
+            label="Quality", width=field_width,
+            options=[
+                ft.dropdown.Option("New"),
+                ft.dropdown.Option("Used"),
+                ft.dropdown.Option("Damaged"),
+                ft.dropdown.Option("Repaired"),
+            ],
+            value="New",
+            bgcolor=self.card_color,
+        )
+        
+        location_field = ft.TextField(label="Location", width=field_width, bgcolor=self.card_color)
+        color_field = ft.TextField(label="Colors", width=field_width, bgcolor=self.card_color)
+        notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2)
+        
+        barcode_field = ft.TextField(label="Barcode", width=field_width, bgcolor=self.card_color, value=generate_barcode(), read_only=True)
+        regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=lambda e: setattr(barcode_field, 'value', generate_barcode()) or page.update())
+        
+        # Image selection status text
+        image_status_text = ft.Text("No image selected", size=12, color="#888888")
+        selected_temp_image = None
+        
+        def on_image_picked(e: ft.FilePickerResultEvent):
+            nonlocal selected_temp_image
+            if e.files:
+                file = e.files[0]
+                selected_temp_image = file.path
+                image_status_text.value = f"✓ Image selected: {file.name[:30]}{'...' if len(file.name) > 30 else ''}"
+                image_status_text.color = self.success_color
+                page.update()
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Image selected: {file.name}"), bgcolor=self.success_color, duration=2000)
+                page.snack_bar.open = True
+                page.update()
+        
+        image_picker = ft.FilePicker(on_result=on_image_picked)
+        page.overlay.append(image_picker)
+        
+        def upload_image(e):
+            image_picker.pick_files(allow_multiple=False, allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
+        
+        upload_btn = ft.ElevatedButton(
+            "📁 Upload Image", 
+            on_click=upload_image,
+            icon=ft.icons.UPLOAD_FILE,
+            style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
+        )
+        
+        def update_length(e):
+            size_value = size_field.value
+            if size_value:
+                converted = self.convert_size_to_length(size_value)
+                if converted is not None:
+                    length_field.value = str(converted)
+                else:
+                    length_field.value = ""
+            else:
+                length_field.value = ""
             page.update()
         
-        regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=regenerate_barcode)
+        size_field.on_change = update_length
+        
+        def save_uploaded_image():
+            if selected_temp_image and os.path.exists(selected_temp_image):
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                file_ext = os.path.splitext(selected_temp_image)[1]
+                new_filename = f"material_{timestamp}{file_ext}"
+                new_path = os.path.join(images_folder, new_filename)
+                shutil.copy2(selected_temp_image, new_path)
+                return new_path
+            return None
         
         def close_dialog(e):
-            # Close any open bottomsheets first
-            for overlay in page.overlay[:]:
-                if isinstance(overlay, ft.BottomSheet):
-                    overlay.open = False
             page.dialog.open = False
             page.update()
         
         def save_material(e):
-            print("=" * 50)
-            print(f"SAVE MATERIAL - Mobile Debug")
-            print(f"  Name: {name_field.value}")
-            print(f"  Category from selected object: {selected.category}")
-            print(f"  Quality from selected object: {selected.quality}")
-            print(f"  Quantity: {quantity_field.value}")
-            print(f"  Location: {location_field.value}")
-            print(f"  Barcode: {barcode_field.value}")
-            print("=" * 50)
-            
             if not name_field.value:
                 page.snack_bar = ft.SnackBar(ft.Text("Please enter a name!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
                 return
             
-            # Prepare data - USE THE SELECTED OBJECT VALUES
+            saved_image_path = save_uploaded_image() if selected_temp_image else None
+            size_value = size_field.value
+            length_value = self.convert_size_to_length(size_value) if size_value else None
+            
             data = {
                 'name': name_field.value,
-                'category': selected.category,  # This should be the selected category
+                'category': category_dropdown.value,
                 'quantity': int(quantity_field.value) if quantity_field.value else 0,
-                'quality': selected.quality,  # This should be the selected quality
+                'size': size_value,
+                'length': length_value,
+                'quality': quality_field.value,
                 'location_ids': location_field.value,
+                'colors': color_field.value,
+                'notes': notes_field.value,
                 'barcode_value': barcode_field.value,
+                'image_path': saved_image_path,
             }
-            
-            print(f"FINAL DATA BEING SAVED: {data}")
             
             result = MaterialManager.create(data)
             
             if result:
-                print("SUCCESS: Material saved to database")
-                # Close any open bottomsheets
-                for overlay in page.overlay[:]:
-                    if isinstance(overlay, ft.BottomSheet):
-                        overlay.open = False
                 page.dialog.open = False
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✓ Added: {name_field.value} (Category: {selected.category})"), 
-                    bgcolor=self.success_color, 
-                    duration=3000
-                )
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=3000)
                 page.snack_bar.open = True
                 self.show_materials_screen(page)
             else:
-                print("ERROR: Failed to save material")
                 page.snack_bar = ft.SnackBar(ft.Text("Error creating material!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
         
-        # Create scrollable content for fields
+        # Create scrollable content
         scroll_content = ft.Column([
             name_field,
-            ft.Text("Category", size=12, color="#888888"),
-            category_button,
-            ft.Container(height=5),
-            ft.Text("Quality", size=12, color="#888888"),
-            quality_button,
-            ft.Container(height=5),
+            category_dropdown,
             quantity_field,
+            size_field,
+            length_field,
+            quality_field,
             location_field,
+            color_field,
             barcode_field,
             regenerate_btn,
+            upload_btn,
+            image_status_text,
+            notes_field,
         ], spacing=12, scroll=ft.ScrollMode.AUTO)
         
-        # Main dialog content with proper height
+        # For mobile, use full height
+        content_height = page.height - 100 if is_mobile and page.height else 500
+        
+        # Dialog content
         dialog_content = ft.Column([
-            ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
+            ft.Row([
+                ft.Text("Add New Material", size=20, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, on_click=close_dialog),
+            ]),
             ft.Divider(),
-            ft.Container(content=scroll_content, height=dialog_height - 150),
+            ft.Container(
+                content=scroll_content,
+                height=content_height,
+            ),
             ft.Divider(),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog, expand=True),
