@@ -87,7 +87,113 @@ def init_database():
     conn.commit()
     conn.close()
     print("Database initialized successfully")
-
+    
+class AccessoryManager:
+    """Manager for accessory operations"""
+    
+    @staticmethod
+    def create(data):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        cursor.execute('''
+            INSERT INTO accessories (name, category_id, quantity, price, quality, location, notes, barcode_value, image_path, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            data.get('name', ''),
+            data.get('category_id', 8),
+            data.get('quantity', 0),
+            data.get('price', 0),
+            data.get('quality', 'New'),
+            data.get('location', ''),
+            data.get('notes', ''),
+            data.get('barcode_value', ''),
+            data.get('image_path', ''),
+            current_time,
+            current_time
+        ))
+        conn.commit()
+        accessory_id = cursor.lastrowid
+        conn.close()
+        return {'id': accessory_id}
+    
+    @staticmethod
+    def get_by_id(accessory_id):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT a.*, c.name as category_name, c.icon as category_icon
+            FROM accessories a
+            LEFT JOIN categories c ON a.category_id = c.id
+            WHERE a.id = ?
+        ''', (accessory_id,))
+        result = cursor.fetchone()
+        conn.close()
+        return result
+    
+    @staticmethod
+    def get_all():
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT a.*, c.name as category_name, c.icon as category_icon
+            FROM accessories a
+            LEFT JOIN categories c ON a.category_id = c.id
+            ORDER BY a.id DESC
+        ''')
+        results = cursor.fetchall()
+        conn.close()
+        return results
+    
+    @staticmethod
+    def update(accessory_id, data):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        cursor.execute('''
+            UPDATE accessories 
+            SET name = ?, category_id = ?, quantity = ?, price = ?, quality = ?, 
+                location = ?, notes = ?, barcode_value = ?, image_path = ?, updated_at = ?
+            WHERE id = ?
+        ''', (
+            data.get('name', ''),
+            data.get('category_id', 8),
+            data.get('quantity', 0),
+            data.get('price', 0),
+            data.get('quality', 'New'),
+            data.get('location', ''),
+            data.get('notes', ''),
+            data.get('barcode_value', ''),
+            data.get('image_path', ''),
+            current_time,
+            accessory_id
+        ))
+        conn.commit()
+        success = cursor.rowcount > 0
+        conn.close()
+        return success
+    
+    @staticmethod
+    def delete(accessory_id):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM accessories WHERE id = ?", (accessory_id,))
+        conn.commit()
+        success = cursor.rowcount > 0
+        conn.close()
+        return success
+    
+    @staticmethod
+    def get_by_barcode(barcode):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM accessories WHERE barcode_value = ?", (barcode,))
+        result = cursor.fetchone()
+        conn.close()
+        return result
+    
 class MaterialManager:
     @staticmethod
     def create(data):
