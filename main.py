@@ -2951,7 +2951,9 @@ class StoreApp:
         return None
     
     def show_material_detail_dialog(self, page: ft.Page, material):
-        """Complete detail dialog showing all fields"""
+        """Complete detail dialog showing all fields including image"""
+        
+        import os
         
         name = material.get('name', 'N/A')
         category_name = material.get('category_name', 'Other')
@@ -2966,6 +2968,26 @@ class StoreApp:
         barcode = material.get('barcode_value', 'N/A')
         created = str(material.get('created_at', ''))[:16] if material.get('created_at') else 'N/A'
         updated = str(material.get('updated_at', ''))[:16] if material.get('updated_at') else 'N/A'
+        
+        # Get image path
+        image_path = material.get('image_path', '')
+        has_image = False
+        full_image_path = None
+        
+        if image_path and os.path.exists(image_path):
+            has_image = True
+            full_image_path = image_path
+        else:
+            # Try relative path
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            if image_path:
+                relative_path = os.path.join(base_dir, image_path)
+                if os.path.exists(relative_path):
+                    has_image = True
+                    full_image_path = relative_path
+        
+        is_mobile = page.width < 800 if page.width else False
+        dialog_width = page.width - 40 if is_mobile and page.width else 450
         
         def close_dialog(e):
             page.dialog.open = False
@@ -2982,69 +3004,207 @@ class StoreApp:
         def show_barcode(e):
             self.show_barcode_dialog(page, material)
         
-        # Build content items
-        content_items = [
-            ft.Row([ft.Text("📁 Category:", size=14, color="#CCCCCC", width=100), 
-                    ft.Text(f"{category_icon} {category_name}", size=14, color=self.accent_color)], spacing=8),
-            ft.Row([ft.Text("🔢 Barcode:", size=14, color="#CCCCCC", width=100), 
-                    ft.Text(barcode, size=12, color="#888888")], spacing=8),
-            ft.Row([ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
-                    style=ft.ButtonStyle(bgcolor=self.warning_color, color=self.text_color))], spacing=10),
-            ft.Row([ft.Text("🏷️ Quality:", size=14, color="#CCCCCC", width=100), 
-                    ft.Container(content=ft.Text(quality, size=12, color="white"),
-                    bgcolor=self.get_quality_color(quality), border_radius=8, 
-                    padding=ft.padding.symmetric(horizontal=12, vertical=4))], spacing=8),
-            ft.Row([ft.Text("🔢 Quantity:", size=14, color="#CCCCCC", width=100), 
-                    ft.Text(str(quantity), size=16, weight=ft.FontWeight.BOLD,
-                    color=self.danger_color if quantity < 10 else self.text_color)], spacing=8),
-            ft.Row([ft.Text("📍 Location:", size=14, color="#CCCCCC", width=100), 
-                    ft.Text(location, size=14, color=self.text_color)], spacing=8),
-        ]
+        def show_fullscreen(e):
+            def close_fullscreen():
+                page.overlay.clear()
+                page.update()
+            
+            fullscreen = ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Container(expand=True),
+                        ft.IconButton(icon=ft.icons.CLOSE, icon_size=30, on_click=lambda e: close_fullscreen()),
+                    ]),
+                    ft.Container(
+                        content=ft.Image(src=full_image_path, fit=ft.ImageFit.CONTAIN),
+                        expand=True,
+                    ),
+                ], spacing=10),
+                expand=True,
+                bgcolor="#000000CC",
+            )
+            page.overlay.append(fullscreen)
+            page.update()
         
-        # Add size if exists
-        if size and size != 'N/A':
-            content_items.insert(-2, ft.Row([ft.Text("📏 Size:", size=14, color="#CCCCCC", width=100), 
-                                            ft.Text(size, size=14, color=self.text_color)], spacing=8))
-        # Add length if exists
-        if length and length != 'N/A':
-            content_items.insert(-2, ft.Row([ft.Text("📐 Length:", size=14, color="#CCCCCC", width=100), 
-                                            ft.Text(str(length), size=14, color=self.text_color)], spacing=8))
-        # Add colors if exists
-        if colors and colors != 'N/A':
-            content_items.insert(-2, ft.Row([ft.Text("🎨 Colors:", size=14, color="#CCCCCC", width=100), 
-                                            ft.Text(colors, size=14, color=self.text_color)], spacing=8))
+        # Create content_items list
+        content_items = []
         
-        # Add timestamps
+        # Image section
+        if has_image:
+            content_items.append(
+                ft.Container(
+                    content=ft.Stack([
+                        ft.Image(src=full_image_path, width=200, height=150, fit=ft.ImageFit.CONTAIN),
+                        ft.Container(
+                            content=ft.Icon(ft.icons.ZOOM_IN, size=20, color="white"),
+                            bgcolor="#00000099",
+                            border_radius=20,
+                            padding=5,
+                            right=5,
+                            top=5,
+                            on_click=show_fullscreen,
+                            ink=True,
+                        ),
+                    ]),
+                    alignment=ft.alignment.center,
+                    margin=ft.margin.only(bottom=10),
+                )
+            )
+        else:
+            content_items.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.icons.IMAGE_NOT_SUPPORTED, size=50, color="#888888"),
+                        ft.Text("No Image Available", size=12, color="#888888"),
+                        ft.Text("Click Edit to add an image", size=10, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.center,
+                    margin=ft.margin.only(bottom=10),
+                )
+            )
+        
+        # Basic Information Section
         content_items.append(ft.Divider())
-        content_items.append(ft.Row([ft.Text("📅 Created:", size=13, color="#CCCCCC", width=100), 
-                                    ft.Text(created, size=13, color="#888888")], spacing=8))
-        content_items.append(ft.Row([ft.Text("🔄 Updated:", size=13, color="#CCCCCC", width=100), 
-                                    ft.Text(updated, size=13, color="#888888")], spacing=8))
+        content_items.append(ft.Text("📋 Basic Information", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color))
         
-        # Add notes if exists
+        content_items.append(ft.Row([
+            ft.Text("📁 Category:", size=13, color="#CCCCCC", width=100),
+            ft.Text(f"{category_icon} {category_name}", size=13, color=self.accent_color, weight=ft.FontWeight.BOLD),
+        ], spacing=8))
+        
+        content_items.append(ft.Row([
+            ft.Text("📝 Code:", size=13, color="#CCCCCC", width=100),
+            ft.Text(barcode, size=12, color="#888888"),
+        ], spacing=8))
+        
+        # Show Barcode Button
+        content_items.append(
+            ft.Row([
+                ft.ElevatedButton(
+                    "📱 SHOW BARCODE", 
+                    on_click=show_barcode,
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor=self.warning_color, color=self.text_color),
+                )
+            ], spacing=10)
+        )
+        
+        # Stock Information Section
+        content_items.append(ft.Divider())
+        content_items.append(ft.Text("📊 Stock Information", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color))
+        
+        content_items.append(ft.Row([
+            ft.Text("🏷️ Quality:", size=13, color="#CCCCCC", width=100),
+            ft.Container(
+                content=ft.Text(quality, size=12, color="white"),
+                bgcolor=self.get_quality_color(quality),
+                border_radius=8,
+                padding=ft.padding.symmetric(horizontal=12, vertical=4),
+            ),
+        ], spacing=8))
+        
+        # Quantity with color based on stock level
+        qty_color = self.danger_color if quantity < 10 else self.text_color
+        qty_text = f"{quantity} units"
+        if quantity < 5:
+            qty_text += " 🔴 CRITICAL"
+        elif quantity < 10:
+            qty_text += " 🟠 LOW"
+        
+        content_items.append(ft.Row([
+            ft.Text("🔢 Quantity:", size=13, color="#CCCCCC", width=100),
+            ft.Text(qty_text, size=14, weight=ft.FontWeight.BOLD, color=qty_color),
+        ], spacing=8))
+        
+        content_items.append(ft.Row([
+            ft.Text("📍 Location:", size=13, color="#CCCCCC", width=100),
+            ft.Text(location, size=13, color=self.text_color),
+        ], spacing=8))
+        
+        # Dimensions Section (only if size or length has value)
+        if size != 'N/A' or (length and length != 'N/A' and length != '0.0'):
+            content_items.append(ft.Divider())
+            content_items.append(ft.Text("📏 Dimensions", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color))
+            
+            if size != 'N/A':
+                content_items.append(ft.Row([
+                    ft.Text("📏 Size:", size=13, color="#CCCCCC", width=100),
+                    ft.Text(size, size=13, color=self.text_color),
+                ], spacing=8))
+            
+            if length and length != 'N/A' and length != '0.0':
+                content_items.append(ft.Row([
+                    ft.Text("📐 Length:", size=13, color="#CCCCCC", width=100),
+                    ft.Text(str(length), size=13, color=self.text_color),
+                ], spacing=8))
+        
+        # Colors Section
+        if colors != 'N/A' and colors:
+            content_items.append(ft.Divider())
+            content_items.append(ft.Text("🎨 Colors", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color))
+            content_items.append(ft.Row([
+                ft.Text("Colors:", size=13, color="#CCCCCC", width=100),
+                ft.Text(colors, size=13, color=self.text_color),
+            ], spacing=8))
+        
+        # Dates Section
+        content_items.append(ft.Divider())
+        content_items.append(ft.Text("📅 Timestamps", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color))
+        
+        content_items.append(ft.Row([
+            ft.Text("Created:", size=13, color="#CCCCCC", width=100),
+            ft.Text(created, size=12, color="#888888"),
+        ], spacing=8))
+        
+        content_items.append(ft.Row([
+            ft.Text("Updated:", size=13, color="#CCCCCC", width=100),
+            ft.Text(updated, size=12, color="#888888"),
+        ], spacing=8))
+        
+        # Notes Section
         if notes and notes != 'No notes':
             content_items.append(ft.Divider())
-            content_items.append(ft.Text("📝 Notes:", size=14, weight=ft.FontWeight.BOLD, color="#CCCCCC"))
-            content_items.append(ft.Container(content=ft.Text(notes, size=12, color="#888888"), 
-                                            padding=10, bgcolor="#2C2C2C", border_radius=8))
+            content_items.append(ft.Text("📝 Notes", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color))
+            content_items.append(
+                ft.Container(
+                    content=ft.Text(notes, size=12, color="#888888"),
+                    padding=10,
+                    bgcolor="#2C2C2C",
+                    border_radius=8,
+                    margin=ft.margin.only(top=5, bottom=10),
+                )
+            )
         
-        # Add action buttons
+        # Action Buttons Section
         content_items.append(ft.Divider())
-        content_items.append(ft.Row([
-            ft.ElevatedButton("✏️ EDIT", on_click=edit_material, expand=True,
-                            style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color)),
-            ft.ElevatedButton("🗑️ DELETE", on_click=delete_material, expand=True,
-                            style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
-        ], spacing=10))
+        content_items.append(
+            ft.Row([
+                ft.ElevatedButton(
+                    "✏️ EDIT", 
+                    on_click=edit_material,
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
+                ),
+                ft.ElevatedButton(
+                    "🗑️ DELETE", 
+                    on_click=delete_material,
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color),
+                ),
+            ], spacing=10)
+        )
         
-        scrollable_content = ft.Column(content_items, spacing=10, scroll=ft.ScrollMode.AUTO, height=500)
+        # Create scrollable content
+        scrollable_content = ft.Column(content_items, spacing=8, scroll=ft.ScrollMode.AUTO, height=500)
         
+        # Create dialog
         dialog = ft.AlertDialog(
             title=ft.Row([
                 ft.Text(name, size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ], spacing=0),
-            content=ft.Container(content=scrollable_content, width=450, padding=15),
+            content=ft.Container(content=scrollable_content, width=dialog_width, padding=15),
+            actions_alignment=ft.MainAxisAlignment.END,
         )
         
         page.dialog = dialog
@@ -3121,10 +3281,12 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Add material - Keyboard aware, fields scroll into view"""
+        """Add material with image upload"""
         import random
         import string
         import sqlite3
+        import os
+        import shutil
         from datetime import datetime
         from database import DB_PATH
         
@@ -3143,15 +3305,21 @@ class StoreApp:
         
         is_mobile = page.width < 800 if page.width else False
         
-        # Smaller dialog on mobile to account for keyboard
         if is_mobile:
             field_width = page.width - 40 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
-            scroll_height = 380  # Smaller to leave room for keyboard
+            scroll_height = 420
+            preview_size = 80
         else:
             field_width = 350
             dialog_width = 450
-            scroll_height = 450
+            scroll_height = 480
+            preview_size = 100
+        
+        # Create images folder
+        images_folder = "images"
+        if not os.path.exists(images_folder):
+            os.makedirs(images_folder)
         
         # Load categories
         conn = sqlite3.connect(DB_PATH)
@@ -3163,7 +3331,7 @@ class StoreApp:
         
         category_options = [ft.dropdown.Option(str(c['id']), f"{c['icon']} {c['name']}") for c in categories]
         
-        # Create a Scrollable container that will follow keyboard
+        # Create scrollable container
         scroll_view = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, height=scroll_height)
         
         # Form fields
@@ -3179,7 +3347,67 @@ class StoreApp:
         color_field = ft.TextField(label="Colors", width=field_width, bgcolor=self.card_color)
         notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
-        # Add all fields to scroll view
+        # Image upload section
+        image_status_text = ft.Text("No image selected", size=11, color="#888888")
+        image_preview = ft.Container(
+            content=ft.Column([
+                ft.Icon(ft.icons.IMAGE, size=40, color="#888888"),
+                ft.Text("No Image", size=10, color="#888888"),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+            width=preview_size,
+            height=preview_size - 10,
+            bgcolor="#2C2C2C",
+            border_radius=8,
+        )
+        selected_temp_image = None
+        
+        def on_image_picked(e: ft.FilePickerResultEvent):
+            nonlocal selected_temp_image
+            if e.files:
+                file = e.files[0]
+                selected_temp_image = file.path
+                # Update preview
+                try:
+                    image_preview.content = ft.Column([
+                        ft.Image(src=selected_temp_image, width=preview_size - 10, height=preview_size - 20, fit=ft.ImageFit.CONTAIN),
+                        ft.Text("✓ Selected", size=9, color=self.success_color),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
+                    image_status_text.value = f"✓ {file.name[:20]}{'...' if len(file.name) > 20 else ''}"
+                    image_status_text.color = self.success_color
+                    page.update()
+                except:
+                    pass
+        
+        image_picker = ft.FilePicker(on_result=on_image_picked)
+        page.overlay.append(image_picker)
+        
+        def upload_image(e):
+            image_picker.pick_files(allow_multiple=False, allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
+        
+        upload_btn = ft.ElevatedButton(
+            "📁 Upload Image",
+            on_click=upload_image,
+            icon=ft.icons.UPLOAD_FILE,
+            style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
+        )
+        
+        def save_uploaded_image():
+            if selected_temp_image and os.path.exists(selected_temp_image):
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                file_ext = os.path.splitext(selected_temp_image)[1]
+                new_filename = f"material_{timestamp}{file_ext}"
+                new_path = os.path.join(images_folder, new_filename)
+                shutil.copy2(selected_temp_image, new_path)
+                return new_path
+            return None
+        
+        # Image row
+        image_row = ft.Column([
+            upload_btn,
+            ft.Row([image_preview], alignment=ft.MainAxisAlignment.CENTER),
+            image_status_text,
+        ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+        
         scroll_view.controls.extend([
             name_field,
             category_field,
@@ -3189,6 +3417,7 @@ class StoreApp:
             quality_field,
             location_field,
             color_field,
+            image_row,
             notes_field,
         ])
         
@@ -3222,20 +3451,22 @@ class StoreApp:
                 page.update()
                 return
             
+            saved_image_path = save_uploaded_image() if selected_temp_image else None
             selected_category_id = int(category_field.value)
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO materials (name, category_id, quantity, quality, location_ids, size, length, colors, notes, barcode_value, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO materials (name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 name_field.value, selected_category_id,
                 int(quantity_field.value) if quantity_field.value else 0,
                 quality_field.value, location_field.value,
                 size_field.value, float(length_field.value) if length_field.value else None,
                 color_field.value, notes_field.value,
+                saved_image_path,
                 generate_barcode(), current_time, current_time
             ))
             conn.commit()
@@ -3246,7 +3477,6 @@ class StoreApp:
             page.snack_bar.open = True
             self.show_materials_screen(page)
         
-        # Dialog content - fixed header and footer, scrollable middle
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text("Add New Material", size=16, weight=ft.FontWeight.BOLD, expand=True),
@@ -3272,8 +3502,10 @@ class StoreApp:
         page.update()
         
     def open_edit_modal(self, page: ft.Page, material_id):
-        """Edit material - Keyboard aware"""
+        """Edit material with image upload"""
         import sqlite3
+        import os
+        import shutil
         from database import DB_PATH
         from datetime import datetime
         
@@ -3300,11 +3532,18 @@ class StoreApp:
         if is_mobile:
             field_width = page.width - 40 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
-            scroll_height = 380
+            scroll_height = 420
+            preview_size = 80
         else:
             field_width = 350
             dialog_width = 450
-            scroll_height = 450
+            scroll_height = 480
+            preview_size = 100
+        
+        # Create images folder
+        images_folder = "images"
+        if not os.path.exists(images_folder):
+            os.makedirs(images_folder)
         
         category_options = [ft.dropdown.Option(str(c['id']), f"{c['icon']} {c['name']}") for c in categories]
         
@@ -3324,6 +3563,105 @@ class StoreApp:
         color_field = ft.TextField(label="Colors", value=material['colors'] or "", width=field_width, bgcolor=self.card_color)
         notes_field = ft.TextField(label="Notes", value=material['notes'] or "", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
+        # Image handling
+        current_image_path = material['image_path'] if material['image_path'] else None
+        has_current_image = current_image_path and os.path.exists(current_image_path) if current_image_path else False
+        
+        # Image preview
+        image_preview = ft.Container(
+            content=ft.Column([
+                ft.Icon(ft.icons.IMAGE, size=40, color="#888888"),
+                ft.Text("No Image", size=10, color="#888888"),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+            width=preview_size,
+            height=preview_size - 10,
+            bgcolor="#2C2C2C",
+            border_radius=8,
+        )
+        
+        if has_current_image:
+            try:
+                image_preview.content = ft.Column([
+                    ft.Image(src=current_image_path, width=preview_size - 10, height=preview_size - 20, fit=ft.ImageFit.CONTAIN),
+                    ft.Text("Current", size=9, color=self.accent_color),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
+            except:
+                pass
+        
+        image_status_text = ft.Text("Current image" if has_current_image else "No image", size=11, color="#888888")
+        if has_current_image:
+            image_status_text.color = self.accent_color
+        
+        selected_temp_image = None
+        delete_current = False
+        
+        def on_image_picked(e: ft.FilePickerResultEvent):
+            nonlocal selected_temp_image, delete_current
+            if e.files:
+                file = e.files[0]
+                selected_temp_image = file.path
+                delete_current = False
+                try:
+                    image_preview.content = ft.Column([
+                        ft.Image(src=selected_temp_image, width=preview_size - 10, height=preview_size - 20, fit=ft.ImageFit.CONTAIN),
+                        ft.Text("New selected", size=9, color=self.success_color),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
+                    image_status_text.value = f"✓ {file.name[:20]}{'...' if len(file.name) > 20 else ''}"
+                    image_status_text.color = self.success_color
+                    page.update()
+                except:
+                    pass
+        
+        image_picker = ft.FilePicker(on_result=on_image_picked)
+        page.overlay.append(image_picker)
+        
+        def upload_image(e):
+            image_picker.pick_files(allow_multiple=False, allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
+        
+        def delete_image(e):
+            nonlocal delete_current, selected_temp_image
+            delete_current = True
+            selected_temp_image = None
+            image_preview.content = ft.Column([
+                ft.Icon(ft.icons.DELETE, size=40, color=self.danger_color),
+                ft.Text("Will be deleted", size=9, color=self.danger_color),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
+            image_status_text.value = "⚠️ Image will be deleted on save"
+            image_status_text.color = self.danger_color
+            page.update()
+        
+        upload_btn = ft.ElevatedButton(
+            "📁 Upload New",
+            on_click=upload_image,
+            icon=ft.icons.UPLOAD_FILE,
+            style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
+        )
+        
+        delete_btn = ft.ElevatedButton(
+            "🗑️ Delete",
+            on_click=delete_image,
+            icon=ft.icons.DELETE,
+            style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color),
+            visible=has_current_image,
+        )
+        
+        def save_uploaded_image():
+            if selected_temp_image and os.path.exists(selected_temp_image):
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                file_ext = os.path.splitext(selected_temp_image)[1]
+                new_filename = f"material_{material_id}_{timestamp}{file_ext}"
+                new_path = os.path.join(images_folder, new_filename)
+                shutil.copy2(selected_temp_image, new_path)
+                return new_path
+            return None
+        
+        # Image row
+        image_row = ft.Column([
+            ft.Row([upload_btn, delete_btn], spacing=8, alignment=ft.MainAxisAlignment.CENTER),
+            ft.Row([image_preview], alignment=ft.MainAxisAlignment.CENTER),
+            image_status_text,
+        ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+        
         scroll_view.controls.extend([
             name_field,
             category_field,
@@ -3333,6 +3671,7 @@ class StoreApp:
             quality_field,
             location_field,
             color_field,
+            image_row,
             notes_field,
         ])
         
@@ -3347,6 +3686,25 @@ class StoreApp:
                 page.update()
                 return
             
+            # Handle image
+            final_image_path = current_image_path if not delete_current else None
+            
+            if selected_temp_image:
+                saved_path = save_uploaded_image()
+                if saved_path:
+                    final_image_path = saved_path
+                    if current_image_path and os.path.exists(current_image_path) and not delete_current:
+                        try:
+                            os.remove(current_image_path)
+                        except:
+                            pass
+            elif delete_current:
+                if current_image_path and os.path.exists(current_image_path):
+                    try:
+                        os.remove(current_image_path)
+                    except:
+                        pass
+            
             selected_category_id = int(category_field.value)
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
@@ -3355,7 +3713,7 @@ class StoreApp:
             cursor.execute('''
                 UPDATE materials 
                 SET name = ?, category_id = ?, quantity = ?, quality = ?, location_ids = ?,
-                    size = ?, length = ?, colors = ?, notes = ?, updated_at = ?
+                    size = ?, length = ?, colors = ?, notes = ?, image_path = ?, updated_at = ?
                 WHERE id = ?
             ''', (
                 name_field.value, selected_category_id,
@@ -3363,6 +3721,7 @@ class StoreApp:
                 quality_field.value, location_field.value,
                 size_field.value, float(length_field.value) if length_field.value else None,
                 color_field.value, notes_field.value,
+                final_image_path,
                 current_time, material_id
             ))
             conn.commit()
