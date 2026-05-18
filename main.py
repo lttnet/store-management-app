@@ -93,10 +93,79 @@ class StoreApp:
         }
     
     def dict_list(self, rows):
+        """Convert sqlite3.Row to dict - FIXED to include all columns"""
         if rows is None:
             return []
-        return [dict(row) for row in rows]
-    
+        result = []
+        for row in rows:
+            # Convert row to dict properly
+            row_dict = {}
+            for key in row.keys():
+                row_dict[key] = row[key]
+            result.append(row_dict)
+        return result
+    def show_material_detail_dialog_from_row(self, page: ft.Page, row):
+        """Show detail dialog using sqlite3.Row object"""
+        
+        name = row['name']
+        category_name = row['category_name'] if row['category_name'] else 'Other'
+        category_icon = row['category_icon'] if row['category_icon'] else '📁'
+        quality = row['quality']
+        quantity = row['quantity']
+        location = row['location_ids'] if row['location_ids'] else 'N/A'
+        created = str(row['created_at'])[:16] if row['created_at'] else 'N/A'
+        updated = str(row['updated_at'])[:16] if row['updated_at'] else 'N/A'
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        def edit_material(e):
+            page.dialog.open = False
+            self.open_edit_modal(page, row['id'])
+        
+        def delete_material(e):
+            page.dialog.open = False
+            self.open_delete_modal(page, row['id'])
+        
+        content_items = [
+            ft.Row([ft.Text("📁 Category:", size=14, color="#CCCCCC", width=100), 
+                    ft.Text(f"{category_icon} {category_name}", size=14, color=self.accent_color)], spacing=8),
+            ft.Row([ft.Text("🏷️ Quality:", size=14, color="#CCCCCC", width=100), 
+                    ft.Container(content=ft.Text(quality, size=12, color="white"),
+                    bgcolor=self.get_quality_color(quality), border_radius=8, padding=ft.padding.symmetric(horizontal=12, vertical=4))], spacing=8),
+            ft.Row([ft.Text("🔢 Quantity:", size=14, color="#CCCCCC", width=100), 
+                    ft.Text(str(quantity), size=16, weight=ft.FontWeight.BOLD,
+                    color=self.danger_color if quantity < 10 else self.text_color)], spacing=8),
+            ft.Row([ft.Text("📍 Location:", size=14, color="#CCCCCC", width=100), 
+                    ft.Text(location, size=14, color=self.text_color)], spacing=8),
+            ft.Divider(),
+            ft.Row([ft.Text("📅 Created:", size=13, color="#CCCCCC", width=100), 
+                    ft.Text(created, size=13, color="#888888")], spacing=8),
+            ft.Row([ft.Text("🔄 Updated:", size=13, color="#CCCCCC", width=100), 
+                    ft.Text(updated, size=13, color="#888888")], spacing=8),
+            ft.Divider(),
+            ft.Row([
+                ft.ElevatedButton("✏️ EDIT", on_click=edit_material, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color)),
+                ft.ElevatedButton("🗑️ DELETE", on_click=delete_material, expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
+            ], spacing=10),
+        ]
+        
+        scrollable_content = ft.Column(content_items, spacing=10, scroll=ft.ScrollMode.AUTO, height=400)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text(name, size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ], spacing=0),
+            content=ft.Container(content=scrollable_content, width=400, padding=15),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
     def get_quality_color(self, quality):
         return self.quality_colors.get(quality, "#CCCCCC")
     
@@ -1386,15 +1455,39 @@ class StoreApp:
             bgcolor=self.card_color,
             border_radius=15,
         )
-    
+        
     def show_materials_screen(self, page: ft.Page):
         page.controls.clear()
         
-        materials = self.dict_list(MaterialManager.get_all())
+        import sqlite3
+        from database import DB_PATH
         
-        # Debug print
-        for m in materials:
-            print(f"Material: {m.get('name')}, Category: {m.get('category')}")
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Check what's in the database
+        cursor.execute("SELECT id, name, category_id FROM materials")
+        print("DEBUG: Current materials in database:")
+        for row in cursor.fetchall():
+            print(f"  ID: {row['id']}, Name: {row['name']}, category_id: {row['category_id']}")
+        
+        # Get materials with category join
+        cursor.execute('''
+            SELECT 
+                m.*, 
+                c.name as category_name, 
+                c.icon as category_icon
+            FROM materials m
+            LEFT JOIN categories c ON m.category_id = c.id
+            ORDER BY m.id DESC
+        ''')
+        rows = cursor.fetchall()
+        conn.close()
+        
+        print(f"DEBUG: Found {len(rows)} materials after join")
+        for row in rows:
+            print(f"  {row['name']} -> category_id: {row['category_id']}, cat_name: {row['category_name']}, icon: {row['category_icon']}")
         
         nav = self.create_bottom_nav(page)
         is_mobile = page.width < 800 if page.width else False
@@ -1404,32 +1497,38 @@ class StoreApp:
         
         cards_container = ft.Column(spacing=10)
         
-        for m in materials:
-            cat_name = m.get('category', 'Uncategorized')
-            cat_icon = self.get_category_icon(cat_name)
-            qty = m.get('quantity', 0)
+        for row in rows:
+            name = row['name']
+            # If category_name is None, use default
+            category_name = row['category_name'] if row['category_name'] else 'Other'
+            category_icon = row['category_icon'] if row['category_icon'] else '📁'
+            qty = row['quantity']
+            quality = row['quality']
+            location = row['location_ids'] if row['location_ids'] else 'N/A'
+            
+            print(f"Building card: {name} -> {category_icon} {category_name}")
             
             card = ft.Card(
                 content=ft.Container(
                     content=ft.Column([
                         ft.Row([
-                            ft.Text(m.get('name', 'N/A'), size=16, weight=ft.FontWeight.BOLD, expand=True),
+                            ft.Text(name, size=16, weight=ft.FontWeight.BOLD, expand=True),
                             ft.Text(f"Qty: {qty}", size=14, weight=ft.FontWeight.BOLD,
                                 color=self.danger_color if qty < 10 else self.text_color),
                         ]),
                         ft.Row([
-                            ft.Text(f"{cat_icon} {cat_name}", size=12, color=self.accent_color),
+                            ft.Text(f"{category_icon} {category_name}", size=12, color=self.accent_color),
                             ft.Container(
-                                content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
-                                bgcolor=self.get_quality_color(m.get('quality', 'Used')),
+                                content=ft.Text(quality, size=10, color="white"),
+                                bgcolor=self.get_quality_color(quality),
                                 border_radius=8,
                                 padding=ft.padding.symmetric(horizontal=8, vertical=2),
                             ),
                         ]),
-                        ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=11, color="#888888"),
+                        ft.Text(f"📍 {location}", size=11, color="#888888"),
                     ], spacing=5),
                     padding=12,
-                    on_click=lambda e, mat=m: self.show_material_detail_dialog(page, mat),
+                    on_click=lambda e, r=row: self.show_material_detail_dialog_from_row(page, r),
                 ),
                 elevation=2,
             )
@@ -2745,11 +2844,9 @@ class StoreApp:
         return None
     
     def show_material_detail_dialog(self, page: ft.Page, material):
-        """STEP 4: Detail dialog with category display"""
-        
         name = material.get('name', 'N/A')
-        category = material.get('category', 'Uncategorized')
-        category_icon = self.get_category_icon(category)
+        category = material.get('category_name', 'Other')
+        category_icon = material.get('category_icon', '📁')
         quality = material.get('quality', 'Used')
         quantity = material.get('quantity', 0)
         location = material.get('location_ids', 'N/A')
@@ -2793,7 +2890,7 @@ class StoreApp:
             ], spacing=10),
         ]
         
-        scrollable_content = ft.Column(content_items, spacing=10, scroll=ft.ScrollMode.AUTO, height=450)
+        scrollable_content = ft.Column(content_items, spacing=10, scroll=ft.ScrollMode.AUTO, height=400)
         
         dialog = ft.AlertDialog(
             title=ft.Row([
@@ -2877,8 +2974,12 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
+        """Add material - FIXED to save category_id correctly"""
         import random
         import string
+        import sqlite3
+        from datetime import datetime
+        from database import DB_PATH
         
         def generate_barcode():
             prefix = "890"
@@ -2896,14 +2997,25 @@ class StoreApp:
         is_mobile = page.width < 800 if page.width else False
         field_width = page.width - 40 if is_mobile and page.width else 350
         
-        categories = ["Raw Material", "Hardware", "Tools", "Electrical", "Plumbing", "Wood", "Metal", "Other"]
+        # Load categories from database
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, icon FROM categories ORDER BY name")
+        categories = cursor.fetchall()
+        conn.close()
+        
+        # Store category mapping
+        category_list = [(c['id'], c['name'], c['icon']) for c in categories]
+        
+        category_options = [ft.dropdown.Option(str(cat_id), f"{icon} {name}") for cat_id, name, icon in category_list]
         
         name_field = ft.TextField(label="Name *", width=field_width, bgcolor=self.card_color)
         category_field = ft.Dropdown(
             label="Category",
             width=field_width,
-            options=[ft.dropdown.Option(cat, cat) for cat in categories],
-            value="Raw Material",
+            options=category_options,
+            value="1",  # Default to Raw Material
             bgcolor=self.card_color,
         )
         quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
@@ -2926,29 +3038,54 @@ class StoreApp:
                 page.update()
                 return
             
-            data = {
-                'name': name_field.value,
-                'category': category_field.value,
-                'quantity': int(quantity_field.value) if quantity_field.value else 0,
-                'quality': quality_field.value,
-                'location_ids': location_field.value,
-                'barcode_value': generate_barcode(),
-            }
+            # Get selected category ID
+            selected_category_id = int(category_field.value)
             
-            result = MaterialManager.create(data)
+            # Find category name and icon for display
+            cat_name = "Other"
+            cat_icon = "📁"
+            for cat_id, name, icon in category_list:
+                if cat_id == selected_category_id:
+                    cat_name = name
+                    cat_icon = icon
+                    break
             
-            if result:
-                page.dialog.open = False
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✓ Added: {name_field.value} ({category_field.value})"), 
-                    bgcolor=self.success_color
-                )
-                page.snack_bar.open = True
-                self.show_materials_screen(page)
-            else:
-                page.snack_bar = ft.SnackBar(ft.Text("Error!"), bgcolor=self.danger_color)
-                page.snack_bar.open = True
-                page.update()
+            print(f"DEBUG: Saving - Name: {name_field.value}, Category ID: {selected_category_id} ({cat_name})")
+            
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Insert into database with category_id
+            insert_conn = sqlite3.connect(DB_PATH)
+            insert_cursor = insert_conn.cursor()
+            insert_cursor.execute('''
+                INSERT INTO materials (name, category_id, quantity, quality, location_ids, barcode_value, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                name_field.value,
+                selected_category_id,
+                int(quantity_field.value) if quantity_field.value else 0,
+                quality_field.value,
+                location_field.value,
+                generate_barcode(),
+                current_time,
+                current_time
+            ))
+            insert_conn.commit()
+            
+            # Verify it was saved correctly
+            insert_cursor.execute("SELECT id, name, category_id FROM materials WHERE id = last_insert_rowid()")
+            saved = insert_cursor.fetchone()
+            print(f"DEBUG: Saved - ID: {saved[0]}, Name: {saved[1]}, Category ID: {saved[2]}")
+            
+            insert_conn.close()
+            
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Added: {name_field.value} ({cat_icon} {cat_name})"), 
+                bgcolor=self.success_color
+            )
+            page.snack_bar.open = True
+            self.show_materials_screen(page)
         
         dialog_content = ft.Column([
             ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD),
