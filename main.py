@@ -2949,7 +2949,7 @@ class StoreApp:
                 pass
         
         return None
-    
+        
     def show_material_detail_dialog(self, page: ft.Page, material):
         """Complete detail dialog showing all fields including image"""
         
@@ -2969,22 +2969,36 @@ class StoreApp:
         created = str(material.get('created_at', ''))[:16] if material.get('created_at') else 'N/A'
         updated = str(material.get('updated_at', ''))[:16] if material.get('updated_at') else 'N/A'
         
-        # Get image path
+        # Get image path - try multiple locations
         image_path = material.get('image_path', '')
         has_image = False
         full_image_path = None
         
-        if image_path and os.path.exists(image_path):
-            has_image = True
-            full_image_path = image_path
-        else:
-            # Try relative path
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            if image_path:
+        print(f"DEBUG: Original image path: {image_path}")
+        
+        if image_path:
+            # Check absolute path
+            if os.path.exists(image_path):
+                has_image = True
+                full_image_path = image_path
+                print(f"DEBUG: Image found at absolute path: {full_image_path}")
+            else:
+                # Check relative to current directory
+                base_dir = os.path.dirname(os.path.abspath(__file__))
                 relative_path = os.path.join(base_dir, image_path)
                 if os.path.exists(relative_path):
                     has_image = True
                     full_image_path = relative_path
+                    print(f"DEBUG: Image found at relative path: {full_image_path}")
+                else:
+                    # Check in images folder
+                    images_path = os.path.join(base_dir, "images", os.path.basename(image_path))
+                    if os.path.exists(images_path):
+                        has_image = True
+                        full_image_path = images_path
+                        print(f"DEBUG: Image found in images folder: {full_image_path}")
+                    else:
+                        print(f"DEBUG: No image found at any location")
         
         is_mobile = page.width < 800 if page.width else False
         dialog_width = page.width - 40 if is_mobile and page.width else 450
@@ -3009,6 +3023,9 @@ class StoreApp:
                 page.overlay.clear()
                 page.update()
             
+            screen_width = page.width if page.width else 400
+            screen_height = page.height if page.height else 600
+            
             fullscreen = ft.Container(
                 content=ft.Column([
                     ft.Row([
@@ -3016,8 +3033,14 @@ class StoreApp:
                         ft.IconButton(icon=ft.icons.CLOSE, icon_size=30, on_click=lambda e: close_fullscreen()),
                     ]),
                     ft.Container(
-                        content=ft.Image(src=full_image_path, fit=ft.ImageFit.CONTAIN),
+                        content=ft.Image(
+                            src=full_image_path, 
+                            fit=ft.ImageFit.CONTAIN,
+                            width=screen_width - 40,
+                            height=screen_height - 100,
+                        ),
                         expand=True,
+                        alignment=ft.alignment.center,
                     ),
                 ], spacing=10),
                 expand=True,
@@ -3029,66 +3052,47 @@ class StoreApp:
         # Create content_items list
         content_items = []
         
-        # In show_material_detail_dialog, update the image section:
+        # Image section
         if has_image:
-            # Create fullscreen function
-            def show_fullscreen(e):
-                def close_fullscreen():
-                    page.overlay.clear()
-                    page.update()
-                
-                # Get screen dimensions for fullscreen
-                screen_width = page.width if page.width else 400
-                screen_height = page.height if page.height else 600
-                
-                fullscreen = ft.Container(
-                    content=ft.Column([
-                        ft.Row([
-                            ft.Container(expand=True),
-                            ft.IconButton(icon=ft.icons.CLOSE, icon_size=30, on_click=lambda e: close_fullscreen()),
-                        ]),
+            content_items.append(
+                ft.Container(
+                    content=ft.Stack([
                         ft.Container(
                             content=ft.Image(
                                 src=full_image_path, 
-                                fit=ft.ImageFit.CONTAIN,  # Auto-scale to fit screen
-                                width=screen_width - 40,
-                                height=screen_height - 100,
+                                fit=ft.ImageFit.CONTAIN,
+                                width=200,
+                                height=150,
                             ),
-                            expand=True,
                             alignment=ft.alignment.center,
                         ),
-                    ], spacing=10),
-                    expand=True,
-                    bgcolor="#000000CC",
-                )
-                page.overlay.append(fullscreen)
-                page.update()
-            
-            content_items.insert(0, ft.Container(
-                content=ft.Stack([
-                    ft.Container(
-                        content=ft.Image(
-                            src=full_image_path, 
-                            fit=ft.ImageFit.CONTAIN,  # Auto-scale to fit container
-                            width=200,
-                            height=150,
+                        ft.Container(
+                            content=ft.Icon(ft.icons.ZOOM_IN, size=20, color="white"),
+                            bgcolor="#00000099",
+                            border_radius=20,
+                            padding=5,
+                            right=5,
+                            top=5,
+                            on_click=show_fullscreen,
+                            ink=True,
                         ),
-                        alignment=ft.alignment.center,
-                    ),
-                    ft.Container(
-                        content=ft.Icon(ft.icons.ZOOM_IN, size=20, color="white"),
-                        bgcolor="#00000099",
-                        border_radius=20,
-                        padding=5,
-                        right=5,
-                        top=5,
-                        on_click=show_fullscreen,
-                        ink=True,
-                    ),
-                ]),
-                alignment=ft.alignment.center,
-                margin=ft.margin.only(bottom=10),
-            ))
+                    ]),
+                    alignment=ft.alignment.center,
+                    margin=ft.margin.only(bottom=10),
+                )
+            )
+        else:
+            content_items.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.icons.IMAGE_NOT_SUPPORTED, size=50, color="#888888"),
+                        ft.Text("No Image Available", size=12, color="#888888"),
+                        ft.Text("Click Edit to add an image", size=10, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.center,
+                    margin=ft.margin.only(bottom=10),
+                )
+            )
         
         # Basic Information Section
         content_items.append(ft.Divider())
@@ -3100,7 +3104,7 @@ class StoreApp:
         ], spacing=8))
         
         content_items.append(ft.Row([
-            ft.Text("📝 Code:", size=13, color="#CCCCCC", width=100),
+            ft.Text("🔢 Barcode:", size=13, color="#CCCCCC", width=100),
             ft.Text(barcode, size=12, color="#888888"),
         ], spacing=8))
         
@@ -3308,7 +3312,7 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Add material with auto-scale image preview"""
+        """Add material - Mobile optimized with keyboard awareness"""
         import random
         import string
         import sqlite3
@@ -3332,18 +3336,19 @@ class StoreApp:
         
         is_mobile = page.width < 800 if page.width else False
         
+        # Use smaller height on mobile to accommodate keyboard
         if is_mobile:
             field_width = page.width - 40 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
-            scroll_height = 420
-            preview_width = 120
-            preview_height = 100
+            scroll_height = 320  # Reduced to leave room for keyboard
+            preview_width = 100
+            preview_height = 80
         else:
             field_width = 350
             dialog_width = 450
-            scroll_height = 480
-            preview_width = 150
-            preview_height = 120
+            scroll_height = 420
+            preview_width = 120
+            preview_height = 100
         
         # Create images folder
         images_folder = "images"
@@ -3360,14 +3365,11 @@ class StoreApp:
         
         category_options = [ft.dropdown.Option(str(c['id']), f"{c['icon']} {c['name']}") for c in categories]
         
-        # Create scrollable container
-        scroll_view = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, height=scroll_height)
-        
-        # Form fields
+        # Form fields - simplified for mobile
         name_field = ft.TextField(label="Name *", width=field_width, bgcolor=self.card_color)
         category_field = ft.Dropdown(label="Category", width=field_width, options=category_options, value="1", bgcolor=self.card_color)
         quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
-        size_field = ft.TextField(label="Size", width=field_width, bgcolor=self.card_color, hint_text="e.g., 34 1/2 or 24.5")
+        size_field = ft.TextField(label="Size", width=field_width, bgcolor=self.card_color, hint_text="e.g., 34 1/2")
         length_field = ft.TextField(label="Length (auto)", width=field_width, bgcolor=self.card_color, read_only=True)
         quality_field = ft.Dropdown(label="Quality", width=field_width,
             options=[ft.dropdown.Option("New"), ft.dropdown.Option("Used"), ft.dropdown.Option("Damaged"), ft.dropdown.Option("Repaired")],
@@ -3376,8 +3378,8 @@ class StoreApp:
         color_field = ft.TextField(label="Colors", width=field_width, bgcolor=self.card_color)
         notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
-        # Image upload section with auto-scale container
-        image_status_text = ft.Text("No image selected (max 2MB)", size=10, color="#888888")
+        # Image upload section
+        image_status_text = ft.Text("No image (max 2MB)", size=9, color="#888888")
         
         # Auto-scale image container
         image_preview_container = ft.Container(
@@ -3386,51 +3388,47 @@ class StoreApp:
             bgcolor="#2C2C2C",
             border_radius=8,
             content=ft.Column([
-                ft.Icon(ft.icons.IMAGE, size=40, color="#888888"),
-                ft.Text("No Image", size=10, color="#888888"),
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                ft.Icon(ft.icons.IMAGE, size=30, color="#888888"),
+                ft.Text("No Image", size=8, color="#888888"),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
             alignment=ft.alignment.center,
         )
         
         selected_temp_image = None
-        selected_file_size = 0
         
         def on_image_picked(e: ft.FilePickerResultEvent):
-            nonlocal selected_temp_image, selected_file_size
+            nonlocal selected_temp_image
             if e.files:
                 file = e.files[0]
                 file_size = file.size
                 
-                # Check file size (max 2MB = 2,000,000 bytes)
-                MAX_SIZE = 2 * 1024 * 1024  # 2MB
-                
+                # Check file size (max 2MB)
+                MAX_SIZE = 2 * 1024 * 1024
                 if file_size > MAX_SIZE:
                     size_mb = file_size / (1024 * 1024)
-                    image_status_text.value = f"❌ File too large! {size_mb:.1f}MB (max 2MB)"
+                    image_status_text.value = f"❌ Too large! {size_mb:.1f}MB (max 2MB)"
                     image_status_text.color = self.danger_color
                     page.update()
                     return
                 
                 selected_temp_image = file.path
-                selected_file_size = file_size
                 
-                # Update preview with auto-scale image
                 try:
                     image_preview_container.content = ft.Container(
                         content=ft.Image(
                             src=selected_temp_image, 
-                            fit=ft.ImageFit.CONTAIN,  # Auto-scale to fit container
+                            fit=ft.ImageFit.CONTAIN,
                             width=preview_width - 10,
                             height=preview_height - 10,
                         ),
                         alignment=ft.alignment.center,
                     )
                     size_kb = file_size / 1024
-                    image_status_text.value = f"✓ {file.name[:15]} ({size_kb:.0f}KB)"
+                    image_status_text.value = f"✓ {file.name[:12]} ({size_kb:.0f}KB)"
                     image_status_text.color = self.success_color
                     page.update()
-                except Exception as ex:
-                    print(f"Preview error: {ex}")
+                except:
+                    pass
         
         image_picker = ft.FilePicker(on_result=on_image_picked)
         page.overlay.append(image_picker)
@@ -3439,10 +3437,11 @@ class StoreApp:
             image_picker.pick_files(allow_multiple=False, allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
         
         upload_btn = ft.ElevatedButton(
-            "📁 Upload Image",
+            "📁 Upload",
             on_click=upload_image,
             icon=ft.icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
+            height=36,
         )
         
         def save_uploaded_image():
@@ -3452,17 +3451,19 @@ class StoreApp:
                 new_filename = f"material_{timestamp}{file_ext}"
                 new_path = os.path.join(images_folder, new_filename)
                 shutil.copy2(selected_temp_image, new_path)
-                return new_path
+                # Store RELATIVE path (not absolute)
+                return f"images/{new_filename}"  # This is the key fix!
             return None
         
-        # Image row with centered preview
-        image_row = ft.Column([
+        # Image row - compact
+        image_row = ft.Row([
             upload_btn,
-            ft.Row([image_preview_container], alignment=ft.MainAxisAlignment.CENTER),
-            image_status_text,
-        ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+            ft.Container(width=5),
+            image_preview_container,
+        ], alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         
-        scroll_view.controls.extend([
+        # Create scrollable fields with REDUCED height for keyboard
+        scroll_view = ft.Column([
             name_field,
             category_field,
             quantity_field,
@@ -3472,8 +3473,9 @@ class StoreApp:
             location_field,
             color_field,
             image_row,
+            image_status_text,
             notes_field,
-        ])
+        ], spacing=8, scroll=ft.ScrollMode.AUTO, height=scroll_height)
         
         def update_length(e):
             size_value = size_field.value
@@ -3527,10 +3529,11 @@ class StoreApp:
             conn.close()
             
             page.dialog.open = False
-            page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color)
+            page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=2000)
             page.snack_bar.open = True
             self.show_materials_screen(page)
         
+        # Dialog content with FIXED footer (buttons always visible)
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text("Add New Material", size=16, weight=ft.FontWeight.BOLD, expand=True),
@@ -3543,16 +3546,21 @@ class StoreApp:
                 ft.TextButton("Cancel", on_click=close_dialog, expand=True),
                 ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
             ], spacing=8),
-        ], spacing=8)
+        ], spacing=6)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=dialog_width, padding=10),
+            content=ft.Container(content=dialog_content, width=dialog_width, padding=8),
             modal=True,
         )
         
         page.dialog = dialog
         dialog.open = True
+        
+        # Auto-scroll to bottom when keyboard appears (mobile)
+        if is_mobile:
+            page.update()
+        
         page.update()
         
     def open_edit_modal(self, page: ft.Page, material_id):
