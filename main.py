@@ -3029,39 +3029,66 @@ class StoreApp:
         # Create content_items list
         content_items = []
         
-        # Image section
+        # In show_material_detail_dialog, update the image section:
         if has_image:
-            content_items.append(
-                ft.Container(
-                    content=ft.Stack([
-                        ft.Image(src=full_image_path, width=200, height=150, fit=ft.ImageFit.CONTAIN),
-                        ft.Container(
-                            content=ft.Icon(ft.icons.ZOOM_IN, size=20, color="white"),
-                            bgcolor="#00000099",
-                            border_radius=20,
-                            padding=5,
-                            right=5,
-                            top=5,
-                            on_click=show_fullscreen,
-                            ink=True,
-                        ),
-                    ]),
-                    alignment=ft.alignment.center,
-                    margin=ft.margin.only(bottom=10),
-                )
-            )
-        else:
-            content_items.append(
-                ft.Container(
+            # Create fullscreen function
+            def show_fullscreen(e):
+                def close_fullscreen():
+                    page.overlay.clear()
+                    page.update()
+                
+                # Get screen dimensions for fullscreen
+                screen_width = page.width if page.width else 400
+                screen_height = page.height if page.height else 600
+                
+                fullscreen = ft.Container(
                     content=ft.Column([
-                        ft.Icon(ft.icons.IMAGE_NOT_SUPPORTED, size=50, color="#888888"),
-                        ft.Text("No Image Available", size=12, color="#888888"),
-                        ft.Text("Click Edit to add an image", size=10, color="#888888"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    alignment=ft.alignment.center,
-                    margin=ft.margin.only(bottom=10),
+                        ft.Row([
+                            ft.Container(expand=True),
+                            ft.IconButton(icon=ft.icons.CLOSE, icon_size=30, on_click=lambda e: close_fullscreen()),
+                        ]),
+                        ft.Container(
+                            content=ft.Image(
+                                src=full_image_path, 
+                                fit=ft.ImageFit.CONTAIN,  # Auto-scale to fit screen
+                                width=screen_width - 40,
+                                height=screen_height - 100,
+                            ),
+                            expand=True,
+                            alignment=ft.alignment.center,
+                        ),
+                    ], spacing=10),
+                    expand=True,
+                    bgcolor="#000000CC",
                 )
-            )
+                page.overlay.append(fullscreen)
+                page.update()
+            
+            content_items.insert(0, ft.Container(
+                content=ft.Stack([
+                    ft.Container(
+                        content=ft.Image(
+                            src=full_image_path, 
+                            fit=ft.ImageFit.CONTAIN,  # Auto-scale to fit container
+                            width=200,
+                            height=150,
+                        ),
+                        alignment=ft.alignment.center,
+                    ),
+                    ft.Container(
+                        content=ft.Icon(ft.icons.ZOOM_IN, size=20, color="white"),
+                        bgcolor="#00000099",
+                        border_radius=20,
+                        padding=5,
+                        right=5,
+                        top=5,
+                        on_click=show_fullscreen,
+                        ink=True,
+                    ),
+                ]),
+                alignment=ft.alignment.center,
+                margin=ft.margin.only(bottom=10),
+            ))
         
         # Basic Information Section
         content_items.append(ft.Divider())
@@ -3281,7 +3308,7 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Add material with image upload"""
+        """Add material with auto-scale image preview"""
         import random
         import string
         import sqlite3
@@ -3309,12 +3336,14 @@ class StoreApp:
             field_width = page.width - 40 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
             scroll_height = 420
-            preview_size = 80
+            preview_width = 120
+            preview_height = 100
         else:
             field_width = 350
             dialog_width = 450
             scroll_height = 480
-            preview_size = 100
+            preview_width = 150
+            preview_height = 120
         
         # Create images folder
         images_folder = "images"
@@ -3347,36 +3376,61 @@ class StoreApp:
         color_field = ft.TextField(label="Colors", width=field_width, bgcolor=self.card_color)
         notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
-        # Image upload section
-        image_status_text = ft.Text("No image selected", size=11, color="#888888")
-        image_preview = ft.Container(
+        # Image upload section with auto-scale container
+        image_status_text = ft.Text("No image selected (max 2MB)", size=10, color="#888888")
+        
+        # Auto-scale image container
+        image_preview_container = ft.Container(
+            width=preview_width,
+            height=preview_height,
+            bgcolor="#2C2C2C",
+            border_radius=8,
             content=ft.Column([
                 ft.Icon(ft.icons.IMAGE, size=40, color="#888888"),
                 ft.Text("No Image", size=10, color="#888888"),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-            width=preview_size,
-            height=preview_size - 10,
-            bgcolor="#2C2C2C",
-            border_radius=8,
+            alignment=ft.alignment.center,
         )
+        
         selected_temp_image = None
+        selected_file_size = 0
         
         def on_image_picked(e: ft.FilePickerResultEvent):
-            nonlocal selected_temp_image
+            nonlocal selected_temp_image, selected_file_size
             if e.files:
                 file = e.files[0]
+                file_size = file.size
+                
+                # Check file size (max 2MB = 2,000,000 bytes)
+                MAX_SIZE = 2 * 1024 * 1024  # 2MB
+                
+                if file_size > MAX_SIZE:
+                    size_mb = file_size / (1024 * 1024)
+                    image_status_text.value = f"❌ File too large! {size_mb:.1f}MB (max 2MB)"
+                    image_status_text.color = self.danger_color
+                    page.update()
+                    return
+                
                 selected_temp_image = file.path
-                # Update preview
+                selected_file_size = file_size
+                
+                # Update preview with auto-scale image
                 try:
-                    image_preview.content = ft.Column([
-                        ft.Image(src=selected_temp_image, width=preview_size - 10, height=preview_size - 20, fit=ft.ImageFit.CONTAIN),
-                        ft.Text("✓ Selected", size=9, color=self.success_color),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
-                    image_status_text.value = f"✓ {file.name[:20]}{'...' if len(file.name) > 20 else ''}"
+                    image_preview_container.content = ft.Container(
+                        content=ft.Image(
+                            src=selected_temp_image, 
+                            fit=ft.ImageFit.CONTAIN,  # Auto-scale to fit container
+                            width=preview_width - 10,
+                            height=preview_height - 10,
+                        ),
+                        alignment=ft.alignment.center,
+                    )
+                    size_kb = file_size / 1024
+                    image_status_text.value = f"✓ {file.name[:15]} ({size_kb:.0f}KB)"
                     image_status_text.color = self.success_color
                     page.update()
-                except:
-                    pass
+                except Exception as ex:
+                    print(f"Preview error: {ex}")
         
         image_picker = ft.FilePicker(on_result=on_image_picked)
         page.overlay.append(image_picker)
@@ -3401,10 +3455,10 @@ class StoreApp:
                 return new_path
             return None
         
-        # Image row
+        # Image row with centered preview
         image_row = ft.Column([
             upload_btn,
-            ft.Row([image_preview], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Row([image_preview_container], alignment=ft.MainAxisAlignment.CENTER),
             image_status_text,
         ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         
@@ -3502,7 +3556,7 @@ class StoreApp:
         page.update()
         
     def open_edit_modal(self, page: ft.Page, material_id):
-        """Edit material with image upload"""
+        """Edit material with auto-scale image preview"""
         import sqlite3
         import os
         import shutil
@@ -3533,12 +3587,14 @@ class StoreApp:
             field_width = page.width - 40 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
             scroll_height = 420
-            preview_size = 80
+            preview_width = 120
+            preview_height = 100
         else:
             field_width = 350
             dialog_width = 450
             scroll_height = 480
-            preview_size = 100
+            preview_width = 150
+            preview_height = 120
         
         # Create images folder
         images_folder = "images"
@@ -3563,34 +3619,49 @@ class StoreApp:
         color_field = ft.TextField(label="Colors", value=material['colors'] or "", width=field_width, bgcolor=self.card_color)
         notes_field = ft.TextField(label="Notes", value=material['notes'] or "", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
-        # Image handling
+        # Image handling with auto-scale container
         current_image_path = material['image_path'] if material['image_path'] else None
         has_current_image = current_image_path and os.path.exists(current_image_path) if current_image_path else False
         
-        # Image preview
-        image_preview = ft.Container(
+        # Auto-scale image container
+        image_preview_container = ft.Container(
+            width=preview_width,
+            height=preview_height,
+            bgcolor="#2C2C2C",
+            border_radius=8,
             content=ft.Column([
                 ft.Icon(ft.icons.IMAGE, size=40, color="#888888"),
                 ft.Text("No Image", size=10, color="#888888"),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
-            width=preview_size,
-            height=preview_size - 10,
-            bgcolor="#2C2C2C",
-            border_radius=8,
+            alignment=ft.alignment.center,
         )
         
         if has_current_image:
             try:
-                image_preview.content = ft.Column([
-                    ft.Image(src=current_image_path, width=preview_size - 10, height=preview_size - 20, fit=ft.ImageFit.CONTAIN),
-                    ft.Text("Current", size=9, color=self.accent_color),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
+                # Get file size for display
+                file_size = os.path.getsize(current_image_path)
+                size_kb = file_size / 1024
+                size_text = f"({size_kb:.0f}KB)" if size_kb < 1024 else f"({size_kb/1024:.1f}MB)"
+                
+                image_preview_container.content = ft.Container(
+                    content=ft.Image(
+                        src=current_image_path, 
+                        fit=ft.ImageFit.CONTAIN,  # Auto-scale to fit container
+                        width=preview_width - 10,
+                        height=preview_height - 10,
+                    ),
+                    alignment=ft.alignment.center,
+                )
+                image_status_text_value = f"Current image {size_text}"
+                image_status_color = self.accent_color
             except:
-                pass
+                image_status_text_value = "Current image (error loading)"
+                image_status_color = self.danger_color
+        else:
+            image_status_text_value = "No image (max 2MB)"
+            image_status_color = "#888888"
         
-        image_status_text = ft.Text("Current image" if has_current_image else "No image", size=11, color="#888888")
-        if has_current_image:
-            image_status_text.color = self.accent_color
+        image_status_text = ft.Text(image_status_text_value, size=10, color=image_status_color)
         
         selected_temp_image = None
         delete_current = False
@@ -3599,14 +3670,32 @@ class StoreApp:
             nonlocal selected_temp_image, delete_current
             if e.files:
                 file = e.files[0]
+                file_size = file.size
+                
+                # Check file size (max 2MB)
+                MAX_SIZE = 2 * 1024 * 1024  # 2MB
+                
+                if file_size > MAX_SIZE:
+                    size_mb = file_size / (1024 * 1024)
+                    image_status_text.value = f"❌ File too large! {size_mb:.1f}MB (max 2MB)"
+                    image_status_text.color = self.danger_color
+                    page.update()
+                    return
+                
                 selected_temp_image = file.path
                 delete_current = False
                 try:
-                    image_preview.content = ft.Column([
-                        ft.Image(src=selected_temp_image, width=preview_size - 10, height=preview_size - 20, fit=ft.ImageFit.CONTAIN),
-                        ft.Text("New selected", size=9, color=self.success_color),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
-                    image_status_text.value = f"✓ {file.name[:20]}{'...' if len(file.name) > 20 else ''}"
+                    size_kb = file_size / 1024
+                    image_preview_container.content = ft.Container(
+                        content=ft.Image(
+                            src=selected_temp_image, 
+                            fit=ft.ImageFit.CONTAIN,
+                            width=preview_width - 10,
+                            height=preview_height - 10,
+                        ),
+                        alignment=ft.alignment.center,
+                    )
+                    image_status_text.value = f"✓ {file.name[:20]} ({size_kb:.0f}KB)"
                     image_status_text.color = self.success_color
                     page.update()
                 except:
@@ -3622,7 +3711,7 @@ class StoreApp:
             nonlocal delete_current, selected_temp_image
             delete_current = True
             selected_temp_image = None
-            image_preview.content = ft.Column([
+            image_preview_container.content = ft.Column([
                 ft.Icon(ft.icons.DELETE, size=40, color=self.danger_color),
                 ft.Text("Will be deleted", size=9, color=self.danger_color),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3)
@@ -3658,7 +3747,7 @@ class StoreApp:
         # Image row
         image_row = ft.Column([
             ft.Row([upload_btn, delete_btn], spacing=8, alignment=ft.MainAxisAlignment.CENTER),
-            ft.Row([image_preview], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Row([image_preview_container], alignment=ft.MainAxisAlignment.CENTER),
             image_status_text,
         ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         
