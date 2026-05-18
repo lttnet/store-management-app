@@ -3148,7 +3148,7 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Complete add modal with all fields and category support"""
+        """Add material - Working buttons on mobile"""
         import random
         import string
         import sqlite3
@@ -3170,7 +3170,6 @@ class StoreApp:
         
         is_mobile = page.width < 800 if page.width else False
         field_width = page.width - 40 if is_mobile and page.width else 350
-        scroll_height = 450 if is_mobile else 500
         
         # Load categories
         conn = sqlite3.connect(DB_PATH)
@@ -3184,26 +3183,30 @@ class StoreApp:
         
         # Form fields
         name_field = ft.TextField(label="Name *", width=field_width, bgcolor=self.card_color)
-        category_field = ft.Dropdown(label="Category", width=field_width, 
-                                    options=category_options, value="1", bgcolor=self.card_color)
+        category_field = ft.Dropdown(label="Category", width=field_width, options=category_options, value="1", bgcolor=self.card_color)
         quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
-        size_field = ft.TextField(label="Size", width=field_width, bgcolor=self.card_color, 
-                                hint_text="e.g., 34 1/2 or 24.5")
+        size_field = ft.TextField(label="Size", width=field_width, bgcolor=self.card_color, hint_text="e.g., 34 1/2 or 24.5")
         length_field = ft.TextField(label="Length (auto)", width=field_width, bgcolor=self.card_color, read_only=True)
         quality_field = ft.Dropdown(label="Quality", width=field_width,
-            options=[ft.dropdown.Option("New"), ft.dropdown.Option("Used"), 
-                    ft.dropdown.Option("Damaged"), ft.dropdown.Option("Repaired")],
+            options=[ft.dropdown.Option("New"), ft.dropdown.Option("Used"), ft.dropdown.Option("Damaged"), ft.dropdown.Option("Repaired")],
             value="New", bgcolor=self.card_color)
         location_field = ft.TextField(label="Location", width=field_width, bgcolor=self.card_color)
         color_field = ft.TextField(label="Colors", width=field_width, bgcolor=self.card_color)
-        notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, 
-                                    multiline=True, min_lines=2, max_lines=3)
+        notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
         def update_length(e):
             size_value = size_field.value
             if size_value:
-                converted = self.convert_size_to_length(size_value)
-                length_field.value = str(converted) if converted else ""
+                try:
+                    if ' ' in size_value and '/' in size_value:
+                        parts = size_value.split()
+                        whole = float(parts[0])
+                        frac = parts[1].split('/')
+                        length_field.value = str(whole + float(frac[0]) / float(frac[1]))
+                    else:
+                        length_field.value = str(float(size_value))
+                except:
+                    length_field.value = size_value
             else:
                 length_field.value = ""
             page.update()
@@ -3227,8 +3230,7 @@ class StoreApp:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO materials (name, category_id, quantity, quality, location_ids, 
-                                    size, length, colors, notes, barcode_value, created_at, updated_at)
+                INSERT INTO materials (name, category_id, quantity, quality, location_ids, size, length, colors, notes, barcode_value, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 name_field.value, selected_category_id,
@@ -3246,23 +3248,31 @@ class StoreApp:
             page.snack_bar.open = True
             self.show_materials_screen(page)
         
-        scroll_content = ft.Column([
-            name_field, category_field, quantity_field, size_field, length_field,
-            quality_field, location_field, color_field, notes_field,
-        ], spacing=12, scroll=ft.ScrollMode.AUTO)
+        # Create scrollable fields (WITHOUT buttons inside)
+        scrollable_fields = ft.Column([
+            name_field,
+            category_field,
+            quantity_field,
+            size_field,
+            length_field,
+            quality_field,
+            location_field,
+            color_field,
+            notes_field,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=400 if is_mobile else 450)
         
+        # Dialog content with buttons SEPARATE from scroll
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ]),
             ft.Divider(),
-            ft.Container(content=scroll_content, height=scroll_height),
+            scrollable_fields,
             ft.Divider(),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog, expand=True),
-                ft.FilledButton("Save", on_click=save_material, 
-                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
+                ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
             ], spacing=10),
         ], spacing=10)
         
@@ -3277,7 +3287,7 @@ class StoreApp:
         page.update()
         
     def open_edit_modal(self, page: ft.Page, material_id):
-        """Complete edit modal with all fields"""
+        """Edit material - Working buttons on mobile"""
         import sqlite3
         from database import DB_PATH
         from datetime import datetime
@@ -3286,12 +3296,7 @@ class StoreApp:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT m.*, c.name as category_name, c.icon as category_icon
-            FROM materials m
-            LEFT JOIN categories c ON m.category_id = c.id
-            WHERE m.id = ?
-        ''', (material_id,))
+        cursor.execute("SELECT * FROM materials WHERE id = ?", (material_id,))
         material = cursor.fetchone()
         
         # Load categories
@@ -3307,26 +3312,21 @@ class StoreApp:
         
         is_mobile = page.width < 800 if page.width else False
         field_width = page.width - 40 if is_mobile and page.width else 350
-        scroll_height = 450 if is_mobile else 500
         
         category_options = [ft.dropdown.Option(str(c['id']), f"{c['icon']} {c['name']}") for c in categories]
         
-        # Form fields with current values
+        # Form fields
         name_field = ft.TextField(label="Name *", value=material['name'], width=field_width, bgcolor=self.card_color)
-        category_field = ft.Dropdown(label="Category", width=field_width, options=category_options,
-                                    value=str(material['category_id']), bgcolor=self.card_color)
+        category_field = ft.Dropdown(label="Category", width=field_width, options=category_options, value=str(material['category_id']), bgcolor=self.card_color)
         quantity_field = ft.TextField(label="Quantity", value=str(material['quantity']), width=field_width, bgcolor=self.card_color)
         size_field = ft.TextField(label="Size", value=material['size'] or "", width=field_width, bgcolor=self.card_color)
-        length_field = ft.TextField(label="Length", value=str(material['length']) if material['length'] else "", 
-                                    width=field_width, bgcolor=self.card_color)
+        length_field = ft.TextField(label="Length", value=str(material['length']) if material['length'] else "", width=field_width, bgcolor=self.card_color)
         quality_field = ft.Dropdown(label="Quality", width=field_width,
-            options=[ft.dropdown.Option("New"), ft.dropdown.Option("Used"), 
-                    ft.dropdown.Option("Damaged"), ft.dropdown.Option("Repaired")],
+            options=[ft.dropdown.Option("New"), ft.dropdown.Option("Used"), ft.dropdown.Option("Damaged"), ft.dropdown.Option("Repaired")],
             value=material['quality'], bgcolor=self.card_color)
         location_field = ft.TextField(label="Location", value=material['location_ids'] or "", width=field_width, bgcolor=self.card_color)
         color_field = ft.TextField(label="Colors", value=material['colors'] or "", width=field_width, bgcolor=self.card_color)
-        notes_field = ft.TextField(label="Notes", value=material['notes'] or "", width=field_width, 
-                                    bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
+        notes_field = ft.TextField(label="Notes", value=material['notes'] or "", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
         def close_dialog(e):
             page.dialog.open = False
@@ -3365,23 +3365,31 @@ class StoreApp:
             page.snack_bar.open = True
             self.show_materials_screen(page)
         
-        scroll_content = ft.Column([
-            name_field, category_field, quantity_field, size_field, length_field,
-            quality_field, location_field, color_field, notes_field,
-        ], spacing=12, scroll=ft.ScrollMode.AUTO)
+        # Create scrollable fields (WITHOUT buttons inside)
+        scrollable_fields = ft.Column([
+            name_field,
+            category_field,
+            quantity_field,
+            size_field,
+            length_field,
+            quality_field,
+            location_field,
+            color_field,
+            notes_field,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=400 if is_mobile else 450)
         
+        # Dialog content with buttons SEPARATE from scroll
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text("Edit Material", size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ]),
             ft.Divider(),
-            ft.Container(content=scroll_content, height=scroll_height),
+            scrollable_fields,
             ft.Divider(),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog, expand=True),
-                ft.FilledButton("Update", on_click=update_material, 
-                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
+                ft.FilledButton("Update", on_click=update_material, style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
             ], spacing=10),
         ], spacing=10)
         
