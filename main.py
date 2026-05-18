@@ -2000,182 +2000,174 @@ class StoreApp:
 
                     # ============ ACCESSORIES SCREEN ============
     def show_accessories(self, page: ft.Page):
-        """Accessories screen - Click card to see details"""
+        """Accessories screen with search and filter - Working like Materials"""
         page.controls.clear()
         
-        accessories = self.dict_list(AccessoryManager.get_all())
+        import sqlite3
+        from database import DB_PATH
+        
+        # Load accessories with categories
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT a.*, c.name as category_name, c.icon as category_icon
+            FROM accessories a
+            LEFT JOIN categories c ON a.category_id = c.id
+            ORDER BY a.id DESC
+        """)
+        accessories = cursor.fetchall()
+        
+        # Load categories for filter
+        cursor.execute("SELECT id, name, icon FROM categories ORDER BY name")
+        categories = cursor.fetchall()
+        conn.close()
+        
         nav = self.create_bottom_nav(page)
+        is_mobile = page.width < 800 if page.width else False
         
-        # Get categories
-        categories = ["All"]
-        for a in accessories:
-            cat = a.get('category', 'Uncategorized')
-            if cat not in categories:
-                categories.append(cat)
-        categories.sort()
-        
-        # Create mutable variables using list or dictionary
-        filter_state = {
-            'current_quality': "All",
-            'current_category': "All",
-            'search_query': ""
-        }
-        
+        # Main container
         main_column = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         
-        # Title
-        main_column.controls.append(
-            ft.Text("Accessories", size=28, weight=ft.FontWeight.BOLD, color=self.text_color)
-        )
+        # Header
+        main_column.controls.append(ft.Text("Accessories", size=28, weight=ft.FontWeight.BOLD, color=self.text_color))
         
         # Search Field
         search_field = ft.TextField(
             hint_text="Search accessories...",
             bgcolor=self.card_color,
             border_color=self.accent_color,
+            prefix_icon=ft.icons.SEARCH,
         )
         main_column.controls.append(search_field)
-        main_column.controls.append(ft.Container(height=5))
         
-        # Quality Filters
-        quality_filter_row = ft.Row(spacing=8, wrap=True)
-        quality_buttons = {}
-        
-        def create_quality_handler(label):
-            def handler(e):
-                # Update filter state
-                filter_state['current_quality'] = label
-                # Update button colors
-                color_map = {
-                    "All": self.accent_color,
-                    "New": self.success_color,
-                    "Used": self.warning_color,
-                    "Damaged": self.danger_color,
-                    "Repaired": self.accent_color,
-                }
-                for lbl, btn in quality_buttons.items():
-                    btn.bgcolor = color_map.get(lbl, self.card_color) if lbl == label else self.card_color
-                    btn.update()
-                update_cards()
-            return handler
-        
-        for label in ["All", "New", "Used", "Damaged", "Repaired"]:
-            btn = ft.Container(
-                content=ft.Text(label, size=12, color=self.text_color),
-                padding=ft.padding.symmetric(horizontal=12, vertical=5),
-                bgcolor=self.accent_color if label == "All" else self.card_color,
-                border_radius=20,
-                ink=True,
-                on_click=create_quality_handler(label),
-            )
-            quality_buttons[label] = btn
-            quality_filter_row.controls.append(btn)
-        
-        main_column.controls.append(quality_filter_row)
-        main_column.controls.append(ft.Container(height=5))
-        
-        # Category Filter
-        category_row = ft.Row(spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        # Category filter
+        cat_options = [ft.dropdown.Option("All", "All Categories")]
+        for c in categories:
+            cat_options.append(ft.dropdown.Option(str(c["id"]), f"{c['icon']} {c['name']}"))
         
         category_filter = ft.Dropdown(
             label="Category",
-            width=150,
-            options=[ft.dropdown.Option(cat, cat) for cat in categories],
+            width=150 if not is_mobile else 120,
+            options=cat_options,
             value="All",
             bgcolor=self.card_color,
         )
-        category_row.controls.append(category_filter)
         
-        # Category Manager Button
-        category_manager_btn = ft.IconButton(
-            icon=ft.icons.SETTINGS,
+        # Add Category Button (same as materials)
+        def show_add_category_dialog(e):
+            def add_new_category():
+                new_name = new_cat_field.value.strip()
+                if new_name:
+                    conn2 = sqlite3.connect(DB_PATH)
+                    cur = conn2.cursor()
+                    try:
+                        cur.execute("INSERT INTO categories (name, icon) VALUES (?, ?)", (new_name, icon_dropdown.value))
+                        conn2.commit()
+                        page.snack_bar = ft.SnackBar(ft.Text(f"✓ Category '{new_name}' added"), bgcolor=self.success_color)
+                        page.snack_bar.open = True
+                        page.dialog.open = False
+                        self.show_accessories(page)
+                    except:
+                        page.snack_bar = ft.SnackBar(ft.Text("Category already exists!"), bgcolor=self.danger_color)
+                        page.snack_bar.open = True
+                    finally:
+                        conn2.close()
+            
+            icon_options = ["📦", "🔩", "🔧", "⚡", "💧", "🪵", "⚙️", "📁", "🔨", "🪚", "📏"]
+            new_cat_field = ft.TextField(label="Category Name", width=250)
+            icon_dropdown = ft.Dropdown(label="Icon", width=100, options=[ft.dropdown.Option(icon, icon) for icon in icon_options], value="📁")
+            
+            dialog = ft.AlertDialog(
+                title=ft.Text("Add New Category"),
+                content=ft.Container(content=ft.Column([new_cat_field, icon_dropdown], spacing=10), width=350, padding=20),
+                actions=[
+                    ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False)),
+                    ft.FilledButton("Add", on_click=lambda e: add_new_category(), style=ft.ButtonStyle(bgcolor=self.success_color))
+                ]
+            )
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
+        
+        add_category_btn = ft.IconButton(
+            icon=ft.icons.ADD_CIRCLE_OUTLINE,
+            icon_size=24,
+            icon_color=self.success_color,
+            tooltip="Add New Category",
+            on_click=show_add_category_dialog,
+        )
+        
+        # Category row
+        main_column.controls.append(ft.Row([category_filter, add_category_btn], spacing=8))
+        
+        # Refresh button
+        refresh_btn = ft.IconButton(
+            icon=ft.icons.REFRESH,
             icon_size=20,
             icon_color=self.accent_color,
-            on_click=lambda e: self.show_category_manager(page),
+            on_click=lambda e: self.show_accessories(page),
         )
-        category_row.controls.append(category_manager_btn)
-        
-        main_column.controls.append(category_row)
-        main_column.controls.append(ft.Container(height=5))
+        main_column.controls.append(ft.Row([refresh_btn], alignment=ft.MainAxisAlignment.END))
         
         # Cards container
         cards_container = ft.Column(spacing=10)
+        main_column.controls.append(cards_container)
         
         def update_cards():
-            search_query = search_field.value.lower() if search_field.value else ""
             cards_container.controls.clear()
+            search_query = search_field.value.lower() if search_field.value else ""
+            selected_cat_id = category_filter.value
             
+            filtered_count = 0
             for a in accessories:
-                # Quality filter
-                if filter_state['current_quality'] != "All" and a.get('quality') != filter_state['current_quality']:
+                if search_query and search_query not in a["name"].lower():
                     continue
-                # Category filter
-                if filter_state['current_category'] != "All" and a.get('category', 'Uncategorized') != filter_state['current_category']:
-                    continue
-                # Search filter
-                if search_query and search_query not in a.get('name', '').lower():
+                if selected_cat_id != "All" and str(a["category_id"]) != selected_cat_id:
                     continue
                 
-                cat_name = a.get('category', 'Uncategorized')
-                cat_icon = self.get_category_icon(cat_name)
-                qty = a.get('quantity', 0)
-                qty_color = self.danger_color if qty < 10 else self.text_color
-                location = a.get('location') or a.get('location_ids') or 'N/A'
-                price = a.get('price', 0)
-                price_text = f"${price:.2f}" if price else ""
-                
-                # Store accessory for dialog
-                accessory_data = a
+                filtered_count += 1
+                cat_name = a["category_name"] if a["category_name"] else "Other"
+                cat_icon = a["category_icon"] if a["category_icon"] else "📁"
+                qty = a["quantity"]
+                price = a["price"] if a["price"] else 0
+                price_text = f"${price:.2f}" if price > 0 else ""
                 
                 card = ft.Card(
                     content=ft.Container(
                         content=ft.Column([
                             ft.Row([
-                                ft.Text(a.get('name', 'N/A'), size=18, weight=ft.FontWeight.BOLD, expand=True),
-                                ft.Text(f"Qty: {qty}", size=14, weight=ft.FontWeight.BOLD, color=qty_color),
+                                ft.Text(a["name"], size=16, weight=ft.FontWeight.BOLD, expand=True),
+                                ft.Text(f"Qty: {qty}", size=14, weight=ft.FontWeight.BOLD, color=self.danger_color if qty < 10 else self.text_color),
                             ]),
                             ft.Row([
                                 ft.Text(f"{cat_icon} {cat_name}", size=12, color=self.accent_color, expand=True),
-                                ft.Container(
-                                    content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
-                                    bgcolor=self.get_quality_color(a.get('quality', 'Used')),
-                                    border_radius=8,
-                                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
-                                ),
+                                ft.Container(content=ft.Text(a["quality"], size=10, color="white"), bgcolor=self.get_quality_color(a["quality"]), border_radius=8, padding=ft.padding.symmetric(horizontal=8, vertical=2)),
                             ]),
                             ft.Row([
-                                ft.Text(f"📍 {location}", size=12, color="#888888", expand=True),
-                                ft.Text(price_text, size=12, color="#4CAF50"),
+                                ft.Text(f"📍 {a['location'] or 'N/A'}", size=11, color="#888888", expand=True),
+                                ft.Text(price_text, size=11, color="#4CAF50"),
                             ]),
                         ], spacing=5),
-                        padding=15,
-                        on_click=lambda e, acc=accessory_data: self.show_accessory_detail_dialog(page, acc),
+                        padding=12,
+                        on_click=lambda e, acc=a: self.show_accessory_detail_dialog(page, dict(acc)),
                     ),
-                    elevation=3,
-                    margin=ft.margin.only(bottom=10),
+                    elevation=2,
                 )
                 cards_container.controls.append(card)
+            
+            if filtered_count == 0:
+                cards_container.controls.append(ft.Container(content=ft.Column([ft.Icon(ft.icons.INBOX, size=60, color="#888888"), ft.Text("No accessories found", size=14, color="#888888")], horizontal_alignment=ft.CrossAxisAlignment.CENTER), padding=40))
+            else:
+                cards_container.controls.insert(0, ft.Text(f"Showing {filtered_count} of {len(accessories)} accessories", size=11, color="#888888"))
+            
             page.update()
         
-        # Category filter handler
-        def on_category_change(e):
-            filter_state['current_category'] = category_filter.value
-            update_cards()
-        
-        category_filter.on_change = on_category_change
-        
-        # Search handler
-        def on_search(e):
-            update_cards()
-        
-        search_field.on_change = on_search
-        
-        # Initial load
+        search_field.on_change = lambda e: update_cards()
+        category_filter.on_change = lambda e: update_cards()
         update_cards()
         
-        main_column.controls.append(cards_container)
-        
-        # FAB Button for Add
+        # FAB Button for Add Accessory
         add_button = ft.FloatingActionButton(
             icon=ft.icons.ADD,
             bgcolor=self.success_color,
@@ -2184,13 +2176,13 @@ class StoreApp:
         
         main_container = ft.Container(content=main_column, expand=True, padding=20)
         
-        page.add(
-            ft.Stack([
-                ft.Column([main_container, nav], spacing=0, expand=True),
-                ft.Container(content=add_button, right=16, bottom=80),
-            ], expand=True)
-        )
+        if is_mobile:
+            page.add(ft.Stack([ft.Column([main_container, nav], spacing=0, expand=True), ft.Container(content=add_button, right=16, bottom=80)], expand=True))
+        else:
+            sidebar = self.create_sidebar(page)
+            page.add(ft.Stack([ft.Row([sidebar, main_container], spacing=0, expand=True), ft.Container(content=add_button, right=16, bottom=80)], expand=True))
         
+        self.current_view = "accessories"
         page.update()
 
     def show_accessory_detail_dialog(self, page: ft.Page, accessory):
@@ -2601,28 +2593,53 @@ class StoreApp:
         return ft.Column(column_items, spacing=10, scroll=ft.ScrollMode.AUTO)
 
     def open_add_accessory_modal(self, page: ft.Page):
-        """Open add accessory modal - Simplified working version"""
+        """Add accessory - Working buttons on mobile"""
+        import random
+        import string
+        import sqlite3
+        from datetime import datetime
+        from database import DB_PATH
         
-        def close_modal(e):
+        def generate_barcode():
+            prefix = "890"
+            random_numbers = ''.join(random.choices(string.digits, k=9))
+            barcode_without_checksum = prefix + random_numbers
+            total = 0
+            for i, digit in enumerate(barcode_without_checksum):
+                if i % 2 == 0:
+                    total += int(digit) * 1
+                else:
+                    total += int(digit) * 3
+            checksum = (10 - (total % 10)) % 10
+            return barcode_without_checksum + str(checksum)
+        
+        is_mobile = page.width < 800 if page.width else False
+        field_width = page.width - 40 if is_mobile and page.width else 350
+        
+        # Load categories
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, icon FROM categories ORDER BY name")
+        categories = cursor.fetchall()
+        conn.close()
+        
+        category_options = [ft.dropdown.Option(str(c['id']), f"{c['icon']} {c['name']}") for c in categories]
+        
+        # Form fields
+        name_field = ft.TextField(label="Name *", width=field_width, bgcolor=self.card_color)
+        category_field = ft.Dropdown(label="Category", width=field_width, options=category_options, value="1", bgcolor=self.card_color)
+        quantity_field = ft.TextField(label="Quantity", width=field_width, bgcolor=self.card_color, value="0")
+        price_field = ft.TextField(label="Price", width=field_width, bgcolor=self.card_color, value="0.00")
+        quality_field = ft.Dropdown(label="Quality", width=field_width,
+            options=[ft.dropdown.Option("New"), ft.dropdown.Option("Used"), ft.dropdown.Option("Damaged"), ft.dropdown.Option("Repaired")],
+            value="New", bgcolor=self.card_color)
+        location_field = ft.TextField(label="Location", width=field_width, bgcolor=self.card_color)
+        notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
+        
+        def close_dialog(e):
             page.dialog.open = False
             page.update()
-        
-        name_field = ft.TextField(label="Name", width=300, bgcolor=self.card_color)
-        quantity_field = ft.TextField(label="Quantity", width=300, bgcolor=self.card_color, value="0")
-        price_field = ft.TextField(label="Price", width=300, bgcolor=self.card_color, value="0.00")
-        quality_field = ft.Dropdown(
-            label="Quality",
-            width=300,
-            options=[
-                ft.dropdown.Option("New"),
-                ft.dropdown.Option("Used"),
-                ft.dropdown.Option("Damaged"),
-                ft.dropdown.Option("Repaired"),
-            ],
-            value="New",
-            bgcolor=self.card_color,
-        )
-        location_field = ft.TextField(label="Location", width=300, bgcolor=self.card_color)
         
         def save_accessory(e):
             if not name_field.value:
@@ -2631,50 +2648,60 @@ class StoreApp:
                 page.update()
                 return
             
-            import random
-            import string
-            barcode = ''.join(random.choices(string.digits, k=13))
+            selected_category_id = int(category_field.value)
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            data = {
-                'name': name_field.value,
-                'quantity': int(quantity_field.value) if quantity_field.value else 0,
-                'price': float(price_field.value) if price_field.value else 0.0,
-                'quality': quality_field.value,
-                'location': location_field.value,
-                'barcode_value': barcode,
-                'category': 'Uncategorized',
-            }
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO accessories (name, category_id, quantity, price, quality, location, notes, barcode_value, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                name_field.value, selected_category_id,
+                int(quantity_field.value) if quantity_field.value else 0,
+                float(price_field.value) if price_field.value else 0,
+                quality_field.value, location_field.value,
+                notes_field.value,
+                generate_barcode(), current_time, current_time
+            ))
+            conn.commit()
+            conn.close()
             
-            result = AccessoryManager.create(data)
-            
-            if result:
-                page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color)
-                page.snack_bar.open = True
-                self.show_accessories(page)
-            else:
-                page.snack_bar = ft.SnackBar(ft.Text("Error creating accessory!"), bgcolor=self.danger_color)
-                page.snack_bar.open = True
-                page.update()
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color)
+            page.snack_bar.open = True
+            self.show_accessories(page)
         
-        dialog_content = ft.Column([
-            ft.Text("Add New Accessory", size=18, weight=ft.FontWeight.BOLD),
-            ft.Divider(),
+        # Create scrollable fields
+        scrollable_fields = ft.Column([
             name_field,
+            category_field,
             quantity_field,
             price_field,
             quality_field,
             location_field,
-            ft.Container(height=10),
+            notes_field,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=400 if is_mobile else 450)
+        
+        # Dialog content with buttons SEPARATE from scroll
+        dialog_content = ft.Column([
             ft.Row([
-                ft.TextButton("Cancel", on_click=close_modal),
-                ft.FilledButton("Save", on_click=save_accessory, style=ft.ButtonStyle(bgcolor=self.success_color)),
-            ], alignment=ft.MainAxisAlignment.END, spacing=10),
-        ], spacing=12)
+                ft.Text("Add New Accessory", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ]),
+            ft.Divider(),
+            scrollable_fields,
+            ft.Divider(),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
+                ft.FilledButton("Save", on_click=save_accessory, style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
+            ], spacing=10),
+        ], spacing=10)
         
         dialog = ft.AlertDialog(
-            title=ft.Text("Add Accessory"),
-            content=ft.Container(content=dialog_content, width=400, height=500, padding=15),
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=450, padding=15),
+            modal=True,
         )
         
         page.dialog = dialog
@@ -2682,37 +2709,48 @@ class StoreApp:
         page.update()
 
     def open_edit_accessory_modal(self, page: ft.Page, accessory_id):
-        """Open edit accessory modal - Simplified working version"""
+        """Edit accessory - Working buttons on mobile"""
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime
         
-        accessory = AccessoryManager.get_by_id(accessory_id)
+        # Load accessory data
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM accessories WHERE id = ?", (accessory_id,))
+        accessory = cursor.fetchone()
+        
+        # Load categories
+        cursor.execute("SELECT id, name, icon FROM categories ORDER BY name")
+        categories = cursor.fetchall()
+        conn.close()
+        
         if not accessory:
             page.snack_bar = ft.SnackBar(ft.Text("Accessory not found!"), bgcolor=self.danger_color)
             page.snack_bar.open = True
             page.update()
             return
         
-        accessory_dict = dict(accessory)
+        is_mobile = page.width < 800 if page.width else False
+        field_width = page.width - 40 if is_mobile and page.width else 350
         
-        def close_modal(e):
+        category_options = [ft.dropdown.Option(str(c['id']), f"{c['icon']} {c['name']}") for c in categories]
+        
+        # Form fields
+        name_field = ft.TextField(label="Name *", value=accessory['name'], width=field_width, bgcolor=self.card_color)
+        category_field = ft.Dropdown(label="Category", width=field_width, options=category_options, value=str(accessory['category_id']), bgcolor=self.card_color)
+        quantity_field = ft.TextField(label="Quantity", value=str(accessory['quantity']), width=field_width, bgcolor=self.card_color)
+        price_field = ft.TextField(label="Price", value=str(accessory['price']), width=field_width, bgcolor=self.card_color)
+        quality_field = ft.Dropdown(label="Quality", width=field_width,
+            options=[ft.dropdown.Option("New"), ft.dropdown.Option("Used"), ft.dropdown.Option("Damaged"), ft.dropdown.Option("Repaired")],
+            value=accessory['quality'], bgcolor=self.card_color)
+        location_field = ft.TextField(label="Location", value=accessory['location'] or "", width=field_width, bgcolor=self.card_color)
+        notes_field = ft.TextField(label="Notes", value=accessory['notes'] or "", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
+        
+        def close_dialog(e):
             page.dialog.open = False
             page.update()
-        
-        name_field = ft.TextField(label="Name", value=accessory_dict.get('name', ''), width=300, bgcolor=self.card_color)
-        quantity_field = ft.TextField(label="Quantity", value=str(accessory_dict.get('quantity', 0)), width=300, bgcolor=self.card_color)
-        price_field = ft.TextField(label="Price", value=str(accessory_dict.get('price', 0)), width=300, bgcolor=self.card_color)
-        quality_field = ft.Dropdown(
-            label="Quality",
-            width=300,
-            options=[
-                ft.dropdown.Option("New"),
-                ft.dropdown.Option("Used"),
-                ft.dropdown.Option("Damaged"),
-                ft.dropdown.Option("Repaired"),
-            ],
-            value=accessory_dict.get('quality', 'New'),
-            bgcolor=self.card_color,
-        )
-        location_field = ft.TextField(label="Location", value=accessory_dict.get('location', ''), width=300, bgcolor=self.card_color)
         
         def update_accessory(e):
             if not name_field.value:
@@ -2721,125 +2759,125 @@ class StoreApp:
                 page.update()
                 return
             
-            data = {
-                'name': name_field.value,
-                'quantity': int(quantity_field.value) if quantity_field.value else 0,
-                'price': float(price_field.value) if price_field.value else 0.0,
-                'quality': quality_field.value,
-                'location': location_field.value,
-            }
+            selected_category_id = int(category_field.value)
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            result = AccessoryManager.update(accessory_id, data)
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE accessories 
+                SET name = ?, category_id = ?, quantity = ?, price = ?, quality = ?, 
+                    location = ?, notes = ?, updated_at = ?
+                WHERE id = ?
+            ''', (
+                name_field.value, selected_category_id,
+                int(quantity_field.value) if quantity_field.value else 0,
+                float(price_field.value) if price_field.value else 0,
+                quality_field.value, location_field.value,
+                notes_field.value,
+                current_time, accessory_id
+            ))
+            conn.commit()
+            conn.close()
             
-            if result:
-                page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Updated: {name_field.value}"), bgcolor=self.success_color)
-                page.snack_bar.open = True
-                self.show_accessories(page)
-            else:
-                page.snack_bar = ft.SnackBar(ft.Text("Error updating accessory!"), bgcolor=self.danger_color)
-                page.snack_bar.open = True
-                page.update()
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(ft.Text(f"✓ Updated: {name_field.value}"), bgcolor=self.success_color)
+            page.snack_bar.open = True
+            self.show_accessories(page)
         
-        dialog_content = ft.Column([
-            ft.Text("Edit Accessory", size=18, weight=ft.FontWeight.BOLD),
-            ft.Divider(),
+        # Create scrollable fields
+        scrollable_fields = ft.Column([
             name_field,
+            category_field,
             quantity_field,
             price_field,
             quality_field,
             location_field,
-            ft.Container(height=10),
+            notes_field,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=400 if is_mobile else 450)
+        
+        # Dialog content with buttons SEPARATE from scroll
+        dialog_content = ft.Column([
             ft.Row([
-                ft.TextButton("Cancel", on_click=close_modal),
-                ft.FilledButton("Update", on_click=update_accessory, style=ft.ButtonStyle(bgcolor=self.success_color)),
-            ], alignment=ft.MainAxisAlignment.END, spacing=10),
-        ], spacing=12)
+                ft.Text("Edit Accessory", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ]),
+            ft.Divider(),
+            scrollable_fields,
+            ft.Divider(),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
+                ft.FilledButton("Update", on_click=update_accessory, style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
+            ], spacing=10),
+        ], spacing=10)
         
         dialog = ft.AlertDialog(
-            title=ft.Text("Edit Accessory"),
-            content=ft.Container(content=dialog_content, width=400, height=500, padding=15),
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=450, padding=15),
+            modal=True,
         )
         
         page.dialog = dialog
         dialog.open = True
         page.update()
+        
     def open_delete_accessory_modal(self, page: ft.Page, accessory_id):
-        """Open delete modal for accessory"""
+        """Delete accessory confirmation modal"""
+        
         accessory = AccessoryManager.get_by_id(accessory_id)
         if not accessory:
             return
         
         accessory_dict = dict(accessory)
+        name = accessory_dict.get('name', 'this item')
         
-        def close_modal(e):
-            page.overlay.clear()
+        def close_dialog(e):
+            page.dialog.open = False
             page.update()
         
         def confirm_delete(e):
-            # Delete the accessory from database
             AccessoryManager.delete(accessory_id)
-            
-            # Also delete image file if exists
-            image_path = accessory_dict.get('image_path')
-            if image_path and os.path.exists(image_path):
-                try:
-                    os.remove(image_path)
-                except:
-                    pass
-            
-            page.overlay.clear()
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ Deleted: {accessory_dict.get('name', 'item')}"),
-                bgcolor=self.danger_color,
-                duration=3000
-            )
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(ft.Text(f"✓ Deleted: {name}"), bgcolor=self.danger_color)
             page.snack_bar.open = True
             self.show_accessories(page)
-            page.update()
         
-        modal = ft.Container(
-            content=ft.Card(
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Text("🗑️ Confirm Delete", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
-                        ft.Divider(),
-                        ft.Text(f"Are you sure you want to delete:", size=14),
-                        ft.Text(f"'{accessory_dict.get('name', 'item')}'?", size=16, weight=ft.FontWeight.BOLD),
-                        ft.Container(height=10),
-                        ft.Text("This action cannot be undone!", size=12, color="#888888"),
-                        ft.Divider(),
-                        ft.Row([
-                            ft.TextButton("Cancel", on_click=close_modal),
-                            ft.FilledButton("Yes, Delete", on_click=confirm_delete, style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
-                        ], alignment=ft.MainAxisAlignment.END, spacing=10),
-                    ], spacing=15),
-                    padding=20,
-                    width=400,
-                ),
-            ),
-            expand=True,
-            bgcolor="#80000000",
+        dialog_content = ft.Column([
+            ft.Text("🗑️ Confirm Delete", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
+            ft.Divider(),
+            ft.Text(f"Delete '{name}'?", size=14),
+            ft.Text("This cannot be undone!", size=12, color="#888888"),
+            ft.Divider(),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
+                ft.FilledButton("Delete", on_click=confirm_delete, style=ft.ButtonStyle(bgcolor=self.danger_color), expand=True),
+            ], spacing=10),
+        ], spacing=12)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=350, padding=15),
         )
         
-        page.overlay.append(modal)
+        page.dialog = dialog
+        dialog.open = True
         page.update()
+
     def show_accessory_detail_dialog(self, page: ft.Page, accessory):
-        """Show detailed view of accessory in a modal dialog"""
+        """Accessory detail dialog"""
         
-        is_mobile = page.width < 800 if page.width else False
-        
-        created_date = str(accessory.get('created_at', ''))[:16] if accessory.get('created_at') else 'N/A'
-        updated_date = str(accessory.get('updated_at', ''))[:16] if accessory.get('updated_at') else 'N/A'
-        
-        location = accessory.get('location') or accessory.get('location_ids') or 'N/A'
+        name = accessory.get('name', 'N/A')
+        category_name = accessory.get('category_name', 'Other')
+        category_icon = accessory.get('category_icon', '📁')
+        quality = accessory.get('quality', 'Used')
+        quantity = accessory.get('quantity', 0)
+        location = accessory.get('location', 'N/A')
         price = accessory.get('price', 0)
+        notes = accessory.get('notes', 'No notes')
+        barcode = accessory.get('barcode_value', 'N/A')
+        created = str(accessory.get('created_at', ''))[:16] if accessory.get('created_at') else 'N/A'
+        updated = str(accessory.get('updated_at', ''))[:16] if accessory.get('updated_at') else 'N/A'
         price_text = f"${price:.2f}" if price else "N/A"
-        
-        has_image = False
-        image_path = accessory.get('image_path', '')
-        if image_path and os.path.exists(image_path):
-            has_image = True
         
         def close_dialog(e):
             page.dialog.open = False
@@ -2847,106 +2885,44 @@ class StoreApp:
         
         def edit_accessory(e):
             page.dialog.open = False
-            self.open_edit_accessory_modal(page, accessory['id'])
+            self.open_edit_accessory_modal(page, accessory.get('id'))
         
         def delete_accessory(e):
             page.dialog.open = False
-            self.open_delete_accessory_modal(page, accessory['id'])
+            self.open_delete_accessory_modal(page, accessory.get('id'))
         
         def show_barcode(e):
             self.show_barcode_dialog(page, accessory)
         
-        content_items = []
+        content_items = [
+            ft.Row([ft.Text("📁 Category:", size=14, color="#CCCCCC", width=100), ft.Text(f"{category_icon} {category_name}", size=14, color=self.accent_color)], spacing=8),
+            ft.Row([ft.Text("🔢 Barcode:", size=14, color="#CCCCCC", width=100), ft.Text(barcode, size=12, color="#888888")], spacing=8),
+            ft.Row([ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True, style=ft.ButtonStyle(bgcolor=self.warning_color, color=self.text_color))], spacing=10),
+            ft.Row([ft.Text("🏷️ Quality:", size=14, color="#CCCCCC", width=100), ft.Container(content=ft.Text(quality, size=12, color="white"), bgcolor=self.get_quality_color(quality), border_radius=8, padding=ft.padding.symmetric(horizontal=12, vertical=4))], spacing=8),
+            ft.Row([ft.Text("🔢 Quantity:", size=14, color="#CCCCCC", width=100), ft.Text(str(quantity), size=16, weight=ft.FontWeight.BOLD, color=self.danger_color if quantity < 10 else self.text_color)], spacing=8),
+            ft.Row([ft.Text("💰 Price:", size=14, color="#CCCCCC", width=100), ft.Text(price_text, size=14, color="#4CAF50", weight=ft.FontWeight.BOLD)], spacing=8),
+            ft.Row([ft.Text("📍 Location:", size=14, color="#CCCCCC", width=100), ft.Text(location, size=14, color=self.text_color)], spacing=8),
+            ft.Divider(),
+            ft.Row([ft.Text("📅 Created:", size=13, color="#CCCCCC", width=100), ft.Text(created, size=13, color="#888888")], spacing=8),
+            ft.Row([ft.Text("🔄 Updated:", size=13, color="#CCCCCC", width=100), ft.Text(updated, size=13, color="#888888")], spacing=8),
+        ]
         
-        if has_image:
-            content_items.append(
-                ft.Container(
-                    content=ft.Image(src=image_path, width=200, height=150, fit=ft.ImageFit.CONTAIN),
-                    alignment=ft.alignment.center,
-                    margin=ft.margin.only(bottom=10),
-                )
-            )
-        else:
-            content_items.append(
-                ft.Container(
-                    content=ft.Column([
-                        ft.Icon(ft.icons.IMAGE, size=50, color="#888888"),
-                        ft.Text("No Image", size=12, color="#888888"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    alignment=ft.alignment.center,
-                    margin=ft.margin.only(bottom=10),
-                )
-            )
+        if notes and notes != 'No notes':
+            content_items.append(ft.Divider())
+            content_items.append(ft.Text("📝 Notes:", size=14, weight=ft.FontWeight.BOLD, color="#CCCCCC"))
+            content_items.append(ft.Container(content=ft.Text(notes, size=12, color="#888888"), padding=10, bgcolor="#2C2C2C", border_radius=8))
         
-        content_items.extend([
-            ft.Divider(),
-            ft.Row([
-                ft.Text("📝 Code:", size=14, color="#CCCCCC", width=80),
-                ft.Text(accessory.get('item_code') or "N/A", size=14, color=self.text_color),
-            ], spacing=8),
-            ft.Row([
-                ft.Text("🏷️ Quality:", size=14, color="#CCCCCC", width=80),
-                ft.Container(
-                    content=ft.Text(accessory.get('quality', 'Used'), size=12, color="white"),
-                    bgcolor=self.get_quality_color(accessory.get('quality', 'Used')),
-                    border_radius=10,
-                    padding=ft.padding.symmetric(horizontal=12, vertical=4),
-                ),
-            ], spacing=8),
-            ft.Row([
-                ft.Text("🔢 Quantity:", size=14, color="#CCCCCC", width=80),
-                ft.Text(str(accessory.get('quantity', 0)), size=16, weight=ft.FontWeight.BOLD,
-                    color=self.danger_color if accessory.get('quantity', 0) < 10 else self.text_color),
-            ], spacing=8),
-            ft.Row([
-                ft.Text("💰 Price:", size=14, color="#CCCCCC", width=80),
-                ft.Text(price_text, size=14, color="#4CAF50", weight=ft.FontWeight.BOLD),
-            ], spacing=8),
-            ft.Row([
-                ft.Text("📍 Location:", size=14, color="#CCCCCC", width=80),
-                ft.Text(location, size=14, color=self.text_color),
-            ], spacing=8),
-            ft.Divider(),
-            ft.Row([
-                ft.Text("📅 Created:", size=13, color="#CCCCCC", width=80),
-                ft.Text(created_date, size=13, color="#888888"),
-            ], spacing=8),
-            ft.Row([
-                ft.Text("🔄 Updated:", size=13, color="#CCCCCC", width=80),
-                ft.Text(updated_date, size=13, color="#888888"),
-            ], spacing=8),
-            ft.Divider(),
-            ft.Text("📝 Notes:", size=14, weight=ft.FontWeight.BOLD, color="#CCCCCC"),
-            ft.Container(
-                content=ft.Text(accessory.get('notes') or "No notes", size=13, color="#888888"),
-                padding=10,
-                bgcolor="#2C2C2C",
-                border_radius=8,
-                margin=ft.margin.only(top=5, bottom=10),
-            ),
-            ft.Row([
-                ft.ElevatedButton("✏️ EDIT", on_click=edit_accessory, expand=True,
-                                style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color)),
-                ft.ElevatedButton("🗑️ DELETE", on_click=delete_accessory, expand=True,
-                                style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
-            ], spacing=10),
-            ft.Row([
-                ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
-                                style=ft.ButtonStyle(bgcolor=self.warning_color, color=self.text_color)),
-            ], spacing=10),
-        ])
+        content_items.append(ft.Divider())
+        content_items.append(ft.Row([
+            ft.ElevatedButton("✏️ EDIT", on_click=edit_accessory, expand=True, style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color)),
+            ft.ElevatedButton("🗑️ DELETE", on_click=delete_accessory, expand=True, style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color)),
+        ], spacing=10))
+        
+        scrollable_content = ft.Column(content_items, spacing=10, scroll=ft.ScrollMode.AUTO, height=500)
         
         dialog = ft.AlertDialog(
-            title=ft.Row([
-                ft.Text(accessory.get('name', 'Accessory Details'), size=18, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
-            ], spacing=0),
-            content=ft.Container(
-                content=ft.Column(content_items, spacing=10, scroll=ft.ScrollMode.AUTO),
-                width=400 if not is_mobile else page.width - 40,
-                height=550,
-            ),
-            actions_alignment=ft.MainAxisAlignment.END,
+            title=ft.Row([ft.Text(name, size=18, weight=ft.FontWeight.BOLD, expand=True), ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog)], spacing=0),
+            content=ft.Container(content=scrollable_content, width=450, padding=15),
         )
         
         page.dialog = dialog
