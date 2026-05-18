@@ -25,7 +25,7 @@ def init_database():
         )
     ''')
     
-    # Categories table - IMPORTANT: Create this FIRST
+    # Categories table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,6 +33,28 @@ def init_database():
             icon TEXT DEFAULT '📦',
             color TEXT DEFAULT '#1976D2',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Materials table with full fields
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS materials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            category_id INTEGER DEFAULT 8,
+            quantity INTEGER DEFAULT 0,
+            quality TEXT DEFAULT 'New',
+            location_ids TEXT,
+            size TEXT,
+            length REAL,
+            colors TEXT,
+            notes TEXT,
+            barcode_value TEXT UNIQUE,
+            image_path TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            user_id INTEGER,
+            FOREIGN KEY (category_id) REFERENCES categories(id)
         )
     ''')
     
@@ -54,28 +76,6 @@ def init_database():
             VALUES (?, ?, ?, ?)
         ''', (cat_id, name, icon, color))
     
-    # Materials table with foreign key to categories
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS materials (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            category_id INTEGER,
-            quantity INTEGER DEFAULT 0,
-            quality TEXT DEFAULT 'New',
-            location_ids TEXT,
-            size TEXT,
-            length REAL,
-            colors TEXT,
-            notes TEXT,
-            barcode_value TEXT UNIQUE,
-            image_path TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            user_id INTEGER,
-            FOREIGN KEY (category_id) REFERENCES categories(id)
-        )
-    ''')
-    
     # Create admin user
     import hashlib
     admin_password = hashlib.sha256("admin123".encode()).hexdigest()
@@ -86,34 +86,25 @@ def init_database():
     
     conn.commit()
     conn.close()
-    print("Database initialized with categories table")
+    print("Database initialized successfully")
 
 class MaterialManager:
-    """Manager for material operations"""
-    
     @staticmethod
     def create(data):
-        import sqlite3
-        from database import DB_PATH
-        from datetime import datetime
-        
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        # Get category_id from category name
-        category_name = data.get('category', 'Other')
-        cursor.execute("SELECT id FROM categories WHERE name = ?", (category_name,))
-        cat_result = cursor.fetchone()
-        category_id = cat_result[0] if cat_result else 8
-        
         cursor.execute('''
-            INSERT INTO materials (name, category_id, quantity, quality, location_ids, size, length, colors, notes, barcode_value, image_path, created_at, updated_at)
+            INSERT INTO materials (
+                name, category_id, quantity, quality, location_ids, 
+                size, length, colors, notes, barcode_value, image_path, 
+                created_at, updated_at
+            )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             data.get('name', ''),
-            category_id,
+            data.get('category_id', 8),
             data.get('quantity', 0),
             data.get('quality', 'New'),
             data.get('location_ids', ''),
@@ -132,12 +123,22 @@ class MaterialManager:
         return {'id': material_id}
     
     @staticmethod
+    def get_all():
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT m.*, c.name as category_name, c.icon as category_icon
+            FROM materials m
+            LEFT JOIN categories c ON m.category_id = c.id
+            ORDER BY m.id DESC
+        ''')
+        results = cursor.fetchall()
+        conn.close()
+        return results
+    
+    @staticmethod
     def get_by_id(material_id):
-        import sqlite3
-        from database import DB_PATH
-        
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT m.*, c.name as category_name, c.icon as category_icon
@@ -150,57 +151,20 @@ class MaterialManager:
         return result
     
     @staticmethod
-    def get_all():
-        """Get all materials with category info"""
-        import sqlite3
-        from database import DB_PATH
-        
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT 
-                m.*, 
-                c.name as category_name, 
-                c.icon as category_icon,
-                c.color as category_color
-            FROM materials m
-            LEFT JOIN categories c ON m.category_id = c.id
-            ORDER BY m.id DESC
-        ''')
-        results = cursor.fetchall()
-        
-        # Debug print
-        for row in results:
-            print(f"DEBUG: {row['name']} -> Category: {row['category_name']}, Icon: {row['category_icon']}")
-        
-        conn.close()
-        return results
-    
-    @staticmethod
     def update(material_id, data):
-        import sqlite3
-        from database import DB_PATH
-        from datetime import datetime
-        
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        # Get category_id from category name
-        category_name = data.get('category', 'Other')
-        cursor.execute("SELECT id FROM categories WHERE name = ?", (category_name,))
-        cat_result = cursor.fetchone()
-        category_id = cat_result[0] if cat_result else 8
-        
         cursor.execute('''
             UPDATE materials 
-            SET name = ?, category_id = ?, quantity = ?, quality = ?, location_ids = ?, size = ?, length = ?, colors = ?, notes = ?, barcode_value = ?, image_path = ?, updated_at = ?
+            SET name = ?, category_id = ?, quantity = ?, quality = ?, location_ids = ?,
+                size = ?, length = ?, colors = ?, notes = ?, barcode_value = ?,
+                image_path = ?, updated_at = ?
             WHERE id = ?
         ''', (
             data.get('name', ''),
-            category_id,
+            data.get('category_id', 8),
             data.get('quantity', 0),
             data.get('quality', 'New'),
             data.get('location_ids', ''),
@@ -220,10 +184,7 @@ class MaterialManager:
     
     @staticmethod
     def delete(material_id):
-        import sqlite3
-        from database import DB_PATH
-        
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM materials WHERE id = ?", (material_id,))
         conn.commit()
@@ -233,17 +194,29 @@ class MaterialManager:
     
     @staticmethod
     def get_all_categories():
-        """Get all categories from categories table"""
-        import sqlite3
-        from database import DB_PATH
-        
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM categories ORDER BY name")
         results = cursor.fetchall()
         conn.close()
         return results
+    
+    @staticmethod
+    def add_category(name, icon):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO categories (name, icon)
+                VALUES (?, ?)
+            ''', (name, icon))
+            conn.commit()
+            category_id = cursor.lastrowid
+            conn.close()
+            return category_id
+        except sqlite3.IntegrityError:
+            conn.close()
+            return None
 
 class UserManager:
     @staticmethod
