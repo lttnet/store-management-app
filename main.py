@@ -2949,9 +2949,9 @@ class StoreApp:
                 pass
         
         return None
-        
+            
     def show_material_detail_dialog(self, page: ft.Page, material):
-        """Complete detail dialog showing all fields including auto-scale image"""
+        """Complete detail dialog showing all fields including size and length"""
         
         import os
         
@@ -2961,13 +2961,28 @@ class StoreApp:
         quality = material.get('quality', 'Used')
         quantity = material.get('quantity', 0)
         location = material.get('location_ids', 'N/A')
-        size = material.get('size', 'N/A')
-        length = material.get('length', 'N/A')
-        colors = material.get('colors', 'N/A')
-        notes = material.get('notes', 'No notes')
+        size = material.get('size', '')
+        length = material.get('length', '')
+        colors = material.get('colors', '')
+        notes = material.get('notes', '')
         barcode = material.get('barcode_value', 'N/A')
         created = str(material.get('created_at', ''))[:16] if material.get('created_at') else 'N/A'
         updated = str(material.get('updated_at', ''))[:16] if material.get('updated_at') else 'N/A'
+        
+        # Clean up display values
+        size_display = size if size else 'N/A'
+        length_display = ''
+        if length:
+            try:
+                length_float = float(length)
+                length_display = f"{length_float:.2f}" if length_float % 1 != 0 else str(int(length_float))
+            except:
+                length_display = str(length)
+        else:
+            length_display = 'N/A'
+        
+        colors_display = colors if colors else 'N/A'
+        notes_display = notes if notes else 'No notes'
         
         # Get image path - try multiple locations
         image_path = material.get('image_path', '')
@@ -3053,7 +3068,7 @@ class StoreApp:
                         ft.Container(
                             content=ft.Image(
                                 src=full_image_path, 
-                                fit=ft.ImageFit.CONTAIN,  # Auto-scales to fit 200x150
+                                fit=ft.ImageFit.CONTAIN,
                                 width=200,
                                 height=150,
                             ),
@@ -3145,30 +3160,31 @@ class StoreApp:
             ft.Text(location, size=13, color=self.text_color),
         ], spacing=8))
         
-        # Dimensions Section (only if size or length has value)
-        if size != 'N/A' or (length and length != 'N/A' and length != '0.0'):
+        # Dimensions Section - SHOW SIZE AND LENGTH
+        has_dimensions = (size_display != 'N/A') or (length_display != 'N/A')
+        if has_dimensions:
             content_items.append(ft.Divider())
             content_items.append(ft.Text("📏 Dimensions", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color))
             
-            if size != 'N/A':
+            if size_display != 'N/A':
                 content_items.append(ft.Row([
                     ft.Text("📏 Size:", size=13, color="#CCCCCC", width=100),
-                    ft.Text(size, size=13, color=self.text_color),
+                    ft.Text(size_display, size=13, color=self.text_color),
                 ], spacing=8))
             
-            if length and length != 'N/A' and length != '0.0':
+            if length_display != 'N/A':
                 content_items.append(ft.Row([
                     ft.Text("📐 Length:", size=13, color="#CCCCCC", width=100),
-                    ft.Text(str(length), size=13, color=self.text_color),
+                    ft.Text(length_display, size=13, color=self.text_color),
                 ], spacing=8))
         
         # Colors Section
-        if colors != 'N/A' and colors:
+        if colors_display != 'N/A':
             content_items.append(ft.Divider())
             content_items.append(ft.Text("🎨 Colors", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color))
             content_items.append(ft.Row([
                 ft.Text("Colors:", size=13, color="#CCCCCC", width=100),
-                ft.Text(colors, size=13, color=self.text_color),
+                ft.Text(colors_display, size=13, color=self.text_color),
             ], spacing=8))
         
         # Dates Section
@@ -3186,12 +3202,12 @@ class StoreApp:
         ], spacing=8))
         
         # Notes Section
-        if notes and notes != 'No notes':
+        if notes_display != 'No notes':
             content_items.append(ft.Divider())
             content_items.append(ft.Text("📝 Notes", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color))
             content_items.append(
                 ft.Container(
-                    content=ft.Text(notes, size=12, color="#888888"),
+                    content=ft.Text(notes_display, size=12, color="#888888"),
                     padding=10,
                     bgcolor="#2C2C2C",
                     border_radius=8,
@@ -3305,7 +3321,7 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Add material - No image preview, just status message"""
+        """Add material - Working Cancel button"""
         import random
         import string
         import sqlite3
@@ -3332,11 +3348,11 @@ class StoreApp:
         if is_mobile:
             field_width = page.width - 40 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
-            scroll_height = 350
+            scroll_height = 380
         else:
             field_width = 350
             dialog_width = 450
-            scroll_height = 420
+            scroll_height = 450
         
         # Create images folder
         images_folder = "images"
@@ -3366,27 +3382,42 @@ class StoreApp:
         color_field = ft.TextField(label="Colors", width=field_width, bgcolor=self.card_color)
         notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
-        # Image upload - NO PREVIEW, just status
-        image_status_text = ft.Text("No image", size=11, color="#888888")
+        # Auto-update length from size
+        def update_length(e):
+            size_value = size_field.value
+            if size_value:
+                try:
+                    if ' ' in size_value and '/' in size_value:
+                        parts = size_value.split()
+                        whole = float(parts[0])
+                        frac = parts[1].split('/')
+                        length_value = whole + float(frac[0]) / float(frac[1])
+                        length_field.value = f"{length_value:.2f}"
+                    elif '/' in size_value:
+                        frac = size_value.split('/')
+                        length_value = float(frac[0]) / float(frac[1])
+                        length_field.value = f"{length_value:.2f}"
+                    else:
+                        length_value = float(size_value)
+                        length_field.value = f"{length_value:.2f}"
+                except:
+                    length_field.value = size_value
+            else:
+                length_field.value = ""
+            page.update()
+        
+        size_field.on_change = update_length
+        
+        # Image upload
+        image_status_text = ft.Text("No image", size=10, color="#888888")
         selected_temp_image = None
         
         def on_image_picked(e: ft.FilePickerResultEvent):
             nonlocal selected_temp_image
             if e.files:
                 file = e.files[0]
-                file_size = file.size
-                
-                # Check file size (max 2MB)
-                MAX_SIZE = 2 * 1024 * 1024
-                if file_size > MAX_SIZE:
-                    size_mb = file_size / (1024 * 1024)
-                    image_status_text.value = f"❌ Too large! {size_mb:.1f}MB (max 2MB)"
-                    image_status_text.color = self.danger_color
-                    page.update()
-                    return
-                
                 selected_temp_image = file.path
-                size_kb = file_size / 1024
+                size_kb = file.size / 1024
                 image_status_text.value = f"✓ {file.name[:20]} ({size_kb:.0f}KB)"
                 image_status_text.color = self.success_color
                 page.update()
@@ -3404,44 +3435,20 @@ class StoreApp:
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
         )
         
-        # Image row - button and status side by side
-        image_row = ft.Row([
-            upload_btn,
-            image_status_text,
-        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        image_row = ft.Row([upload_btn, image_status_text], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True)
         
         def save_uploaded_image():
             if selected_temp_image and os.path.exists(selected_temp_image):
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                file_ext = os.path.splitext(selected_temp_image)[1]
-                new_filename = f"material_{timestamp}{file_ext}"
+                file_ext = os.path.splitext(selected_temp_image)[1].lower()
+                new_filename = f"img_{timestamp}{file_ext}"
                 new_path = os.path.join(images_folder, new_filename)
                 shutil.copy2(selected_temp_image, new_path)
-                # Return RELATIVE path
                 return f"images/{new_filename}"
             return None
         
-        def update_length(e):
-            size_value = size_field.value
-            if size_value:
-                try:
-                    if ' ' in size_value and '/' in size_value:
-                        parts = size_value.split()
-                        whole = float(parts[0])
-                        frac = parts[1].split('/')
-                        length_field.value = str(whole + float(frac[0]) / float(frac[1]))
-                    else:
-                        length_field.value = str(float(size_value))
-                except:
-                    length_field.value = size_value
-            else:
-                length_field.value = ""
-            page.update()
-        
-        size_field.on_change = update_length
-        
-        # Create scrollable fields
-        scroll_view = ft.Column([
+        # Create scrollable column
+        scroll_fields = ft.Column([
             name_field,
             category_field,
             quantity_field,
@@ -3454,11 +3461,12 @@ class StoreApp:
             notes_field,
         ], spacing=10, scroll=ft.ScrollMode.AUTO, height=scroll_height)
         
-        def close_dialog(e):
+        # Function to close dialog
+        def close_dialog():
             page.dialog.open = False
             page.update()
         
-        def save_material(e):
+        def save_material():
             if not name_field.value:
                 page.snack_bar = ft.SnackBar(ft.Text("Please enter a name!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
@@ -3469,7 +3477,23 @@ class StoreApp:
             selected_category_id = int(category_field.value)
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            print(f"DEBUG: Saving image path: {saved_image_path}")
+            # Calculate length from size
+            size_val = size_field.value
+            length_val = None
+            if size_val:
+                try:
+                    if ' ' in size_val and '/' in size_val:
+                        parts = size_val.split()
+                        whole = float(parts[0])
+                        frac = parts[1].split('/')
+                        length_val = whole + float(frac[0]) / float(frac[1])
+                    elif '/' in size_val:
+                        frac = size_val.split('/')
+                        length_val = float(frac[0]) / float(frac[1])
+                    else:
+                        length_val = float(size_val)
+                except:
+                    length_val = None
             
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
@@ -3480,7 +3504,7 @@ class StoreApp:
                 name_field.value, selected_category_id,
                 int(quantity_field.value) if quantity_field.value else 0,
                 quality_field.value, location_field.value,
-                size_field.value, float(length_field.value) if length_field.value else None,
+                size_field.value, length_val,
                 color_field.value, notes_field.value,
                 saved_image_path,
                 generate_barcode(), current_time, current_time
@@ -3488,22 +3512,23 @@ class StoreApp:
             conn.commit()
             conn.close()
             
-            page.dialog.open = False
+            close_dialog()
             page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=2000)
             page.snack_bar.open = True
             self.show_materials_screen(page)
         
+        # Dialog content
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text("Add New Material", size=16, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=18, on_click=close_dialog),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=18, on_click=lambda e: close_dialog()),
             ]),
             ft.Divider(height=1),
-            scroll_view,
+            scroll_fields,
             ft.Divider(height=1),
             ft.Row([
-                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
-                ft.FilledButton("Save", on_click=save_material, style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog(), expand=True),
+                ft.FilledButton("Save", on_click=lambda e: save_material(), style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
             ], spacing=8),
         ], spacing=8)
         
@@ -3518,7 +3543,7 @@ class StoreApp:
         page.update()
         
     def open_edit_modal(self, page: ft.Page, material_id):
-        """Edit material - No delete button, just image status"""
+        """Edit material - Working Cancel button"""
         import sqlite3
         import os
         import shutil
@@ -3548,11 +3573,11 @@ class StoreApp:
         if is_mobile:
             field_width = page.width - 40 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
-            scroll_height = 350
+            scroll_height = 380
         else:
             field_width = 350
             dialog_width = 450
-            scroll_height = 420
+            scroll_height = 450
         
         # Create images folder
         images_folder = "images"
@@ -3574,7 +3599,33 @@ class StoreApp:
         color_field = ft.TextField(label="Colors", value=material['colors'] or "", width=field_width, bgcolor=self.card_color)
         notes_field = ft.TextField(label="Notes", value=material['notes'] or "", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
-        # Image handling - simple status, no delete button
+        # Auto-update length from size
+        def update_length(e):
+            size_value = size_field.value
+            if size_value:
+                try:
+                    if ' ' in size_value and '/' in size_value:
+                        parts = size_value.split()
+                        whole = float(parts[0])
+                        frac = parts[1].split('/')
+                        length_value = whole + float(frac[0]) / float(frac[1])
+                        length_field.value = f"{length_value:.2f}"
+                    elif '/' in size_value:
+                        frac = size_value.split('/')
+                        length_value = float(frac[0]) / float(frac[1])
+                        length_field.value = f"{length_value:.2f}"
+                    else:
+                        length_value = float(size_value)
+                        length_field.value = f"{length_value:.2f}"
+                except:
+                    length_field.value = size_value
+            else:
+                length_field.value = ""
+            page.update()
+        
+        size_field.on_change = update_length
+        
+        # Image handling
         current_image_path = material['image_path'] if material['image_path'] else None
         has_current_image = current_image_path and os.path.exists(current_image_path) if current_image_path else False
         
@@ -3587,7 +3638,7 @@ class StoreApp:
                 file = e.files[0]
                 selected_temp_image = file.path
                 size_kb = file.size / 1024
-                image_status_text.value = f"✓ New image selected: {file.name[:20]} ({size_kb:.0f}KB)"
+                image_status_text.value = f"✓ New: {file.name[:20]} ({size_kb:.0f}KB)"
                 image_status_text.color = self.success_color
                 page.update()
         
@@ -3598,17 +3649,13 @@ class StoreApp:
             image_picker.pick_files(allow_multiple=False, allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
         
         upload_btn = ft.ElevatedButton(
-            "📁 Upload New Image",
+            "📁 Upload New",
             on_click=upload_image,
             icon=ft.icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
         )
         
-        # Image row - just button and status
-        image_row = ft.Row([
-            upload_btn,
-            image_status_text,
-        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True)
+        image_row = ft.Row([upload_btn, image_status_text], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True)
         
         def save_uploaded_image():
             if selected_temp_image and os.path.exists(selected_temp_image):
@@ -3617,7 +3664,6 @@ class StoreApp:
                 new_filename = f"img_{material_id}_{timestamp}{file_ext}"
                 new_path = os.path.join(images_folder, new_filename)
                 shutil.copy2(selected_temp_image, new_path)
-                # Delete old image if exists
                 if current_image_path and os.path.exists(current_image_path):
                     try:
                         os.remove(current_image_path)
@@ -3626,8 +3672,8 @@ class StoreApp:
                 return f"images/{new_filename}"
             return None
         
-        # Create scrollable fields
-        scroll_view = ft.Column([
+        # Create scrollable column
+        scroll_fields = ft.Column([
             name_field,
             category_field,
             quantity_field,
@@ -3640,22 +3686,42 @@ class StoreApp:
             notes_field,
         ], spacing=10, scroll=ft.ScrollMode.AUTO, height=scroll_height)
         
-        def close_dialog(e):
+        # Function to close dialog
+        def close_dialog():
             page.dialog.open = False
             page.update()
         
-        def update_material(e):
+        def update_material():
             if not name_field.value:
                 page.snack_bar = ft.SnackBar(ft.Text("Please enter a name!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
                 return
             
-            # Handle image - if new image selected, replace old one
-            final_image_path = current_image_path if not selected_temp_image else save_uploaded_image()
+            final_image_path = current_image_path
+            if selected_temp_image:
+                final_image_path = save_uploaded_image()
             
             selected_category_id = int(category_field.value)
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Calculate length from size
+            size_val = size_field.value
+            length_val = None
+            if size_val:
+                try:
+                    if ' ' in size_val and '/' in size_val:
+                        parts = size_val.split()
+                        whole = float(parts[0])
+                        frac = parts[1].split('/')
+                        length_val = whole + float(frac[0]) / float(frac[1])
+                    elif '/' in size_val:
+                        frac = size_val.split('/')
+                        length_val = float(frac[0]) / float(frac[1])
+                    else:
+                        length_val = float(size_val)
+                except:
+                    length_val = None
             
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
@@ -3668,7 +3734,7 @@ class StoreApp:
                 name_field.value, selected_category_id,
                 int(quantity_field.value) if quantity_field.value else 0,
                 quality_field.value, location_field.value,
-                size_field.value, float(length_field.value) if length_field.value else None,
+                size_field.value, length_val,
                 color_field.value, notes_field.value,
                 final_image_path,
                 current_time, material_id
@@ -3676,22 +3742,23 @@ class StoreApp:
             conn.commit()
             conn.close()
             
-            page.dialog.open = False
+            close_dialog()
             page.snack_bar = ft.SnackBar(ft.Text(f"✓ Updated: {name_field.value}"), bgcolor=self.success_color, duration=2000)
             page.snack_bar.open = True
             self.show_materials_screen(page)
         
+        # Dialog content
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text("Edit Material", size=16, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=18, on_click=close_dialog),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=18, on_click=lambda e: close_dialog()),
             ]),
             ft.Divider(height=1),
-            scroll_view,
+            scroll_fields,
             ft.Divider(height=1),
             ft.Row([
-                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
-                ft.FilledButton("Update", on_click=update_material, style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog(), expand=True),
+                ft.FilledButton("Update", on_click=lambda e: update_material(), style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
             ], spacing=8),
         ], spacing=8)
         
