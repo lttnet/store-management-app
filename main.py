@@ -3631,7 +3631,7 @@ class StoreApp:
         page.update()
     
     def show_barcode_dialog(self, page: ft.Page, item):
-        """Show barcode dialog for material or accessory"""
+        """Show barcode dialog for material or accessory with copy button"""
         import webbrowser
         import tempfile
         
@@ -3645,6 +3645,17 @@ class StoreApp:
         def close_dialog(e):
             page.dialog.open = False
             page.update()
+        
+        def copy_to_clipboard(e):
+            try:
+                page.set_clipboard(barcode_text)
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Barcode copied: {barcode_text}"), bgcolor=self.success_color, duration=2000)
+                page.snack_bar.open = True
+                page.update()
+            except Exception as ex:
+                page.snack_bar = ft.SnackBar(ft.Text(f"❌ Failed to copy: {str(ex)}"), bgcolor=self.danger_color, duration=2000)
+                page.snack_bar.open = True
+                page.update()
         
         def print_barcode(e):
             html_content = f"""
@@ -3687,9 +3698,10 @@ class StoreApp:
         
         dialog = ft.AlertDialog(
             title=ft.Text("Barcode", size=18, weight=ft.FontWeight.BOLD),
-            content=ft.Container(content=dialog_content, width=350, height=320, padding=15),
+            content=ft.Container(content=dialog_content, width=350, height=380, padding=15),
             actions=[
                 ft.TextButton("Close", on_click=close_dialog),
+                ft.TextButton("📋 Copy", on_click=copy_to_clipboard),
                 ft.FilledButton("🖨️ Print", on_click=print_barcode, style=ft.ButtonStyle(bgcolor=self.accent_color)),
             ],
         )
@@ -3697,6 +3709,7 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
+
     def show_barcode_scanner_input(self, page: ft.Page, target_field=None):
         """Open dialog for barcode input using clipboard (Google Lens/Camera)"""
         
@@ -3718,6 +3731,22 @@ class StoreApp:
                     page.update()
             except Exception as ex:
                 status_text.value = f"❌ Could not read clipboard: {str(ex)}"
+                status_text.color = self.danger_color
+                page.update()
+        
+        def copy_from_input(e):
+            if barcode_input.value:
+                try:
+                    page.set_clipboard(barcode_input.value)
+                    status_text.value = "✓ Barcode copied to clipboard!"
+                    status_text.color = self.success_color
+                    page.update()
+                except Exception as ex:
+                    status_text.value = f"❌ Failed to copy: {str(ex)}"
+                    status_text.color = self.danger_color
+                    page.update()
+            else:
+                status_text.value = "❌ No barcode to copy"
                 status_text.color = self.danger_color
                 page.update()
         
@@ -3763,6 +3792,9 @@ class StoreApp:
             ft.Row([
                 ft.ElevatedButton("📋 Paste from Clipboard", on_click=paste_from_clipboard, icon=ft.icons.CONTENT_PASTE, expand=True),
             ], spacing=10),
+            ft.Row([
+                ft.ElevatedButton("📋 Copy to Clipboard", on_click=copy_from_input, icon=ft.icons.CONTENT_COPY, expand=True),
+            ], spacing=10),
             ft.Divider(),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog, expand=True),
@@ -3772,12 +3804,13 @@ class StoreApp:
         
         dialog = ft.AlertDialog(
             title=ft.Text("Barcode Scanner"),
-            content=ft.Container(content=dialog_content, width=350, height=480, padding=15),
+            content=ft.Container(content=dialog_content, width=350, height=520, padding=15),
         )
         
         page.dialog = dialog
         dialog.open = True
         page.update()
+        
     def search_barcode_by_value(self, barcode_value, page):
         """Search for barcode and show result"""
         if not barcode_value:
