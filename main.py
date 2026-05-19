@@ -3321,7 +3321,7 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Add material - Working Cancel button"""
+        """Add material - Fixed for mobile (handles content URI)"""
         import random
         import string
         import sqlite3
@@ -3408,18 +3408,35 @@ class StoreApp:
         
         size_field.on_change = update_length
         
-        # Image upload
+        # Image upload - Mobile friendly
         image_status_text = ft.Text("No image", size=10, color="#888888")
-        selected_temp_image = None
+        selected_image_data = None  # Store image data instead of path
         
         def on_image_picked(e: ft.FilePickerResultEvent):
-            nonlocal selected_temp_image
+            nonlocal selected_image_data
             if e.files:
                 file = e.files[0]
-                selected_temp_image = file.path
                 size_kb = file.size / 1024
-                image_status_text.value = f"✓ {file.name[:20]} ({size_kb:.0f}KB)"
-                image_status_text.color = self.success_color
+                
+                # On mobile, we need to read the file data directly
+                try:
+                    # Read the file content
+                    with open(file.path, 'rb') as f:
+                        file_data = f.read()
+                    
+                    selected_image_data = {
+                        'name': file.name,
+                        'data': file_data,
+                        'size': file.size
+                    }
+                    
+                    image_status_text.value = f"✓ {file.name[:20]} ({size_kb:.0f}KB)"
+                    image_status_text.color = self.success_color
+                    print(f"DEBUG: Image selected: {file.name}, size: {size_kb:.0f}KB")
+                except Exception as ex:
+                    print(f"DEBUG: Error reading image: {ex}")
+                    image_status_text.value = f"❌ Error reading image"
+                    image_status_text.color = self.danger_color
                 page.update()
         
         image_picker = ft.FilePicker(on_result=on_image_picked)
@@ -3438,13 +3455,22 @@ class StoreApp:
         image_row = ft.Row([upload_btn, image_status_text], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True)
         
         def save_uploaded_image():
-            if selected_temp_image and os.path.exists(selected_temp_image):
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                file_ext = os.path.splitext(selected_temp_image)[1].lower()
-                new_filename = f"img_{timestamp}{file_ext}"
-                new_path = os.path.join(images_folder, new_filename)
-                shutil.copy2(selected_temp_image, new_path)
-                return f"images/{new_filename}"
+            if selected_image_data:
+                try:
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    file_ext = os.path.splitext(selected_image_data['name'])[1].lower()
+                    new_filename = f"img_{timestamp}{file_ext}"
+                    new_path = os.path.join(images_folder, new_filename)
+                    
+                    # Write the image data to file
+                    with open(new_path, 'wb') as f:
+                        f.write(selected_image_data['data'])
+                    
+                    print(f"DEBUG: Image saved to: {new_path}")
+                    return f"images/{new_filename}"
+                except Exception as e:
+                    print(f"DEBUG: Error saving image: {e}")
+                    return None
             return None
         
         # Create scrollable column
@@ -3467,13 +3493,20 @@ class StoreApp:
             page.update()
         
         def save_material():
+            print("DEBUG: Save material called")
+            
             if not name_field.value:
                 page.snack_bar = ft.SnackBar(ft.Text("Please enter a name!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
                 return
             
-            saved_image_path = save_uploaded_image() if selected_temp_image else None
+            # Save image if selected
+            saved_image_path = None
+            if selected_image_data:
+                saved_image_path = save_uploaded_image()
+                print(f"DEBUG: Saved image path: {saved_image_path}")
+            
             selected_category_id = int(category_field.value)
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
@@ -3495,27 +3528,34 @@ class StoreApp:
                 except:
                     length_val = None
             
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO materials (name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                name_field.value, selected_category_id,
-                int(quantity_field.value) if quantity_field.value else 0,
-                quality_field.value, location_field.value,
-                size_field.value, length_val,
-                color_field.value, notes_field.value,
-                saved_image_path,
-                generate_barcode(), current_time, current_time
-            ))
-            conn.commit()
-            conn.close()
-            
-            close_dialog()
-            page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=2000)
-            page.snack_bar.open = True
-            self.show_materials_screen(page)
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO materials (name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    name_field.value, selected_category_id,
+                    int(quantity_field.value) if quantity_field.value else 0,
+                    quality_field.value, location_field.value,
+                    size_field.value, length_val,
+                    color_field.value, notes_field.value,
+                    saved_image_path,
+                    generate_barcode(), current_time, current_time
+                ))
+                conn.commit()
+                conn.close()
+                print("DEBUG: Material saved successfully")
+                
+                close_dialog()
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=2000)
+                page.snack_bar.open = True
+                self.show_materials_screen(page)
+            except Exception as e:
+                print(f"DEBUG: Error saving material: {e}")
+                page.snack_bar = ft.SnackBar(ft.Text(f"Error: {str(e)}"), bgcolor=self.danger_color)
+                page.snack_bar.open = True
+                page.update()
         
         # Dialog content
         dialog_content = ft.Column([
@@ -3543,7 +3583,7 @@ class StoreApp:
         page.update()
         
     def open_edit_modal(self, page: ft.Page, material_id):
-        """Edit material - Working Cancel button"""
+        """Edit material - Fixed for mobile (handles content URI)"""
         import sqlite3
         import os
         import shutil
@@ -3625,21 +3665,37 @@ class StoreApp:
         
         size_field.on_change = update_length
         
-        # Image handling
+        # Image handling - Mobile friendly
         current_image_path = material['image_path'] if material['image_path'] else None
         has_current_image = current_image_path and os.path.exists(current_image_path) if current_image_path else False
         
         image_status_text = ft.Text("✓ Current image saved" if has_current_image else "No image", size=10, color=self.success_color if has_current_image else "#888888")
-        selected_temp_image = None
+        selected_image_data = None
         
         def on_image_picked(e: ft.FilePickerResultEvent):
-            nonlocal selected_temp_image
+            nonlocal selected_image_data
             if e.files:
                 file = e.files[0]
-                selected_temp_image = file.path
                 size_kb = file.size / 1024
-                image_status_text.value = f"✓ New: {file.name[:20]} ({size_kb:.0f}KB)"
-                image_status_text.color = self.success_color
+                
+                try:
+                    # Read the file content
+                    with open(file.path, 'rb') as f:
+                        file_data = f.read()
+                    
+                    selected_image_data = {
+                        'name': file.name,
+                        'data': file_data,
+                        'size': file.size
+                    }
+                    
+                    image_status_text.value = f"✓ New: {file.name[:20]} ({size_kb:.0f}KB)"
+                    image_status_text.color = self.success_color
+                    print(f"DEBUG: New image selected: {file.name}")
+                except Exception as ex:
+                    print(f"DEBUG: Error reading image: {ex}")
+                    image_status_text.value = f"❌ Error reading image"
+                    image_status_text.color = self.danger_color
                 page.update()
         
         image_picker = ft.FilePicker(on_result=on_image_picked)
@@ -3658,18 +3714,31 @@ class StoreApp:
         image_row = ft.Row([upload_btn, image_status_text], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True)
         
         def save_uploaded_image():
-            if selected_temp_image and os.path.exists(selected_temp_image):
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                file_ext = os.path.splitext(selected_temp_image)[1].lower()
-                new_filename = f"img_{material_id}_{timestamp}{file_ext}"
-                new_path = os.path.join(images_folder, new_filename)
-                shutil.copy2(selected_temp_image, new_path)
-                if current_image_path and os.path.exists(current_image_path):
-                    try:
-                        os.remove(current_image_path)
-                    except:
-                        pass
-                return f"images/{new_filename}"
+            if selected_image_data:
+                try:
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    file_ext = os.path.splitext(selected_image_data['name'])[1].lower()
+                    new_filename = f"img_{material_id}_{timestamp}{file_ext}"
+                    new_path = os.path.join(images_folder, new_filename)
+                    
+                    # Write the image data to file
+                    with open(new_path, 'wb') as f:
+                        f.write(selected_image_data['data'])
+                    
+                    print(f"DEBUG: New image saved to: {new_path}")
+                    
+                    # Delete old image if exists
+                    if current_image_path and os.path.exists(current_image_path):
+                        try:
+                            os.remove(current_image_path)
+                            print(f"DEBUG: Old image deleted: {current_image_path}")
+                        except Exception as e:
+                            print(f"DEBUG: Error deleting old image: {e}")
+                    
+                    return f"images/{new_filename}"
+                except Exception as e:
+                    print(f"DEBUG: Error saving image: {e}")
+                    return None
             return None
         
         # Create scrollable column
@@ -3692,15 +3761,19 @@ class StoreApp:
             page.update()
         
         def update_material():
+            print("DEBUG: Update material called")
+            
             if not name_field.value:
                 page.snack_bar = ft.SnackBar(ft.Text("Please enter a name!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
                 return
             
+            # Handle image
             final_image_path = current_image_path
-            if selected_temp_image:
+            if selected_image_data:
                 final_image_path = save_uploaded_image()
+                print(f"DEBUG: Final image path: {final_image_path}")
             
             selected_category_id = int(category_field.value)
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -3723,29 +3796,36 @@ class StoreApp:
                 except:
                     length_val = None
             
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE materials 
-                SET name = ?, category_id = ?, quantity = ?, quality = ?, location_ids = ?,
-                    size = ?, length = ?, colors = ?, notes = ?, image_path = ?, updated_at = ?
-                WHERE id = ?
-            ''', (
-                name_field.value, selected_category_id,
-                int(quantity_field.value) if quantity_field.value else 0,
-                quality_field.value, location_field.value,
-                size_field.value, length_val,
-                color_field.value, notes_field.value,
-                final_image_path,
-                current_time, material_id
-            ))
-            conn.commit()
-            conn.close()
-            
-            close_dialog()
-            page.snack_bar = ft.SnackBar(ft.Text(f"✓ Updated: {name_field.value}"), bgcolor=self.success_color, duration=2000)
-            page.snack_bar.open = True
-            self.show_materials_screen(page)
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE materials 
+                    SET name = ?, category_id = ?, quantity = ?, quality = ?, location_ids = ?,
+                        size = ?, length = ?, colors = ?, notes = ?, image_path = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (
+                    name_field.value, selected_category_id,
+                    int(quantity_field.value) if quantity_field.value else 0,
+                    quality_field.value, location_field.value,
+                    size_field.value, length_val,
+                    color_field.value, notes_field.value,
+                    final_image_path,
+                    current_time, material_id
+                ))
+                conn.commit()
+                conn.close()
+                print("DEBUG: Material updated successfully")
+                
+                close_dialog()
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Updated: {name_field.value}"), bgcolor=self.success_color, duration=2000)
+                page.snack_bar.open = True
+                self.show_materials_screen(page)
+            except Exception as e:
+                print(f"DEBUG: Error updating material: {e}")
+                page.snack_bar = ft.SnackBar(ft.Text(f"Error: {str(e)}"), bgcolor=self.danger_color)
+                page.snack_bar.open = True
+                page.update()
         
         # Dialog content
         dialog_content = ft.Column([
