@@ -3913,56 +3913,56 @@ class StoreApp:
         color_field = ft.TextField(label="Colors", width=field_width, bgcolor=self.card_color)
         notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
-        # Barcode field with scan button
+        # Create barcode field with inline paste button
         barcode_field = ft.TextField(
             label="Barcode", 
-            width=field_width - 40,
+            width=field_width - 80,
             bgcolor=self.card_color, 
             value=generate_barcode(),
             read_only=True,
         )
-        # In open_add_modal, add a one-click paste button
-        def quick_paste_barcode(e):
+        
+        def quick_paste(e):
             try:
                 clipboard = page.get_clipboard()
                 if clipboard:
                     barcode_field.value = clipboard
-                    page.snack_bar = ft.SnackBar(ft.Text(f"✓ Pasted: {clipboard}"), bgcolor=self.success_color, duration=1500)
+                    page.snack_bar = ft.SnackBar(ft.Text(f"✓ Pasted: {clipboard}"), bgcolor=self.success_color, duration=2000)
                     page.snack_bar.open = True
                     page.update()
+                    # Auto search after paste
+                    self.search_barcode_by_value(clipboard, page)
                 else:
-                    page.snack_bar = ft.SnackBar(ft.Text("❌ Nothing in clipboard"), bgcolor=self.danger_color)
+                    page.snack_bar = ft.SnackBar(ft.Text("❌ Nothing in clipboard"), bgcolor=self.danger_color, duration=2000)
                     page.snack_bar.open = True
                     page.update()
             except:
                 page.snack_bar = ft.SnackBar(ft.Text("❌ Cannot access clipboard"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
-
-        # Add to barcode row
-        paste_btn = ft.IconButton(
+        
+        barcode_paste_btn = ft.IconButton(
             icon=ft.icons.CONTENT_PASTE,
             icon_size=20,
             icon_color=self.success_color,
-            tooltip="Paste Barcode",
-            on_click=quick_paste_barcode,
+            tooltip="Paste from Clipboard",
+            on_click=quick_paste,
         )
-
-        barcode_row = ft.Row([
-            barcode_field,
-            paste_btn,
-            barcode_scan_btn,
-        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        
         barcode_scan_btn = ft.IconButton(
             icon=ft.icons.QR_CODE_SCANNER,
             icon_size=20,
             icon_color=self.accent_color,
-            tooltip="Scan Barcode",
+            tooltip="Open Scanner",
             on_click=lambda e: self.show_barcode_scanner(page, barcode_field),
         )
         
-        barcode_row = ft.Row([barcode_field, barcode_scan_btn], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-        
+        barcode_row = ft.Row([
+            barcode_field,
+            barcode_paste_btn,
+            barcode_scan_btn,
+        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
         regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=lambda e: setattr(barcode_field, 'value', generate_barcode()) or page.update())
         
         # Auto-update length from size
@@ -4485,25 +4485,22 @@ class StoreApp:
         dialog.open = True
         page.update()
     def show_barcode_scanner(self, page: ft.Page, target_field=None):
-        """Barcode scanner with X icon to close"""
+        """Barcode scanner with working paste on mobile"""
         
         def close_dialog(e):
             page.dialog.open = False
             page.update()
         
-        def paste_and_search(e):
+        def paste_barcode(e):
             try:
                 clipboard = page.get_clipboard()
                 if clipboard:
-                    if target_field:
-                        target_field.value = clipboard
-                    page.dialog.open = False
-                    page.snack_bar = ft.SnackBar(ft.Text(f"✓ Barcode: {clipboard}"), bgcolor=self.success_color, duration=2000)
-                    page.snack_bar.open = True
+                    barcode_input.value = clipboard
+                    status_text.value = "✓ Barcode pasted!"
+                    status_text.color = self.success_color
                     page.update()
-                    self.search_barcode_by_value(clipboard, page)
                 else:
-                    status_text.value = "❌ Clipboard is empty"
+                    status_text.value = "❌ Clipboard is empty. Scan a barcode first."
                     status_text.color = self.danger_color
                     page.update()
             except Exception as ex:
@@ -4511,18 +4508,18 @@ class StoreApp:
                 status_text.color = self.danger_color
                 page.update()
         
-        def manual_search(e):
+        def search_barcode(e):
             barcode = barcode_input.value.strip()
             if barcode:
                 if target_field:
                     target_field.value = barcode
                 page.dialog.open = False
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Barcode: {barcode}"), bgcolor=self.success_color, duration=2000)
+                page.snack_bar = ft.SnackBar(ft.Text(f"🔍 Searching: {barcode}"), bgcolor=self.accent_color, duration=1500)
                 page.snack_bar.open = True
                 page.update()
                 self.search_barcode_by_value(barcode, page)
             else:
-                status_text.value = "❌ Please enter a barcode"
+                status_text.value = "❌ Please enter or paste a barcode first"
                 status_text.color = self.danger_color
                 page.update()
         
@@ -4535,14 +4532,35 @@ class StoreApp:
         status_text = ft.Text("", size=12)
         
         instruction = ft.Column([
-            ft.Text("📷 Quick Barcode Scan:", size=14, weight=ft.FontWeight.BOLD),
-            ft.Text("1. Use Camera app or Barcode Scanner app", size=12),
-            ft.Text("2. Copy the barcode number", size=12),
-            ft.Text("3. Tap 'Paste & Search' below", size=12),
-            ft.Text("4. Item details will appear automatically", size=12),
+            ft.Text("📷 How to scan:", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("1. Open Camera app or Barcode Scanner", size=12),
+            ft.Text("2. Scan and copy the barcode number", size=12),
+            ft.Text("3. Tap 'Paste' button below", size=12),
+            ft.Text("4. Tap 'Search' to find item", size=12),
             ft.Container(height=5),
-            ft.Text("💡 Or type the barcode number and tap 'Search'", size=11, color="#888888"),
+            ft.Text("💡 Or type the barcode number manually", size=11, color="#888888"),
         ], spacing=5)
+        
+        # Buttons side by side in a container
+        button_container = ft.Container(
+            content=ft.Row([
+                ft.ElevatedButton(
+                    "📋 Paste", 
+                    on_click=paste_barcode, 
+                    icon=ft.icons.CONTENT_PASTE, 
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor=self.accent_color),
+                ),
+                ft.ElevatedButton(
+                    "🔍 Search", 
+                    on_click=search_barcode, 
+                    icon=ft.icons.SEARCH, 
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor=self.success_color),
+                ),
+            ], spacing=10),
+            padding=ft.padding.symmetric(horizontal=5),
+        )
         
         dialog_content = ft.Column([
             ft.Row([
@@ -4554,17 +4572,13 @@ class StoreApp:
             ft.Container(height=10),
             barcode_input,
             status_text,
-            ft.Row([
-                ft.ElevatedButton("📋 Paste & Search", on_click=paste_and_search, icon=ft.icons.CONTENT_PASTE, expand=True),
-            ], spacing=10),
-            ft.Row([
-                ft.ElevatedButton("🔍 Search", on_click=manual_search, icon=ft.icons.SEARCH, expand=True),
-            ], spacing=10),
+            ft.Container(height=10),
+            button_container,
         ], spacing=12)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=350, height=450, padding=15),
+            content=ft.Container(content=dialog_content, width=350, height=480, padding=15),
         )
         
         page.dialog = dialog
