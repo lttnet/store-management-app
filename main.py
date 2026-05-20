@@ -4485,7 +4485,7 @@ class StoreApp:
         dialog.open = True
         page.update()
     def show_barcode_scanner(self, page: ft.Page, target_field=None):
-        """Simple barcode scanner - guaranteed working cancel"""
+        """Barcode scanner with X icon to close"""
         
         def close_dialog(e):
             page.dialog.open = False
@@ -4503,12 +4503,12 @@ class StoreApp:
                     page.update()
                     self.search_barcode_by_value(clipboard, page)
                 else:
-                    page.snack_bar = ft.SnackBar(ft.Text("❌ Clipboard is empty"), bgcolor=self.danger_color, duration=2000)
-                    page.snack_bar.open = True
+                    status_text.value = "❌ Clipboard is empty"
+                    status_text.color = self.danger_color
                     page.update()
             except Exception as ex:
-                page.snack_bar = ft.SnackBar(ft.Text(f"❌ Error: {str(ex)}"), bgcolor=self.danger_color)
-                page.snack_bar.open = True
+                status_text.value = f"❌ Error: {str(ex)}"
+                status_text.color = self.danger_color
                 page.update()
         
         def manual_search(e):
@@ -4545,7 +4545,10 @@ class StoreApp:
         ], spacing=5)
         
         dialog_content = ft.Column([
-            ft.Text("Barcode Scanner", size=18, weight=ft.FontWeight.BOLD),
+            ft.Row([
+                ft.Text("Barcode Scanner", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ]),
             ft.Divider(),
             instruction,
             ft.Container(height=10),
@@ -4557,16 +4560,11 @@ class StoreApp:
             ft.Row([
                 ft.ElevatedButton("🔍 Search", on_click=manual_search, icon=ft.icons.SEARCH, expand=True),
             ], spacing=10),
-            ft.Divider(),
-            ft.Row([
-                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
-            ], spacing=10),
         ], spacing=12)
         
-        # Create dialog without storing reference
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=350, height=480, padding=15),
+            content=ft.Container(content=dialog_content, width=350, height=450, padding=15),
         )
         
         page.dialog = dialog
