@@ -799,17 +799,17 @@ class StoreApp:
         
         # ========== SECTION 8: IMPORT/EXPORT ==========
         main_column.controls.append(ft.Text("Import / Export", size=16, weight=ft.FontWeight.BOLD))
-        
+
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Import CSV", on_click=lambda e: self.show_import_dialog(page), expand=True),
-                ft.ElevatedButton("Export PDF",  on_click=lambda e: self.export_inventory_html(page), expand=True),
+                ft.ElevatedButton("📥 Import Materials", on_click=lambda e: self.show_import_dialog(page, "materials"), expand=True),
+                ft.ElevatedButton("📥 Import Accessories", on_click=lambda e: self.show_import_dialog(page, "accessories"), expand=True),
             ], spacing=8)
         )
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Low Stock PDF", on_click=lambda e: self.export_low_stock_html(page), expand=True,
-                                style=ft.ButtonStyle(bgcolor=self.danger_color)),
+                ft.ElevatedButton("📤 Export CSV", on_click=lambda e: self.export_all_data_simple(page), expand=True),
+                ft.ElevatedButton("📄 Export HTML", on_click=lambda e: self.export_inventory_html(page), expand=True),
             ], spacing=8)
         )
         
@@ -834,31 +834,318 @@ class StoreApp:
         
         self.current_view = "dashboard"
         page.update()
-
+    def show_import_dialog(self, page: ft.Page, import_type="materials"):
+        """Import CSV file - CORRECTLY handles materials vs accessories"""
+        import csv
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime
+        import random
+        import string
+        
+        def generate_barcode():
+            prefix = "890"
+            random_numbers = ''.join(random.choices(string.digits, k=9))
+            barcode_without_checksum = prefix + random_numbers
+            total = 0
+            for i, digit in enumerate(barcode_without_checksum):
+                if i % 2 == 0:
+                    total += int(digit) * 1
+                else:
+                    total += int(digit) * 3
+            checksum = (10 - (total % 10)) % 10
+            return barcode_without_checksum + str(checksum)
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        def on_file_picked(e: ft.FilePickerResultEvent):
+            if e.files:
+                file = e.files[0]
+                filepath = file.path
+                
+                page.dialog.open = False
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"📥 Importing {import_type} from {file.name}..."),
+                    bgcolor=self.accent_color,
+                    duration=2000
+                )
+                page.snack_bar.open = True
+                page.update()
+                
+                try:
+                    success_count = 0
+                    error_count = 0
+                    
+                    with open(filepath, 'r', encoding='utf-8-sig') as csvfile:
+                        reader = csv.DictReader(csvfile)
+                        
+                        conn = sqlite3.connect(DB_PATH)
+                        cursor = conn.cursor()
+                        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        print(f"IMPORT: Importing as {import_type}")
+                        
+                        for row_num, row in enumerate(reader, start=2):
+                            try:
+                                name = row.get('Name', '').strip()
+                                if not name:
+                                    name = row.get('name', '').strip()
+                                if not name:
+                                    print(f"Row {row_num}: Missing name, skipping")
+                                    error_count += 1
+                                    continue
+                                
+                                # Get quantity
+                                try:
+                                    quantity = int(float(row.get('Quantity', 0)))
+                                except:
+                                    quantity = 0
+                                
+                                # Get category
+                                category = row.get('Category', 'Other').strip()
+                                if not category:
+                                    category = 'Other'
+                                
+                                # Get quality
+                                quality = row.get('Quality', 'New').strip()
+                                if quality not in ['New', 'Used', 'Damaged', 'Repaired']:
+                                    quality = 'New'
+                                
+                                # Get location
+                                location = row.get('Location', '').strip()
+                                
+                                # Get barcode
+                                barcode = row.get('Barcode', '').strip()
+                                if not barcode:
+                                    barcode = generate_barcode()
+                                
+                                # Get category ID
+                                cursor.execute("SELECT id FROM categories WHERE name = ?", (category,))
+                                cat_result = cursor.fetchone()
+                                category_id = cat_result[0] if cat_result else 8
+                                
+                                # IMPORTANT: Check based on import_type
+                                if import_type == "materials":
+                                    # Check for duplicate barcode in materials
+                                    cursor.execute("SELECT id FROM materials WHERE barcode_value = ?", (barcode,))
+                                    if cursor.fetchone():
+                                        barcode = generate_barcode()
+                                    
+                                    # Get material-specific fields
+                                    size = row.get('Size', '').strip()
+                                    
+                                    length_val = None
+                                    try:
+                                        length_val = float(row.get('Length', 0))
+                                    except:
+                                        pass
+                                    
+                                    colors = row.get('Colors', '').strip()
+                                    notes = row.get('Notes', '').strip()
+                                    
+                                    cursor.execute('''
+                                        INSERT INTO materials (name, category_id, quantity, quality, location_ids, 
+                                                            size, length, colors, notes, barcode_value, created_at, updated_at)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    ''', (
+                                        name, category_id, quantity, quality, location,
+                                        size, length_val, colors, notes, barcode,
+                                        current_time, current_time
+                                    ))
+                                    print(f"IMPORT: Added material: {name}")
+                                    
+                                else:  # accessories
+                                    # Check for duplicate barcode in accessories
+                                    cursor.execute("SELECT id FROM accessories WHERE barcode_value = ?", (barcode,))
+                                    if cursor.fetchone():
+                                        barcode = generate_barcode()
+                                    
+                                    # Get price
+                                    price = 0.0
+                                    try:
+                                        price = float(row.get('Price', 0))
+                                    except:
+                                        pass
+                                    
+                                    notes = row.get('Notes', '').strip()
+                                    
+                                    cursor.execute('''
+                                        INSERT INTO accessories (name, category_id, quantity, price, quality, location, 
+                                                                notes, barcode_value, created_at, updated_at)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    ''', (
+                                        name, category_id, quantity, price, quality, location,
+                                        notes, barcode, current_time, current_time
+                                    ))
+                                    print(f"IMPORT: Added accessory: {name}")
+                                
+                                success_count += 1
+                                
+                            except Exception as ex:
+                                error_count += 1
+                                print(f"Row {row_num} error: {ex}")
+                        
+                        conn.commit()
+                        conn.close()
+                    
+                    # Show result message
+                    msg = f"✓ Imported {success_count} {import_type}"
+                    if error_count > 0:
+                        msg += f", {error_count} skipped"
+                    
+                    page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=self.success_color, duration=4000)
+                    page.snack_bar.open = True
+                    
+                    # Refresh the correct screen
+                    if import_type == "materials":
+                        self.show_materials_screen(page)
+                    else:
+                        self.show_accessories(page)
+                    
+                    page.update()
+                        
+                except Exception as ex:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"❌ Import failed: {str(ex)}"),
+                        bgcolor=self.danger_color,
+                        duration=4000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+        
+        # Create file picker
+        file_picker = ft.FilePicker(on_result=on_file_picked)
+        page.overlay.append(file_picker)
+        
+        def pick_file(e):
+            file_picker.pick_files(
+                allow_multiple=False,
+                allowed_extensions=["csv"],
+                dialog_title=f"Select {import_type.title()} CSV File"
+            )
+        
+        # Dialog content
+        dialog_content = ft.Column([
+            ft.Text(f"📥 Import {import_type.title()}", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            ft.Text("CSV Format:", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("First row must be headers. Required: Name, Quantity", size=12),
+            ft.Container(height=10),
+            ft.ElevatedButton("📁 Select CSV File", on_click=pick_file, icon=ft.icons.UPLOAD_FILE),
+            ft.Container(height=10),
+            ft.TextButton("Cancel", on_click=close_dialog),
+        ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=400, height=280, padding=20),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+    def export_all_data_simple(self, page: ft.Page):
+        """Export all data to CSV files"""
+        import csv
+        import os
+        from datetime import datetime
+        import webbrowser
+        
+        try:
+            # Create exports folder
+            export_dir = "exports"
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Export materials with category names
+            materials = self.dict_list(MaterialManager.get_all())
+            if materials:
+                materials_file = os.path.join(export_dir, f"materials_{timestamp}.csv")
+                with open(materials_file, 'w', newline='', encoding='utf-8-sig') as f:
+                    # Define fields for export
+                    fields = ['Name', 'Category', 'Quantity', 'Quality', 'Location', 
+                            'Size', 'Length', 'Colors', 'Notes', 'Barcode']
+                    writer = csv.DictWriter(f, fieldnames=fields)
+                    writer.writeheader()
+                    
+                    for m in materials:
+                        writer.writerow({
+                            'Name': m.get('name', ''),
+                            'Category': m.get('category_name', 'Other'),
+                            'Quantity': m.get('quantity', 0),
+                            'Quality': m.get('quality', 'New'),
+                            'Location': m.get('location_ids', ''),
+                            'Size': m.get('size', ''),
+                            'Length': m.get('length', ''),
+                            'Colors': m.get('colors', ''),
+                            'Notes': m.get('notes', ''),
+                            'Barcode': m.get('barcode_value', '')
+                        })
+            
+            # Export accessories
+            accessories = self.dict_list(AccessoryManager.get_all())
+            if accessories:
+                accessories_file = os.path.join(export_dir, f"accessories_{timestamp}.csv")
+                with open(accessories_file, 'w', newline='', encoding='utf-8-sig') as f:
+                    fields = ['Name', 'Category', 'Quantity', 'Price', 'Quality', 
+                            'Location', 'Notes', 'Barcode']
+                    writer = csv.DictWriter(f, fieldnames=fields)
+                    writer.writeheader()
+                    
+                    for a in accessories:
+                        writer.writerow({
+                            'Name': a.get('name', ''),
+                            'Category': a.get('category_name', 'Other'),
+                            'Quantity': a.get('quantity', 0),
+                            'Price': a.get('price', 0),
+                            'Quality': a.get('quality', 'New'),
+                            'Location': a.get('location', ''),
+                            'Notes': a.get('notes', ''),
+                            'Barcode': a.get('barcode_value', '')
+                        })
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Data exported to {export_dir}/"),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            # Try to open the exports folder
+            if os.path.exists(export_dir):
+                webbrowser.open(f'file://{os.path.abspath(export_dir)}')
+                
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ Export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
     def export_inventory_html(self, page: ft.Page):
-        """Export inventory to HTML and open in browser automatically"""
+        """Export inventory to HTML and open in browser"""
         from datetime import datetime
         import os
         import webbrowser
         
         try:
-            # Get data
             materials = self.dict_list(MaterialManager.get_all())
             accessories = self.dict_list(AccessoryManager.get_all())
             
-            # Calculate totals
-            total_materials = len(materials)
-            total_accessories = len(accessories)
-            total_items = total_materials + total_accessories
+            total_items = len(materials) + len(accessories)
             total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
             low_stock_count = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
             
-            # Create HTML content
-            html_content = self.generate_html_report(materials, accessories, total_items, total_stock, low_stock_count, total_materials, total_accessories)
+            html_content = self.generate_html_report(materials, accessories, total_items, total_stock, low_stock_count, len(materials), len(accessories))
             
-            # Save to a temporary file or Downloads folder
             download_dir = self.get_download_path()
-            
             if not os.path.exists(download_dir):
                 os.makedirs(download_dir)
             
@@ -868,14 +1155,12 @@ class StoreApp:
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            # Open in web browser immediately
             webbrowser.open(f'file://{os.path.abspath(filename)}')
             
-            # Show success message
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ Report opened in browser! Saved to: {filename}"),
+                ft.Text(f"✓ Report opened in browser!"),
                 bgcolor=self.success_color,
-                duration=5000
+                duration=4000
             )
             page.snack_bar.open = True
             page.update()
@@ -888,47 +1173,32 @@ class StoreApp:
             )
             page.snack_bar.open = True
             page.update()
+
     def get_download_path(self):
-        """Get the appropriate download folder path for the device"""
+        """Get the appropriate download folder path"""
         import os
         
-        # Android devices
         if os.path.exists("/storage/emulated/0/Download"):
             return "/storage/emulated/0/Download/StoreManagement"
-        
-        # Windows/Mac/Linux desktop
         elif os.path.exists(os.path.expanduser("~/Downloads")):
             return os.path.expanduser("~/Downloads/StoreManagement")
-        
-        # Fallback to local folder
         else:
             return "exports"
 
     def generate_html_report(self, materials, accessories, total_items, total_stock, low_stock_count, total_materials, total_accessories):
-        """Generate beautiful HTML report content"""
+        """Generate HTML report content"""
         from datetime import datetime
-        
-        quality_colors = {
-            "New": "#4CAF50",
-            "Used": "#FF9800", 
-            "Damaged": "#F44336",
-            "Repaired": "#2196F3"
-        }
         
         html_content = f"""<!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Inventory Report - Store Management System</title>
+        <title>Inventory Report</title>
         <style>
-            * {{
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }}
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 min-height: 100vh;
                 padding: 20px;
@@ -947,14 +1217,6 @@ class StoreApp:
                 padding: 30px;
                 text-align: center;
             }}
-            .header h1 {{
-                font-size: 28px;
-                margin-bottom: 10px;
-            }}
-            .header p {{
-                opacity: 0.9;
-                font-size: 14px;
-            }}
             .stats {{
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -969,23 +1231,12 @@ class StoreApp:
                 text-align: center;
                 box-shadow: 0 2px 10px rgba(0,0,0,0.05);
             }}
-            .stat-card .icon {{
-                font-size: 32px;
-                margin-bottom: 10px;
-            }}
             .stat-card .value {{
                 font-size: 28px;
                 font-weight: bold;
                 color: #1976D2;
             }}
-            .stat-card .label {{
-                color: #666;
-                font-size: 12px;
-                margin-top: 5px;
-            }}
-            .section {{
-                padding: 20px 30px;
-            }}
+            .section {{ padding: 20px 30px; }}
             .section h2 {{
                 font-size: 20px;
                 margin-bottom: 15px;
@@ -993,33 +1244,17 @@ class StoreApp:
                 border-left: 4px solid #1976D2;
                 padding-left: 15px;
             }}
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 10px;
-                overflow-x: auto;
-                display: block;
-            }}
+            table {{ width: 100%; border-collapse: collapse; }}
             th, td {{
                 border: 1px solid #ddd;
-                padding: 12px;
+                padding: 10px;
                 text-align: left;
                 font-size: 13px;
             }}
-            th {{
-                background-color: #1976D2;
-                color: white;
-                font-weight: 600;
-            }}
-            tr:nth-child(even) {{
-                background-color: #f9f9f9;
-            }}
-            tr:hover {{
-                background-color: #f5f5f5;
-            }}
+            th {{ background-color: #1976D2; color: white; }}
             .badge {{
                 display: inline-block;
-                padding: 4px 12px;
+                padding: 3px 10px;
                 border-radius: 20px;
                 font-size: 11px;
                 font-weight: 600;
@@ -1029,137 +1264,50 @@ class StoreApp:
             .badge-used {{ background-color: #FF9800; }}
             .badge-damaged {{ background-color: #F44336; }}
             .badge-repaired {{ background-color: #2196F3; }}
-            .low-stock {{
-                color: #F44336;
-                font-weight: bold;
-            }}
+            .low-stock {{ color: #F44336; font-weight: bold; }}
             .footer {{
                 text-align: center;
                 padding: 20px;
                 background: #f8f9fa;
                 color: #666;
                 font-size: 12px;
-                border-top: 1px solid #eee;
-            }}
-            @media print {{
-                body {{
-                    background: white;
-                    padding: 0;
-                }}
             }}
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
-                <h1>📊 Store Management System</h1>
-                <p>Inventory Report - Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}</p>
+                <h1>Store Management System</h1>
+                <p>Inventory Report - {datetime.now().strftime('%B %d, %Y at %I:%M %p')}</p>
             </div>
-            
             <div class="stats">
-                <div class="stat-card">
-                    <div class="icon">📦</div>
-                    <div class="value">{total_items}</div>
-                    <div class="label">Total Items</div>
-                    <div style="font-size: 11px; color: #888;">{total_materials} Materials, {total_accessories} Accessories</div>
-                </div>
-                <div class="stat-card">
-                    <div class="icon">📊</div>
-                    <div class="value">{total_stock}</div>
-                    <div class="label">Total Stock Units</div>
-                </div>
-                <div class="stat-card">
-                    <div class="icon">⚠️</div>
-                    <div class="value" style="color: #F44336;">{low_stock_count}</div>
-                    <div class="label">Low Stock Items</div>
-                </div>
+                <div class="stat-card"><div class="value">{total_items}</div><div>Total Items</div></div>
+                <div class="stat-card"><div class="value">{total_stock}</div><div>Total Stock</div></div>
+                <div class="stat-card"><div class="value">{low_stock_count}</div><div>Low Stock</div></div>
             </div>
-            
             <div class="section">
-                <h2>📦 Materials Inventory ({total_materials} items)</h2>
-                <div style="overflow-x: auto;">
+                <h2>Materials ({total_materials})</h2>
+                <div style="overflow-x:auto;">
                     <table>
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Code</th>
-                                <th>Quantity</th>
-                                <th>Quality</th>
-                                <th>Location</th>
-                                <th>Size</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-    """
+                        <thead><tr><th>Name</th><th>Quantity</th><th>Quality</th><th>Location</th></tr></thead>
+                        <tbody>"""
         
-        for m in materials[:200]:
-            quantity = m.get('quantity', 0)
-            quantity_class = 'low-stock' if quantity < 10 else ''
+        for m in materials[:100]:
+            quantity_class = 'low-stock' if m.get('quantity', 0) < 10 else ''
             quality = m.get('quality', 'Used')
-            badge_class = f"badge-{quality.lower()}"
-            
-            html_content += f"""
-                            <tr>
-                                <td><strong>{m.get('name', 'N/A')}</strong></td>
-                                <td>{m.get('item_code', 'N/A')}</td>
-                                <td class="{quantity_class}">{quantity}</td>
-                                <td><span class="badge {badge_class}">{quality}</span></td>
-                                <td>{m.get('location_ids', 'N/A')}</td>
-                                <td>{m.get('size', 'N/A')}</td>
-                            </tr>"""
+            html_content += f"<tr><td>{m.get('name', 'N/A')}</td><td class='{quantity_class}'>{m.get('quantity', 0)}</td><td><span class='badge badge-{quality.lower()}'>{quality}</span></td><td>{m.get('location_ids', 'N/A')}</td></tr>"
         
-        html_content += """
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            
-            <div class="section">
-                <h2>🔧 Accessories Inventory ({total_accessories} items)</h2>
-                <div style="overflow-x: auto;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Code</th>
-                                <th>Quantity</th>
-                                <th>Quality</th>
-                                <th>Location</th>
-                                <th>Price</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-    """
+        html_content += f"""</tbody></table></div></div>
+            <div class="section"><h2>Accessories ({total_accessories})</h2>
+            <div style="overflow-x:auto;"><table><thead><tr><th>Name</th><th>Quantity</th><th>Quality</th><th>Location</th></tr></thead><tbody>"""
         
-        for a in accessories[:200]:
-            quantity = a.get('quantity', 0)
-            quantity_class = 'low-stock' if quantity < 10 else ''
+        for a in accessories[:100]:
+            quantity_class = 'low-stock' if a.get('quantity', 0) < 10 else ''
             quality = a.get('quality', 'Used')
-            badge_class = f"badge-{quality.lower()}"
-            location = a.get('location') or a.get('location_ids') or 'N/A'
-            price = a.get('price', 0)
-            price_text = f"${price:.2f}" if price else "N/A"
-            
-            html_content += f"""
-                            <tr>
-                                <td><strong>{a.get('name', 'N/A')}</strong></td>
-                                <td>{a.get('item_code', 'N/A')}</td>
-                                <td class="{quantity_class}">{quantity}</td>
-                                <td><span class="badge {badge_class}">{quality}</span></td>
-                                <td>{location}</td>
-                                <td>{price_text}</td>
-                            </tr>"""
+            html_content += f"<tr><td>{a.get('name', 'N/A')}</td><td class='{quantity_class}'>{a.get('quantity', 0)}</td><td><span class='badge badge-{quality.lower()}'>{quality}</span></td><td>{a.get('location', 'N/A')}</td></tr>"
         
-        html_content += f"""
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            
-            <div class="footer">
-                <p>Generated by Store Management System v1.0</p>
-                <p>© {datetime.now().year} All Rights Reserved</p>
-            </div>
+        html_content += f"""</tbody></table></div></div>
+            <div class="footer"><p>Generated by Store Management System</p></div>
         </div>
     </body>
     </html>"""
@@ -1167,17 +1315,15 @@ class StoreApp:
         return html_content
 
     def export_low_stock_html(self, page: ft.Page):
-        """Export low stock items to HTML and open in browser"""
+        """Export low stock items to HTML"""
         from datetime import datetime
         import os
         import webbrowser
         
         try:
-            # Get data
             materials = self.dict_list(MaterialManager.get_all())
             accessories = self.dict_list(AccessoryManager.get_all())
             
-            # Filter low stock items
             low_stock_items = []
             for m in materials:
                 if m.get('quantity', 0) < 10:
@@ -1197,7 +1343,7 @@ class StoreApp:
                         'code': a.get('item_code', 'N/A'),
                         'quantity': a.get('quantity', 0),
                         'quality': a.get('quality', 'Used'),
-                        'location': a.get('location') or a.get('location_ids', 'N/A'),
+                        'location': a.get('location', 'N/A'),
                     })
             
             if not low_stock_items:
@@ -1210,10 +1356,8 @@ class StoreApp:
                 page.update()
                 return
             
-            # Generate HTML content (simplified version)
             html_content = self.generate_low_stock_html(low_stock_items)
             
-            # Save to Downloads
             download_dir = self.get_download_path()
             if not os.path.exists(download_dir):
                 os.makedirs(download_dir)
@@ -1224,13 +1368,12 @@ class StoreApp:
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            # Open in browser
             webbrowser.open(f'file://{os.path.abspath(filename)}')
             
             page.snack_bar = ft.SnackBar(
                 ft.Text(f"✓ Low stock report opened in browser!"),
                 bgcolor=self.success_color,
-                duration=5000
+                duration=4000
             )
             page.snack_bar.open = True
             page.update()
@@ -1263,9 +1406,6 @@ class StoreApp:
             th {{ background-color: #F44336; color: white; }}
             .critical {{ background-color: #FFEBEE; }}
             .footer {{ text-align: center; margin-top: 20px; color: #888; font-size: 12px; }}
-            @media print {{
-                body {{ background: white; }}
-            }}
         </style>
     </head>
     <body>
@@ -1273,41 +1413,13 @@ class StoreApp:
             <h1>⚠️ Low Stock Report</h1>
             <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             <p>Total low stock items: {len(low_stock_items)}</p>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Type</th>
-                        <th>Name</th>
-                        <th>Code</th>
-                        <th>Current Stock</th>
-                        <th>Quality</th>
-                        <th>Location</th>
-                    </tr>
-                </thead>
-                <tbody>
-    """
+            <table><thead><tr><th>Type</th><th>Name</th><th>Current Stock</th><th>Quality</th><th>Location</th></tr></thead><tbody>"""
         
         for item in low_stock_items:
             critical_class = 'critical' if item['quantity'] < 5 else ''
-            html_content += f"""
-                    <tr class="{critical_class}">
-                        <td>{item['type']}</td>
-                        <td><strong>{item['name']}</strong></td>
-                        <td>{item['code']}</td>
-                        <td style="color: #F44336; font-weight: bold;">{item['quantity']}</td>
-                        <td>{item['quality']}</td>
-                        <td>{item['location']}</td>
-                    </tr>"""
+            html_content += f"<tr class='{critical_class}'><td>{item['type']}</td><td>{item['name']}</td><td style='color:#F44336;font-weight:bold'>{item['quantity']}</td><td>{item['quality']}</td><td>{item['location']}</td></tr>"
         
-        html_content += f"""
-                </tbody>
-            </table>
-            <div class="footer">
-                <p>Generated by Store Management System</p>
-            </div>
-        </div>
-    </body>
-    </html>"""
+        html_content += f"""</tbody></table><div class="footer"><p>Generated by Store Management System</p></div></div></body></html>"""
         
         return html_content
     def create_recent_activity_card(self, recent_items, font_small, font_normal):
