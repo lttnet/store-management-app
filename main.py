@@ -781,9 +781,9 @@ class StoreApp:
         else:
             main_column.controls.append(ft.Text("No accessories", size=12, color="#888888"))
         
-        # ========== SECTION 7: BUTTONS ==========
+            # ========== SECTION 7: QUICK ACTIONS ==========
         main_column.controls.append(ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD))
-        
+
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton("Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
@@ -793,7 +793,7 @@ class StoreApp:
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton("Scan", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
-                ft.ElevatedButton("Export", on_click=lambda e: self.export_all_data_simple(page), expand=True),
+                ft.ElevatedButton("Export Data", on_click=lambda e: self.export_all_data_simple(page), expand=True),
             ], spacing=8)
         )
         
@@ -802,14 +802,20 @@ class StoreApp:
 
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("📥 Import Materials", on_click=lambda e: self.show_import_dialog(page, "materials"), expand=True),
-                ft.ElevatedButton("📥 Import Accessories", on_click=lambda e: self.show_import_dialog(page, "accessories"), expand=True),
+                ft.ElevatedButton("Import Materials", on_click=lambda e: self.show_import_dialog(page, "materials"), expand=True),
+                ft.ElevatedButton("Import Accessories", on_click=lambda e: self.show_import_dialog(page, "accessories"), expand=True),
             ], spacing=8)
         )
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("📤 Export CSV", on_click=lambda e: self.export_all_data_simple(page), expand=True),
-                ft.ElevatedButton("📄 Export HTML", on_click=lambda e: self.export_inventory_html(page), expand=True),
+                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_all_data_simple(page), expand=True),
+                ft.ElevatedButton("Export HTML", on_click=lambda e: self.export_inventory_html(page), expand=True),
+            ], spacing=8)
+        )
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton("Low Stock Report", on_click=lambda e: self.export_low_stock_html(page), expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.danger_color)),
             ], spacing=8)
         )
         
@@ -836,7 +842,7 @@ class StoreApp:
         page.update()
 
     def show_import_dialog(self, page: ft.Page, import_type="materials"):
-        """Import CSV file - Clean version with only X icon"""
+        """Import CSV file - Fixed for mobile file picker"""
         import csv
         import sqlite3
         from database import DB_PATH
@@ -1004,16 +1010,27 @@ class StoreApp:
                     )
                     page.snack_bar.open = True
                     page.update()
+            else:
+                # User cancelled file picker
+                pass
         
+        # Create file picker with correct MIME types for mobile
         file_picker = ft.FilePicker(on_result=on_file_picked)
         page.overlay.append(file_picker)
         
         def pick_file(e):
+            # For mobile, use MIME types that work
             file_picker.pick_files(
                 allow_multiple=False,
-                allowed_extensions=["csv"],
-                dialog_title=f"Select {import_type.title()} CSV File"
+                allowed_extensions=["csv", "CSV"],
+                dialog_title=f"Select {import_type.title()} CSV File",
+                file_type=ft.FilePickerFileType.CUSTOM,
             )
+        
+        # Alternative: Also provide manual entry option
+        def manual_entry(e):
+            close_dialog(None)
+            self.show_manual_csv_entry(page, import_type)
         
         dialog_content = ft.Column([
             ft.Row([
@@ -1021,30 +1038,219 @@ class StoreApp:
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ]),
             ft.Divider(),
-            ft.Text("CSV Format:", size=14, weight=ft.FontWeight.BOLD),
-            ft.Text("First row must be headers", size=12),
-            ft.Text("Required: Name, Quantity", size=12),
+            ft.Text("Select a CSV file to import:", size=14, weight=ft.FontWeight.BOLD),
             ft.Container(height=10),
-            ft.Text("Example:", size=12, weight=ft.FontWeight.BOLD),
-            ft.Container(
-                content=ft.Text('Name,Quantity,Category,Quality,Location', size=10, color="#888888"),
-                padding=5,
-                bgcolor="#2C2C2C",
-                border_radius=5,
-            ),
-            ft.Container(
-                content=ft.Text('Screwdriver,25,Hardware,New,Toolbox 1', size=10, color="#888888"),
-                padding=5,
-                bgcolor="#2C2C2C",
-                border_radius=5,
+            ft.ElevatedButton(
+                "📁 Choose CSV File", 
+                on_click=pick_file, 
+                icon=ft.icons.UPLOAD_FILE, 
+                expand=True,
+                style=ft.ButtonStyle(bgcolor=self.accent_color),
             ),
             ft.Container(height=15),
-            ft.ElevatedButton("📁 Select CSV File", on_click=pick_file, icon=ft.icons.UPLOAD_FILE, expand=True),
+            ft.Text("Or paste CSV data manually:", size=12, color="#888888"),
+            ft.ElevatedButton(
+                "✏️ Manual Entry", 
+                on_click=manual_entry, 
+                icon=ft.icons.EDIT, 
+                expand=True,
+            ),
+            ft.Container(height=15),
+            ft.Text("CSV Format: Name,Quantity,Category,Quality,Location", size=10, color="#888888"),
         ], spacing=10)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=380, height=450, padding=15),
+            content=ft.Container(content=dialog_content, width=380, height=360, padding=15),
+        )
+        
+        dialog_ref = dialog
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def show_manual_csv_entry(self, page: ft.Page, import_type="materials"):
+        """Manual CSV entry dialog for when file picker doesn't work"""
+        import csv
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime
+        import random
+        import string
+        import io
+        
+        def generate_barcode():
+            prefix = "890"
+            random_numbers = ''.join(random.choices(string.digits, k=9))
+            barcode_without_checksum = prefix + random_numbers
+            total = 0
+            for i, digit in enumerate(barcode_without_checksum):
+                if i % 2 == 0:
+                    total += int(digit) * 1
+                else:
+                    total += int(digit) * 3
+            checksum = (10 - (total % 10)) % 10
+            return barcode_without_checksum + str(checksum)
+        
+        dialog_ref = None
+        
+        def close_dialog(e):
+            if dialog_ref:
+                dialog_ref.open = False
+                page.update()
+        
+        def process_csv(e):
+            csv_text = text_area.value.strip()
+            if not csv_text:
+                status_text.value = "❌ Please enter CSV data"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            try:
+                # Parse CSV from text
+                csv_io = io.StringIO(csv_text)
+                reader = csv.DictReader(csv_io)
+                
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                
+                success_count = 0
+                error_count = 0
+                
+                for row_num, row in enumerate(reader, start=2):
+                    try:
+                        name = row.get('Name', '').strip()
+                        if not name:
+                            continue
+                        
+                        try:
+                            quantity = int(float(row.get('Quantity', 0)))
+                        except:
+                            quantity = 0
+                        
+                        category = row.get('Category', 'Other').strip()
+                        if not category:
+                            category = 'Other'
+                        
+                        quality = row.get('Quality', 'New').strip()
+                        location = row.get('Location', '').strip()
+                        barcode = row.get('Barcode', '').strip()
+                        
+                        if not barcode:
+                            barcode = generate_barcode()
+                        
+                        cursor.execute("SELECT id FROM categories WHERE name = ?", (category,))
+                        cat_result = cursor.fetchone()
+                        category_id = cat_result[0] if cat_result else 8
+                        
+                        if import_type == "materials":
+                            cursor.execute("SELECT id FROM materials WHERE barcode_value = ?", (barcode,))
+                            if cursor.fetchone():
+                                barcode = generate_barcode()
+                            
+                            size = row.get('Size', '').strip()
+                            colors = row.get('Colors', '').strip()
+                            notes = row.get('Notes', '').strip()
+                            
+                            cursor.execute('''
+                                INSERT INTO materials (name, category_id, quantity, quality, location_ids, 
+                                                    size, colors, notes, barcode_value, created_at, updated_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (
+                                name, category_id, quantity, quality, location,
+                                size, colors, notes, barcode,
+                                current_time, current_time
+                            ))
+                        else:
+                            cursor.execute("SELECT id FROM accessories WHERE barcode_value = ?", (barcode,))
+                            if cursor.fetchone():
+                                barcode = generate_barcode()
+                            
+                            price = 0.0
+                            try:
+                                price = float(row.get('Price', 0))
+                            except:
+                                pass
+                            
+                            notes = row.get('Notes', '').strip()
+                            
+                            cursor.execute('''
+                                INSERT INTO accessories (name, category_id, quantity, price, quality, location, 
+                                                        notes, barcode_value, created_at, updated_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (
+                                name, category_id, quantity, price, quality, location,
+                                notes, barcode, current_time, current_time
+                            ))
+                        
+                        success_count += 1
+                        
+                    except Exception as ex:
+                        error_count += 1
+                        print(f"Row error: {ex}")
+                
+                conn.commit()
+                conn.close()
+                
+                close_dialog(None)
+                
+                msg = f"✓ Imported {success_count} {import_type}"
+                if error_count > 0:
+                    msg += f", {error_count} skipped"
+                
+                page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=self.success_color, duration=4000)
+                page.snack_bar.open = True
+                
+                if import_type == "materials":
+                    self.show_materials_screen(page)
+                else:
+                    self.show_accessories(page)
+                
+                page.update()
+                
+            except Exception as ex:
+                status_text.value = f"❌ Parse error: {str(ex)}"
+                status_text.color = self.danger_color
+                page.update()
+        
+        # Example CSV template
+        example_csv = """Name,Quantity,Category,Quality,Location
+    Screwdriver,25,Hardware,New,Toolbox 1
+    Hammer,10,Hardware,Used,Toolbox 2"""
+        
+        text_area = ft.TextField(
+            label="Paste CSV Data Here",
+            hint_text=example_csv,
+            multiline=True,
+            min_lines=10,
+            max_lines=15,
+            width=350,
+            bgcolor=self.card_color,
+        )
+        status_text = ft.Text("", size=12)
+        
+        dialog_content = ft.Column([
+            ft.Row([
+                ft.Text(f"📥 Manual CSV Entry - {import_type.title()}", size=16, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ]),
+            ft.Divider(),
+            ft.Text("Paste your CSV data below:", size=12),
+            ft.Text("First row must be headers: Name,Quantity,Category,Quality,Location", size=10, color="#888888"),
+            ft.Container(height=5),
+            text_area,
+            status_text,
+            ft.Container(height=10),
+            ft.Row([
+                ft.ElevatedButton("📥 Import Data", on_click=process_csv, icon=ft.icons.UPLOAD, expand=True),
+            ], spacing=10),
+        ], spacing=10)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=420, height=500, padding=15),
         )
         
         dialog_ref = dialog
@@ -1065,14 +1271,38 @@ class StoreApp:
         
         return storage_path
     def export_all_data_simple(self, page: ft.Page):
-        """Export all data to CSV files - Mobile friendly"""
+        """Export all data to CSV files - With Open Folder button"""
         import csv
         import os
+        import subprocess
+        import platform
         from datetime import datetime
         
         def close_dialog(e):
             page.dialog.open = False
             page.update()
+        
+        def open_export_folder(e):
+            """Open the export folder in file manager"""
+            export_dir = self.get_app_storage_path()
+            
+            try:
+                if platform.system() == "Windows":
+                    os.startfile(export_dir)
+                elif platform.system() == "Darwin":  # macOS
+                    subprocess.run(["open", export_dir])
+                else:  # Linux / Android
+                    # Try to open with file manager
+                    subprocess.run(["xdg-open", export_dir])
+            except Exception as ex:
+                # If can't open, show path
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"📁 Files saved to: {export_dir}"),
+                    bgcolor=self.accent_color,
+                    duration=5000
+                )
+                page.snack_bar.open = True
+                page.update()
         
         try:
             export_dir = self.get_app_storage_path()
@@ -1126,7 +1356,27 @@ class StoreApp:
                         })
                 files_created.append(f"accessories_{timestamp}.csv")
             
-            # Show success dialog
+            if not files_created:
+                dialog_content = ft.Column([
+                    ft.Row([
+                        ft.Text("⚠️ No Data", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                        ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+                    ]),
+                    ft.Divider(),
+                    ft.Text("No materials or accessories to export.", size=14),
+                    ft.Text("Add some items first.", size=12, color="#888888"),
+                ], spacing=10)
+                
+                dialog = ft.AlertDialog(
+                    title=ft.Text(""),
+                    content=ft.Container(content=dialog_content, width=350, height=200, padding=15),
+                )
+                page.dialog = dialog
+                dialog.open = True
+                page.update()
+                return
+            
+            # Format file list for display
             file_list = '\n'.join([f"• {f}" for f in files_created])
             
             dialog_content = ft.Column([
@@ -1135,15 +1385,34 @@ class StoreApp:
                     ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
                 ]),
                 ft.Divider(),
-                ft.Text(f"Saved to: {export_dir}", size=12, color="#888888"),
-                ft.Text(file_list, size=11, color="#CCCCCC"),
+                ft.Text(f"Saved to:", size=12, color="#888888"),
+                ft.Text(export_dir, size=10, color="#888888", selectable=True),
+                ft.Container(height=5),
+                ft.Text("Files created:", size=12, weight=ft.FontWeight.BOLD),
+                ft.Text(file_list, size=10, color="#CCCCCC"),
                 ft.Container(height=10),
-                ft.Text("Use a file manager to access these files", size=11, color="#888888"),
-            ], spacing=10)
+                ft.Row([
+                    ft.ElevatedButton(
+                        "📂 Open Folder", 
+                        on_click=open_export_folder, 
+                        icon=ft.icons.FOLDER_OPEN,
+                        expand=True,
+                        style=ft.ButtonStyle(bgcolor=self.accent_color),
+                    ),
+                    ft.ElevatedButton(
+                        "✓ Done", 
+                        on_click=close_dialog, 
+                        icon=ft.icons.CHECK,
+                        expand=True,
+                        style=ft.ButtonStyle(bgcolor=self.success_color),
+                    ),
+                ], spacing=10),
+                ft.Text("Use a file manager to view the CSV files", size=9, color="#888888"),
+            ], spacing=8)
             
             dialog = ft.AlertDialog(
                 title=ft.Text(""),
-                content=ft.Container(content=dialog_content, width=400, height=350, padding=15),
+                content=ft.Container(content=dialog_content, width=420, height=400, padding=15),
             )
             
             page.dialog = dialog
@@ -1158,14 +1427,36 @@ class StoreApp:
             )
             page.snack_bar.open = True
             page.update()
+            print(f"Export error: {e}")
 
     def export_inventory_html(self, page: ft.Page):
-        """Export inventory to HTML file (mobile safe)"""
+        """Export inventory to HTML file - With Open Folder button"""
         from datetime import datetime
+        import os
+        import subprocess
+        import platform
         
         def close_dialog(e):
             page.dialog.open = False
             page.update()
+        
+        def open_export_folder(e):
+            export_dir = self.get_app_storage_path()
+            try:
+                if platform.system() == "Windows":
+                    os.startfile(export_dir)
+                elif platform.system() == "Darwin":
+                    subprocess.run(["open", export_dir])
+                else:
+                    subprocess.run(["xdg-open", export_dir])
+            except:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"📁 Files saved to: {export_dir}"),
+                    bgcolor=self.accent_color,
+                    duration=5000
+                )
+                page.snack_bar.open = True
+                page.update()
         
         try:
             export_dir = self.get_app_storage_path()
@@ -1181,65 +1472,7 @@ class StoreApp:
             total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
             low_stock_count = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
             
-            html_content = f"""<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Inventory Report</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
-            .container {{ max-width: 1200px; margin: 0 auto; background: white; border-radius: 12px; padding: 20px; }}
-            h1 {{ color: #1976D2; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-            th {{ background-color: #1976D2; color: white; }}
-            .stats {{ display: flex; gap: 20px; margin: 20px 0; }}
-            .stat-card {{ background: #1976D2; color: white; padding: 15px; border-radius: 10px; flex: 1; text-align: center; }}
-            .footer {{ text-align: center; margin-top: 20px; color: #888; font-size: 12px; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>Inventory Report</h1>
-            <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-            
-            <div class="stats">
-                <div class="stat-card"><h3>Total Items</h3><h2>{total_items}</h2></div>
-                <div class="stat-card"><h3>Total Stock</h3><h2>{total_stock}</h2></div>
-                <div class="stat-card"><h3>Low Stock</h3><h2>{low_stock_count}</h2></div>
-            </div>
-            
-            <h2>Materials ({len(materials)})</h2>
-            <table>
-                <thead><tr><th>Name</th><th>Quantity</th><th>Quality</th><th>Location</th></tr></thead>
-                <tbody>"""
-            
-            for m in materials[:100]:
-                html_content += f"<tr><td>{m.get('name', 'N/A')}</td><td>{m.get('quantity', 0)}</td><td>{m.get('quality', 'New')}</td><td>{m.get('location_ids', 'N/A')}</td></tr>"
-            
-            html_content += f"""</tbody>
-            </table>
-            
-            <h2>Accessories ({len(accessories)})</h2>
-            <table>
-                <thead><tr><th>Name</th><th>Quantity</th><th>Price</th><th>Quality</th><th>Location</th></tr></thead>
-                <tbody>"""
-            
-            for a in accessories[:100]:
-                price = a.get('price', 0)
-                price_text = f"${price:.2f}" if price else "-"
-                html_content += f"<tr><td>{a.get('name', 'N/A')}</td><td>{a.get('quantity', 0)}</td><td>{price_text}</td><td>{a.get('quality', 'New')}</td><td>{a.get('location', 'N/A')}</td></tr>"
-            
-            html_content += f"""</tbody>
-            </table>
-            
-            <div class="footer">
-                <p>Generated by Store Management System</p>
-            </div>
-        </div>
-    </body>
-    </html>"""
+            html_content = self._generate_html_content(materials, accessories, total_items, total_stock, low_stock_count)
             
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(html_content)
@@ -1250,14 +1483,30 @@ class StoreApp:
                     ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
                 ]),
                 ft.Divider(),
-                ft.Text(f"Saved to: {filename}", size=12, color="#888888"),
-                ft.Container(height=10),
-                ft.Text("Use a file manager to view the HTML file", size=11, color="#888888"),
+                ft.Text(f"Saved to:", size=12, color="#888888"),
+                ft.Text(filename, size=10, color="#888888", selectable=True),
+                ft.Container(height=15),
+                ft.Row([
+                    ft.ElevatedButton(
+                        "📂 Open Folder", 
+                        on_click=open_export_folder, 
+                        icon=ft.icons.FOLDER_OPEN,
+                        expand=True,
+                        style=ft.ButtonStyle(bgcolor=self.accent_color),
+                    ),
+                    ft.ElevatedButton(
+                        "✓ Done", 
+                        on_click=close_dialog, 
+                        icon=ft.icons.CHECK,
+                        expand=True,
+                        style=ft.ButtonStyle(bgcolor=self.success_color),
+                    ),
+                ], spacing=10),
             ], spacing=10)
             
             dialog = ft.AlertDialog(
                 title=ft.Text(""),
-                content=ft.Container(content=dialog_content, width=400, height=280, padding=15),
+                content=ft.Container(content=dialog_content, width=450, height=300, padding=15),
             )
             
             page.dialog = dialog
