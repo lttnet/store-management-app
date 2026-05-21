@@ -834,14 +834,16 @@ class StoreApp:
         
         self.current_view = "dashboard"
         page.update()
+
     def show_import_dialog(self, page: ft.Page, import_type="materials"):
-        """Import CSV file - CORRECTLY handles materials vs accessories"""
+        """Import CSV file - Clean version with only X icon"""
         import csv
         import sqlite3
         from database import DB_PATH
         from datetime import datetime
         import random
         import string
+        import os
         
         def generate_barcode():
             prefix = "890"
@@ -856,16 +858,20 @@ class StoreApp:
             checksum = (10 - (total % 10)) % 10
             return barcode_without_checksum + str(checksum)
         
+        dialog_ref = None
+        
         def close_dialog(e):
-            page.dialog.open = False
-            page.update()
+            if dialog_ref:
+                dialog_ref.open = False
+                page.update()
         
         def on_file_picked(e: ft.FilePickerResultEvent):
             if e.files:
                 file = e.files[0]
                 filepath = file.path
                 
-                page.dialog.open = False
+                close_dialog(None)
+                
                 page.snack_bar = ft.SnackBar(
                     ft.Text(f"📥 Importing {import_type} from {file.name}..."),
                     bgcolor=self.accent_color,
@@ -878,6 +884,9 @@ class StoreApp:
                     success_count = 0
                     error_count = 0
                     
+                    if not os.path.exists(filepath):
+                        raise Exception("File not found")
+                    
                     with open(filepath, 'r', encoding='utf-8-sig') as csvfile:
                         reader = csv.DictReader(csvfile)
                         
@@ -885,55 +894,43 @@ class StoreApp:
                         cursor = conn.cursor()
                         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         
-                        print(f"IMPORT: Importing as {import_type}")
-                        
                         for row_num, row in enumerate(reader, start=2):
                             try:
                                 name = row.get('Name', '').strip()
                                 if not name:
                                     name = row.get('name', '').strip()
                                 if not name:
-                                    print(f"Row {row_num}: Missing name, skipping")
                                     error_count += 1
                                     continue
                                 
-                                # Get quantity
                                 try:
                                     quantity = int(float(row.get('Quantity', 0)))
                                 except:
                                     quantity = 0
                                 
-                                # Get category
                                 category = row.get('Category', 'Other').strip()
                                 if not category:
                                     category = 'Other'
                                 
-                                # Get quality
                                 quality = row.get('Quality', 'New').strip()
                                 if quality not in ['New', 'Used', 'Damaged', 'Repaired']:
                                     quality = 'New'
                                 
-                                # Get location
                                 location = row.get('Location', '').strip()
                                 
-                                # Get barcode
                                 barcode = row.get('Barcode', '').strip()
                                 if not barcode:
                                     barcode = generate_barcode()
                                 
-                                # Get category ID
                                 cursor.execute("SELECT id FROM categories WHERE name = ?", (category,))
                                 cat_result = cursor.fetchone()
                                 category_id = cat_result[0] if cat_result else 8
                                 
-                                # IMPORTANT: Check based on import_type
                                 if import_type == "materials":
-                                    # Check for duplicate barcode in materials
                                     cursor.execute("SELECT id FROM materials WHERE barcode_value = ?", (barcode,))
                                     if cursor.fetchone():
                                         barcode = generate_barcode()
                                     
-                                    # Get material-specific fields
                                     size = row.get('Size', '').strip()
                                     
                                     length_val = None
@@ -954,15 +951,11 @@ class StoreApp:
                                         size, length_val, colors, notes, barcode,
                                         current_time, current_time
                                     ))
-                                    print(f"IMPORT: Added material: {name}")
-                                    
-                                else:  # accessories
-                                    # Check for duplicate barcode in accessories
+                                else:
                                     cursor.execute("SELECT id FROM accessories WHERE barcode_value = ?", (barcode,))
                                     if cursor.fetchone():
                                         barcode = generate_barcode()
                                     
-                                    # Get price
                                     price = 0.0
                                     try:
                                         price = float(row.get('Price', 0))
@@ -979,7 +972,6 @@ class StoreApp:
                                         name, category_id, quantity, price, quality, location,
                                         notes, barcode, current_time, current_time
                                     ))
-                                    print(f"IMPORT: Added accessory: {name}")
                                 
                                 success_count += 1
                                 
@@ -990,7 +982,6 @@ class StoreApp:
                         conn.commit()
                         conn.close()
                     
-                    # Show result message
                     msg = f"✓ Imported {success_count} {import_type}"
                     if error_count > 0:
                         msg += f", {error_count} skipped"
@@ -998,7 +989,6 @@ class StoreApp:
                     page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=self.success_color, duration=4000)
                     page.snack_bar.open = True
                     
-                    # Refresh the correct screen
                     if import_type == "materials":
                         self.show_materials_screen(page)
                     else:
@@ -1015,7 +1005,6 @@ class StoreApp:
                     page.snack_bar.open = True
                     page.update()
         
-        # Create file picker
         file_picker = ft.FilePicker(on_result=on_file_picked)
         page.overlay.append(file_picker)
         
@@ -1026,49 +1015,77 @@ class StoreApp:
                 dialog_title=f"Select {import_type.title()} CSV File"
             )
         
-        # Dialog content
         dialog_content = ft.Column([
-            ft.Text(f"📥 Import {import_type.title()}", size=18, weight=ft.FontWeight.BOLD),
+            ft.Row([
+                ft.Text(f"📥 Import {import_type.title()}", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ]),
             ft.Divider(),
             ft.Text("CSV Format:", size=14, weight=ft.FontWeight.BOLD),
-            ft.Text("First row must be headers. Required: Name, Quantity", size=12),
+            ft.Text("First row must be headers", size=12),
+            ft.Text("Required: Name, Quantity", size=12),
             ft.Container(height=10),
-            ft.ElevatedButton("📁 Select CSV File", on_click=pick_file, icon=ft.icons.UPLOAD_FILE),
-            ft.Container(height=10),
-            ft.TextButton("Cancel", on_click=close_dialog),
-        ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+            ft.Text("Example:", size=12, weight=ft.FontWeight.BOLD),
+            ft.Container(
+                content=ft.Text('Name,Quantity,Category,Quality,Location', size=10, color="#888888"),
+                padding=5,
+                bgcolor="#2C2C2C",
+                border_radius=5,
+            ),
+            ft.Container(
+                content=ft.Text('Screwdriver,25,Hardware,New,Toolbox 1', size=10, color="#888888"),
+                padding=5,
+                bgcolor="#2C2C2C",
+                border_radius=5,
+            ),
+            ft.Container(height=15),
+            ft.ElevatedButton("📁 Select CSV File", on_click=pick_file, icon=ft.icons.UPLOAD_FILE, expand=True),
+        ], spacing=10)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=400, height=280, padding=20),
+            content=ft.Container(content=dialog_content, width=380, height=450, padding=15),
         )
         
+        dialog_ref = dialog
         page.dialog = dialog
         dialog.open = True
         page.update()
+    def get_app_storage_path(self):
+        """Get a safe storage path that works on mobile"""
+        import os
+        
+        # For Android, use the app's private storage
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        storage_path = os.path.join(base_path, "exports")
+        
+        # Create directory if not exists
+        if not os.path.exists(storage_path):
+            os.makedirs(storage_path, exist_ok=True)
+        
+        return storage_path
     def export_all_data_simple(self, page: ft.Page):
-        """Export all data to CSV files"""
+        """Export all data to CSV files - Mobile friendly"""
         import csv
         import os
         from datetime import datetime
-        import webbrowser
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
         
         try:
-            # Create exports folder
-            export_dir = "exports"
-            if not os.path.exists(export_dir):
-                os.makedirs(export_dir)
+            export_dir = self.get_app_storage_path()
             
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            files_created = []
             
-            # Export materials with category names
+            # Export materials
             materials = self.dict_list(MaterialManager.get_all())
             if materials:
                 materials_file = os.path.join(export_dir, f"materials_{timestamp}.csv")
                 with open(materials_file, 'w', newline='', encoding='utf-8-sig') as f:
-                    # Define fields for export
-                    fields = ['Name', 'Category', 'Quantity', 'Quality', 'Location', 
-                            'Size', 'Length', 'Colors', 'Notes', 'Barcode']
+                    fields = ['Name', 'Category', 'Quantity', 'Quality', 'Location', 'Size', 'Length', 'Colors', 'Notes', 'Barcode']
                     writer = csv.DictWriter(f, fieldnames=fields)
                     writer.writeheader()
                     
@@ -1085,14 +1102,14 @@ class StoreApp:
                             'Notes': m.get('notes', ''),
                             'Barcode': m.get('barcode_value', '')
                         })
+                files_created.append(f"materials_{timestamp}.csv")
             
             # Export accessories
             accessories = self.dict_list(AccessoryManager.get_all())
             if accessories:
                 accessories_file = os.path.join(export_dir, f"accessories_{timestamp}.csv")
                 with open(accessories_file, 'w', newline='', encoding='utf-8-sig') as f:
-                    fields = ['Name', 'Category', 'Quantity', 'Price', 'Quality', 
-                            'Location', 'Notes', 'Barcode']
+                    fields = ['Name', 'Category', 'Quantity', 'Price', 'Quality', 'Location', 'Notes', 'Barcode']
                     writer = csv.DictWriter(f, fieldnames=fields)
                     writer.writeheader()
                     
@@ -1107,19 +1124,32 @@ class StoreApp:
                             'Notes': a.get('notes', ''),
                             'Barcode': a.get('barcode_value', '')
                         })
+                files_created.append(f"accessories_{timestamp}.csv")
             
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ Data exported to {export_dir}/"),
-                bgcolor=self.success_color,
-                duration=4000
+            # Show success dialog
+            file_list = '\n'.join([f"• {f}" for f in files_created])
+            
+            dialog_content = ft.Column([
+                ft.Row([
+                    ft.Text("✅ Export Complete", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+                ]),
+                ft.Divider(),
+                ft.Text(f"Saved to: {export_dir}", size=12, color="#888888"),
+                ft.Text(file_list, size=11, color="#CCCCCC"),
+                ft.Container(height=10),
+                ft.Text("Use a file manager to access these files", size=11, color="#888888"),
+            ], spacing=10)
+            
+            dialog = ft.AlertDialog(
+                title=ft.Text(""),
+                content=ft.Container(content=dialog_content, width=400, height=350, padding=15),
             )
-            page.snack_bar.open = True
+            
+            page.dialog = dialog
+            dialog.open = True
             page.update()
             
-            # Try to open the exports folder
-            if os.path.exists(export_dir):
-                webbrowser.open(f'file://{os.path.abspath(export_dir)}')
-                
         except Exception as e:
             page.snack_bar = ft.SnackBar(
                 ft.Text(f"❌ Export failed: {str(e)}"),
@@ -1128,41 +1158,110 @@ class StoreApp:
             )
             page.snack_bar.open = True
             page.update()
-        
+
     def export_inventory_html(self, page: ft.Page):
-        """Export inventory to HTML and open in browser"""
+        """Export inventory to HTML file (mobile safe)"""
         from datetime import datetime
-        import os
-        import webbrowser
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
         
         try:
+            export_dir = self.get_app_storage_path()
+            
             materials = self.dict_list(MaterialManager.get_all())
             accessories = self.dict_list(AccessoryManager.get_all())
             
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = os.path.join(export_dir, f"inventory_report_{timestamp}.html")
+            
+            # Generate HTML content
             total_items = len(materials) + len(accessories)
             total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
             low_stock_count = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
             
-            html_content = self.generate_html_report(materials, accessories, total_items, total_stock, low_stock_count, len(materials), len(accessories))
+            html_content = f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Inventory Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
+            .container {{ max-width: 1200px; margin: 0 auto; background: white; border-radius: 12px; padding: 20px; }}
+            h1 {{ color: #1976D2; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #1976D2; color: white; }}
+            .stats {{ display: flex; gap: 20px; margin: 20px 0; }}
+            .stat-card {{ background: #1976D2; color: white; padding: 15px; border-radius: 10px; flex: 1; text-align: center; }}
+            .footer {{ text-align: center; margin-top: 20px; color: #888; font-size: 12px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Inventory Report</h1>
+            <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
             
-            download_dir = self.get_download_path()
-            if not os.path.exists(download_dir):
-                os.makedirs(download_dir)
+            <div class="stats">
+                <div class="stat-card"><h3>Total Items</h3><h2>{total_items}</h2></div>
+                <div class="stat-card"><h3>Total Stock</h3><h2>{total_stock}</h2></div>
+                <div class="stat-card"><h3>Low Stock</h3><h2>{low_stock_count}</h2></div>
+            </div>
             
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = os.path.join(download_dir, f"inventory_report_{timestamp}.html")
+            <h2>Materials ({len(materials)})</h2>
+            <table>
+                <thead><tr><th>Name</th><th>Quantity</th><th>Quality</th><th>Location</th></tr></thead>
+                <tbody>"""
+            
+            for m in materials[:100]:
+                html_content += f"<tr><td>{m.get('name', 'N/A')}</td><td>{m.get('quantity', 0)}</td><td>{m.get('quality', 'New')}</td><td>{m.get('location_ids', 'N/A')}</td></tr>"
+            
+            html_content += f"""</tbody>
+            </table>
+            
+            <h2>Accessories ({len(accessories)})</h2>
+            <table>
+                <thead><tr><th>Name</th><th>Quantity</th><th>Price</th><th>Quality</th><th>Location</th></tr></thead>
+                <tbody>"""
+            
+            for a in accessories[:100]:
+                price = a.get('price', 0)
+                price_text = f"${price:.2f}" if price else "-"
+                html_content += f"<tr><td>{a.get('name', 'N/A')}</td><td>{a.get('quantity', 0)}</td><td>{price_text}</td><td>{a.get('quality', 'New')}</td><td>{a.get('location', 'N/A')}</td></tr>"
+            
+            html_content += f"""</tbody>
+            </table>
+            
+            <div class="footer">
+                <p>Generated by Store Management System</p>
+            </div>
+        </div>
+    </body>
+    </html>"""
             
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            webbrowser.open(f'file://{os.path.abspath(filename)}')
+            dialog_content = ft.Column([
+                ft.Row([
+                    ft.Text("✅ HTML Report Generated", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+                ]),
+                ft.Divider(),
+                ft.Text(f"Saved to: {filename}", size=12, color="#888888"),
+                ft.Container(height=10),
+                ft.Text("Use a file manager to view the HTML file", size=11, color="#888888"),
+            ], spacing=10)
             
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ Report opened in browser!"),
-                bgcolor=self.success_color,
-                duration=4000
+            dialog = ft.AlertDialog(
+                title=ft.Text(""),
+                content=ft.Container(content=dialog_content, width=400, height=280, padding=15),
             )
-            page.snack_bar.open = True
+            
+            page.dialog = dialog
+            dialog.open = True
             page.update()
             
         except Exception as e:
@@ -1315,12 +1414,16 @@ class StoreApp:
         return html_content
 
     def export_low_stock_html(self, page: ft.Page):
-        """Export low stock items to HTML"""
+        """Export low stock items to HTML - Mobile safe"""
         from datetime import datetime
-        import os
-        import webbrowser
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
         
         try:
+            export_dir = self.get_app_storage_path()
+            
             materials = self.dict_list(MaterialManager.get_all())
             accessories = self.dict_list(AccessoryManager.get_all())
             
@@ -1330,7 +1433,6 @@ class StoreApp:
                     low_stock_items.append({
                         'type': 'Material',
                         'name': m.get('name', 'N/A'),
-                        'code': m.get('item_code', 'N/A'),
                         'quantity': m.get('quantity', 0),
                         'quality': m.get('quality', 'Used'),
                         'location': m.get('location_ids', 'N/A'),
@@ -1340,7 +1442,6 @@ class StoreApp:
                     low_stock_items.append({
                         'type': 'Accessory',
                         'name': a.get('name', 'N/A'),
-                        'code': a.get('item_code', 'N/A'),
                         'quantity': a.get('quantity', 0),
                         'quality': a.get('quality', 'Used'),
                         'location': a.get('location', 'N/A'),
@@ -1356,26 +1457,66 @@ class StoreApp:
                 page.update()
                 return
             
-            html_content = self.generate_low_stock_html(low_stock_items)
-            
-            download_dir = self.get_download_path()
-            if not os.path.exists(download_dir):
-                os.makedirs(download_dir)
-            
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = os.path.join(download_dir, f"low_stock_report_{timestamp}.html")
+            filename = os.path.join(export_dir, f"low_stock_report_{timestamp}.html")
+            
+            html_content = f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Low Stock Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
+            .container {{ max-width: 1000px; margin: 0 auto; background: white; border-radius: 12px; padding: 20px; }}
+            h1 {{ color: #F44336; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+            th, td {{ border: 1px solid #ddd; padding: 10px; text-align: left; }}
+            th {{ background-color: #F44336; color: white; }}
+            .critical {{ background-color: #FFEBEE; }}
+            .footer {{ text-align: center; margin-top: 20px; color: #888; font-size: 12px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>⚠️ Low Stock Report</h1>
+            <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p>Total low stock items: {len(low_stock_items)}</p>
+            <table>
+                <thead><tr><th>Type</th><th>Name</th><th>Current Stock</th><th>Quality</th><th>Location</th></tr></thead>
+                <tbody>"""
+            
+            for item in low_stock_items:
+                critical_class = 'critical' if item['quantity'] < 5 else ''
+                html_content += f"<tr class='{critical_class}'><td>{item['type']}</td><td>{item['name']}</td><td style='color:#F44336;font-weight:bold'>{item['quantity']}</td><td>{item['quality']}</td><td>{item['location']}</td></tr>"
+            
+            html_content += f"""</tbody>
+            </table>
+            <div class="footer"><p>Generated by Store Management System</p></div>
+        </div>
+    </body>
+    </html>"""
             
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            webbrowser.open(f'file://{os.path.abspath(filename)}')
+            dialog_content = ft.Column([
+                ft.Row([
+                    ft.Text("✅ Low Stock Report Generated", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+                ]),
+                ft.Divider(),
+                ft.Text(f"Saved to: {filename}", size=12, color="#888888"),
+                ft.Text(f"Found {len(low_stock_items)} low stock items", size=12),
+            ], spacing=10)
             
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ Low stock report opened in browser!"),
-                bgcolor=self.success_color,
-                duration=4000
+            dialog = ft.AlertDialog(
+                title=ft.Text(""),
+                content=ft.Container(content=dialog_content, width=400, height=300, padding=15),
             )
-            page.snack_bar.open = True
+            
+            page.dialog = dialog
+            dialog.open = True
             page.update()
             
         except Exception as e:
