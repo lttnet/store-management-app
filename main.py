@@ -1271,35 +1271,31 @@ class StoreApp:
         
         return storage_path
     def export_all_data_simple(self, page: ft.Page):
-        """Export all data to CSV files - With Open Folder button"""
+        """Export all data to CSV files - Mobile friendly with copy path"""
         import csv
         import os
-        import subprocess
-        import platform
         from datetime import datetime
         
         def close_dialog(e):
             page.dialog.open = False
             page.update()
         
-        def open_export_folder(e):
-            """Open the export folder in file manager"""
+        def copy_path_to_clipboard(e):
             export_dir = self.get_app_storage_path()
-            
             try:
-                if platform.system() == "Windows":
-                    os.startfile(export_dir)
-                elif platform.system() == "Darwin":  # macOS
-                    subprocess.run(["open", export_dir])
-                else:  # Linux / Android
-                    # Try to open with file manager
-                    subprocess.run(["xdg-open", export_dir])
-            except Exception as ex:
-                # If can't open, show path
+                page.set_clipboard(export_dir)
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"📁 Files saved to: {export_dir}"),
-                    bgcolor=self.accent_color,
-                    duration=5000
+                    ft.Text(f"📁 Path copied to clipboard: {export_dir}"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                page.update()
+            except Exception as ex:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"❌ Failed to copy: {str(ex)}"),
+                    bgcolor=self.danger_color,
+                    duration=3000
                 )
                 page.snack_bar.open = True
                 page.update()
@@ -1385,7 +1381,7 @@ class StoreApp:
                     ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
                 ]),
                 ft.Divider(),
-                ft.Text(f"Saved to:", size=12, color="#888888"),
+                ft.Text("Files saved to:", size=12, color="#888888"),
                 ft.Text(export_dir, size=10, color="#888888", selectable=True),
                 ft.Container(height=5),
                 ft.Text("Files created:", size=12, weight=ft.FontWeight.BOLD),
@@ -1393,9 +1389,9 @@ class StoreApp:
                 ft.Container(height=10),
                 ft.Row([
                     ft.ElevatedButton(
-                        "📂 Open Folder", 
-                        on_click=open_export_folder, 
-                        icon=ft.icons.FOLDER_OPEN,
+                        "📋 Copy Path", 
+                        on_click=copy_path_to_clipboard, 
+                        icon=ft.icons.CONTENT_COPY,
                         expand=True,
                         style=ft.ButtonStyle(bgcolor=self.accent_color),
                     ),
@@ -1407,12 +1403,13 @@ class StoreApp:
                         style=ft.ButtonStyle(bgcolor=self.success_color),
                     ),
                 ], spacing=10),
-                ft.Text("Use a file manager to view the CSV files", size=9, color="#888888"),
+                ft.Text("Use a file manager app to navigate to this path", size=9, color="#888888"),
+                ft.Text("Tip: Use 'CX File Explorer' or 'Solid Explorer'", size=9, color="#888888"),
             ], spacing=8)
             
             dialog = ft.AlertDialog(
                 title=ft.Text(""),
-                content=ft.Container(content=dialog_content, width=420, height=400, padding=15),
+                content=ft.Container(content=dialog_content, width=420, height=430, padding=15),
             )
             
             page.dialog = dialog
@@ -1430,30 +1427,29 @@ class StoreApp:
             print(f"Export error: {e}")
 
     def export_inventory_html(self, page: ft.Page):
-        """Export inventory to HTML file - With Open Folder button"""
+        """Export inventory to HTML file - Mobile friendly with copy path"""
         from datetime import datetime
         import os
-        import subprocess
-        import platform
         
         def close_dialog(e):
             page.dialog.open = False
             page.update()
         
-        def open_export_folder(e):
-            export_dir = self.get_app_storage_path()
+        def copy_path_to_clipboard(e):
             try:
-                if platform.system() == "Windows":
-                    os.startfile(export_dir)
-                elif platform.system() == "Darwin":
-                    subprocess.run(["open", export_dir])
-                else:
-                    subprocess.run(["xdg-open", export_dir])
-            except:
+                page.set_clipboard(filename)
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"📁 Files saved to: {export_dir}"),
-                    bgcolor=self.accent_color,
-                    duration=5000
+                    ft.Text("📁 Path copied to clipboard"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                page.update()
+            except Exception as ex:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"❌ Failed to copy: {str(ex)}"),
+                    bgcolor=self.danger_color,
+                    duration=3000
                 )
                 page.snack_bar.open = True
                 page.update()
@@ -1467,7 +1463,6 @@ class StoreApp:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = os.path.join(export_dir, f"inventory_report_{timestamp}.html")
             
-            # Generate HTML content
             total_items = len(materials) + len(accessories)
             total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
             low_stock_count = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
@@ -1483,30 +1478,31 @@ class StoreApp:
                     ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
                 ]),
                 ft.Divider(),
-                ft.Text(f"Saved to:", size=12, color="#888888"),
-                ft.Text(filename, size=10, color="#888888", selectable=True),
+                ft.Text("File saved to:", size=12, color="#888888"),
+                ft.Text(filename, size=9, color="#888888", selectable=True),
                 ft.Container(height=15),
                 ft.Row([
                     ft.ElevatedButton(
-                        "📂 Open Folder", 
-                        on_click=open_export_folder, 
-                        icon=ft.icons.FOLDER_OPEN,
+                        "📋 Copy Path",
+                        on_click=copy_path_to_clipboard,
+                        icon=ft.icons.CONTENT_COPY,
                         expand=True,
-                        style=ft.ButtonStyle(bgcolor=self.accent_color),
+                        style=ft.ButtonStyle(bgcolor=self.accent_color)
                     ),
                     ft.ElevatedButton(
-                        "✓ Done", 
-                        on_click=close_dialog, 
+                        "✓ Done",
+                        on_click=close_dialog,
                         icon=ft.icons.CHECK,
                         expand=True,
-                        style=ft.ButtonStyle(bgcolor=self.success_color),
+                        style=ft.ButtonStyle(bgcolor=self.success_color)
                     ),
                 ], spacing=10),
+                ft.Text("Use a file manager app to locate this file", size=9, color="#888888"),
             ], spacing=10)
             
             dialog = ft.AlertDialog(
                 title=ft.Text(""),
-                content=ft.Container(content=dialog_content, width=450, height=300, padding=15),
+                content=ft.Container(content=dialog_content, width=450, height=350, padding=15)
             )
             
             page.dialog = dialog
@@ -1521,7 +1517,8 @@ class StoreApp:
             )
             page.snack_bar.open = True
             page.update()
-
+            print(f"Export error: {e}")
+            
     def get_download_path(self):
         """Get the appropriate download folder path"""
         import os
@@ -1661,14 +1658,137 @@ class StoreApp:
     </html>"""
         
         return html_content
-
-    def export_low_stock_html(self, page: ft.Page):
-        """Export low stock items to HTML - Mobile safe"""
+    def _generate_html_content(self, materials, accessories, total_items, total_stock, low_stock_count):
+        """Generate HTML content for inventory report"""
         from datetime import datetime
+        
+        html_content = f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Inventory Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
+            .container {{ max-width: 1200px; margin: 0 auto; background: white; border-radius: 12px; padding: 20px; }}
+            h1 {{ color: #1976D2; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #1976D2; color: white; }}
+            .stats {{ display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }}
+            .stat-card {{ background: #1976D2; color: white; padding: 15px; border-radius: 10px; flex: 1; text-align: center; min-width: 100px; }}
+            .footer {{ text-align: center; margin-top: 20px; color: #888; font-size: 12px; }}
+            @media (max-width: 600px) {{
+                .stats {{ flex-direction: column; }}
+                th, td {{ padding: 6px; font-size: 12px; }}
+                .container {{ padding: 10px; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>📊 Inventory Report</h1>
+            <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            
+            <div class="stats">
+                <div class="stat-card"><h3>Total Items</h3><h2>{total_items}</h2></div>
+                <div class="stat-card"><h3>Total Stock</h3><h2>{total_stock}</h2></div>
+                <div class="stat-card"><h3>Low Stock</h3><h2>{low_stock_count}</h2></div>
+            </div>
+            
+            <h2>📦 Materials ({len(materials)})</h2>
+            <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Quantity</th>
+                        <th>Quality</th>
+                        <th>Location</th>
+                    </tr>
+                </thead>
+                <tbody>"""
+        
+        for m in materials[:200]:
+            html_content += f"""
+                    <tr>
+                        <td>{m.get('name', 'N/A')}</td>
+                        <td>{m.get('quantity', 0)}</td>
+                        <td>{m.get('quality', 'New')}</td>
+                        <td>{m.get('location_ids', 'N/A')}</td>
+                    </tr>"""
+        
+        html_content += f"""
+                </tbody>
+            </table>
+            </div>
+            
+            <h2>🔧 Accessories ({len(accessories)})</h2>
+            <div style="overflow-x: auto;">
+            表
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Quantity</th>
+                        <th>Price</th>
+                        <th>Quality</th>
+                        <th>Location</th>
+                    </tr>
+                </thead>
+                <tbody>"""
+        
+        for a in accessories[:200]:
+            price = a.get('price', 0)
+            price_text = f"${price:.2f}" if price else "-"
+            html_content += f"""
+                    <tr>
+                        <td>{a.get('name', 'N/A')}</td>
+                        <td>{a.get('quantity', 0)}</td>
+                        <td>{price_text}</td>
+                        <td>{a.get('quality', 'New')}</td>
+                        <td>{a.get('location', 'N/A')}</td>
+                    </tr>"""
+        
+        html_content += f"""
+                </tbody>
+            </table>
+            </div>
+            
+            <div class="footer">
+                <p>Generated by Store Management System</p>
+            </div>
+        </div>
+    </body>
+    </html>"""
+        
+        return html_content
+    def export_low_stock_html(self, page: ft.Page):
+        """Export low stock items to HTML - Mobile friendly with copy path"""
+        from datetime import datetime
+        import os
         
         def close_dialog(e):
             page.dialog.open = False
             page.update()
+        
+        def copy_path_to_clipboard(e):
+            try:
+                page.set_clipboard(filename)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("📁 Path copied to clipboard"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                page.update()
+            except Exception as ex:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"❌ Failed to copy: {str(ex)}"),
+                    bgcolor=self.danger_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                page.update()
         
         try:
             export_dir = self.get_app_storage_path()
@@ -1684,7 +1804,7 @@ class StoreApp:
                         'name': m.get('name', 'N/A'),
                         'quantity': m.get('quantity', 0),
                         'quality': m.get('quality', 'Used'),
-                        'location': m.get('location_ids', 'N/A'),
+                        'location': m.get('location_ids', 'N/A')
                     })
             for a in accessories:
                 if a.get('quantity', 0) < 10:
@@ -1693,7 +1813,7 @@ class StoreApp:
                         'name': a.get('name', 'N/A'),
                         'quantity': a.get('quantity', 0),
                         'quality': a.get('quality', 'Used'),
-                        'location': a.get('location', 'N/A'),
+                        'location': a.get('location', 'N/A')
                     })
             
             if not low_stock_items:
@@ -1709,42 +1829,7 @@ class StoreApp:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = os.path.join(export_dir, f"low_stock_report_{timestamp}.html")
             
-            html_content = f"""<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Low Stock Report</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
-            .container {{ max-width: 1000px; margin: 0 auto; background: white; border-radius: 12px; padding: 20px; }}
-            h1 {{ color: #F44336; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-            th, td {{ border: 1px solid #ddd; padding: 10px; text-align: left; }}
-            th {{ background-color: #F44336; color: white; }}
-            .critical {{ background-color: #FFEBEE; }}
-            .footer {{ text-align: center; margin-top: 20px; color: #888; font-size: 12px; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>⚠️ Low Stock Report</h1>
-            <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-            <p>Total low stock items: {len(low_stock_items)}</p>
-            <table>
-                <thead><tr><th>Type</th><th>Name</th><th>Current Stock</th><th>Quality</th><th>Location</th></tr></thead>
-                <tbody>"""
-            
-            for item in low_stock_items:
-                critical_class = 'critical' if item['quantity'] < 5 else ''
-                html_content += f"<tr class='{critical_class}'><td>{item['type']}</td><td>{item['name']}</td><td style='color:#F44336;font-weight:bold'>{item['quantity']}</td><td>{item['quality']}</td><td>{item['location']}</td></tr>"
-            
-            html_content += f"""</tbody>
-            </table>
-            <div class="footer"><p>Generated by Store Management System</p></div>
-        </div>
-    </body>
-    </html>"""
+            html_content = self._generate_low_stock_html_content(low_stock_items)
             
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(html_content)
@@ -1755,13 +1840,32 @@ class StoreApp:
                     ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
                 ]),
                 ft.Divider(),
-                ft.Text(f"Saved to: {filename}", size=12, color="#888888"),
+                ft.Text("File saved to:", size=12, color="#888888"),
+                ft.Text(filename, size=9, color="#888888", selectable=True),
                 ft.Text(f"Found {len(low_stock_items)} low stock items", size=12),
+                ft.Container(height=15),
+                ft.Row([
+                    ft.ElevatedButton(
+                        "📋 Copy Path",
+                        on_click=copy_path_to_clipboard,
+                        icon=ft.icons.CONTENT_COPY,
+                        expand=True,
+                        style=ft.ButtonStyle(bgcolor=self.accent_color)
+                    ),
+                    ft.ElevatedButton(
+                        "✓ Done",
+                        on_click=close_dialog,
+                        icon=ft.icons.CHECK,
+                        expand=True,
+                        style=ft.ButtonStyle(bgcolor=self.success_color)
+                    ),
+                ], spacing=10),
+                ft.Text("Use a file manager app to locate this file", size=9, color="#888888"),
             ], spacing=10)
             
             dialog = ft.AlertDialog(
                 title=ft.Text(""),
-                content=ft.Container(content=dialog_content, width=400, height=300, padding=15),
+                content=ft.Container(content=dialog_content, width=450, height=400, padding=15)
             )
             
             page.dialog = dialog
@@ -1776,7 +1880,73 @@ class StoreApp:
             )
             page.snack_bar.open = True
             page.update()
+            print(f"Export error: {e}")
 
+    def _generate_low_stock_html_content(self, low_stock_items):
+        """Generate low stock HTML content"""
+        from datetime import datetime
+        
+        html_content = f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Low Stock Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
+            .container {{ max-width: 1000px; margin: 0 auto; background: white; border-radius: 12px; padding: 20px; }}
+            h1 {{ color: #F44336; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+            th, td {{ border: 1px solid #ddd; padding: 10px; text-align: left; }}
+            th {{ background-color: #F44336; color: white; }}
+            .critical {{ background-color: #FFEBEE; }}
+            .footer {{ text-align: center; margin-top: 20px; color: #888; font-size: 12px; }}
+            @media (max-width: 600px) {{
+                th, td {{ padding: 6px; font-size: 12px; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>⚠️ Low Stock Report</h1>
+            <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p>Total low stock items: {len(low_stock_items)}</p>
+            <div style="overflow-x: auto;">
+            表
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Name</th>
+                        <th>Current Stock</th>
+                        <th>Quality</th>
+                        <th>Location</th>
+                    </tr>
+                </thead>
+                <tbody>"""
+        
+        for item in low_stock_items:
+            critical_class = 'critical' if item['quantity'] < 5 else ''
+            html_content += f"""
+                    <tr class='{critical_class}'>
+                        <td>{item['type']}</td>
+                        <td><strong>{item['name']}</strong></td>
+                        <td style='color:#F44336;font-weight:bold'>{item['quantity']}</td>
+                        <td>{item['quality']}</td>
+                        <td>{item['location']}</td>
+                    </tr>"""
+        
+        html_content += f"""
+                </tbody>
+            </table>
+            </div>
+            <div class="footer">
+                <p>Generated by Store Management System</p>
+            </div>
+        </div>
+    </body>
+    </html>"""
+        
+        return html_content
     def generate_low_stock_html(self, low_stock_items):
         """Generate low stock HTML report"""
         from datetime import datetime
