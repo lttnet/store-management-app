@@ -842,7 +842,7 @@ class StoreApp:
         page.update()
 
     def show_import_dialog(self, page: ft.Page, import_type="materials"):
-        """Import CSV file - Fixed for mobile file picker"""
+        """Import CSV file - Opens Downloads folder directly on mobile"""
         import csv
         import sqlite3
         from database import DB_PATH
@@ -1011,26 +1011,34 @@ class StoreApp:
                     page.snack_bar.open = True
                     page.update()
             else:
-                # User cancelled file picker
                 pass
         
-        # Create file picker with correct MIME types for mobile
         file_picker = ft.FilePicker(on_result=on_file_picked)
         page.overlay.append(file_picker)
         
         def pick_file(e):
-            # For mobile, use MIME types that work
             file_picker.pick_files(
                 allow_multiple=False,
                 allowed_extensions=["csv", "CSV"],
-                dialog_title=f"Select {import_type.title()} CSV File",
-                file_type=ft.FilePickerFileType.CUSTOM,
+                dialog_title=f"Select {import_type.title()} CSV File"
             )
         
-        # Alternative: Also provide manual entry option
-        def manual_entry(e):
+        def open_downloads(e):
+            import webbrowser
+            webbrowser.open("file:///storage/emulated/0/Download")
             close_dialog(None)
-            self.show_manual_csv_entry(page, import_type)
+        
+        instruction = ft.Column([
+            ft.Text("📁 Where to find your CSV file:", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("1. Tap 'Select CSV File' below", size=12),
+            ft.Text("2. Tap the three lines (☰) in top-left", size=12),
+            ft.Text("3. Select 'Download' from the menu", size=12),
+            ft.Text("4. Navigate to 'StoreManagement' folder", size=12),
+            ft.Text("5. Select your CSV file", size=12),
+            ft.Container(height=10),
+            ft.Text("💡 Tip: Save your CSV files to:", size=11, color="#888888"),
+            ft.Text("/storage/emulated/0/Download/StoreManagement/", size=10, color="#888888"),
+        ], spacing=8)
         
         dialog_content = ft.Column([
             ft.Row([
@@ -1038,30 +1046,33 @@ class StoreApp:
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ]),
             ft.Divider(),
-            ft.Text("Select a CSV file to import:", size=14, weight=ft.FontWeight.BOLD),
-            ft.Container(height=10),
-            ft.ElevatedButton(
-                "📁 Choose CSV File", 
-                on_click=pick_file, 
-                icon=ft.icons.UPLOAD_FILE, 
-                expand=True,
-                style=ft.ButtonStyle(bgcolor=self.accent_color),
-            ),
+            instruction,
             ft.Container(height=15),
-            ft.Text("Or paste CSV data manually:", size=12, color="#888888"),
-            ft.ElevatedButton(
-                "✏️ Manual Entry", 
-                on_click=manual_entry, 
-                icon=ft.icons.EDIT, 
-                expand=True,
-            ),
-            ft.Container(height=15),
-            ft.Text("CSV Format: Name,Quantity,Category,Quality,Location", size=10, color="#888888"),
+            ft.Row([
+                ft.ElevatedButton(
+                    "📁 Open Downloads Folder", 
+                    on_click=open_downloads, 
+                    icon=ft.icons.FOLDER_OPEN,
+                    expand=True,
+                ),
+            ], spacing=10),
+            ft.Row([
+                ft.ElevatedButton(
+                    "📄 Select CSV File", 
+                    on_click=pick_file, 
+                    icon=ft.icons.UPLOAD_FILE,
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor=self.accent_color),
+                ),
+            ], spacing=10),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
+            ], spacing=10),
         ], spacing=10)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=380, height=360, padding=15),
+            content=ft.Container(content=dialog_content, width=400, height=480, padding=15),
         )
         
         dialog_ref = dialog
