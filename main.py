@@ -842,7 +842,7 @@ class StoreApp:
         page.update()
 
     def show_import_dialog(self, page: ft.Page, import_type="materials"):
-        """Import CSV - Direct paste from Excel"""
+        """Import CSV - Clean layout with X icon only"""
         import csv
         import sqlite3
         from database import DB_PATH
@@ -867,12 +867,12 @@ class StoreApp:
         is_mobile = page.width < 800 if page.width else False
         
         if is_mobile:
-            text_area_height = 200
-            scroll_height = 380
-            dialog_width = 400
+            text_area_height = 180
+            scroll_height = 350
+            dialog_width = page.width - 40 if page.width else 360
         else:
             text_area_height = 250
-            scroll_height = 480
+            scroll_height = 450
             dialog_width = 500
         
         dialog_ref = None
@@ -884,9 +884,7 @@ class StoreApp:
         
         def process_csv_data(csv_text):
             try:
-                # Try to detect if it's tab-separated (from Excel paste)
                 if '\t' in csv_text and ',' not in csv_text.split('\n')[0]:
-                    # Convert tab to comma
                     lines = csv_text.split('\n')
                     csv_text = '\n'.join([','.join(line.split('\t')) for line in lines])
                 
@@ -905,7 +903,6 @@ class StoreApp:
                 
                 success_count = 0
                 error_count = 0
-                errors = []
                 
                 for row_num, row in enumerate(reader, start=2):
                     try:
@@ -914,7 +911,6 @@ class StoreApp:
                             name = row.get('name', '').strip()
                         if not name:
                             error_count += 1
-                            errors.append(f"Row {row_num}: Missing name")
                             continue
                         
                         try:
@@ -991,21 +987,17 @@ class StoreApp:
                         
                     except Exception as ex:
                         error_count += 1
-                        errors.append(f"Row {row_num}: {str(ex)}")
+                        print(f"Row {row_num} error: {ex}")
                 
                 conn.commit()
                 conn.close()
                 
                 msg = f"✓ Imported {success_count} {import_type}"
                 if error_count > 0:
-                    msg += f", {error_count} failed"
+                    msg += f", {error_count} skipped"
                 
-                page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=self.success_color, duration=5000)
+                page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=self.success_color, duration=4000)
                 page.snack_bar.open = True
-                
-                if errors and len(errors) <= 3:
-                    for err in errors:
-                        print(err)
                 
                 if import_type == "materials":
                     self.show_materials_screen(page)
@@ -1023,7 +1015,7 @@ class StoreApp:
         def import_from_text(e):
             csv_text = text_area.value.strip()
             if not csv_text:
-                status_text.value = "❌ Please paste CSV data from Excel"
+                status_text.value = "❌ Please paste data"
                 status_text.color = self.danger_color
                 page.update()
                 return
@@ -1034,79 +1026,72 @@ class StoreApp:
                 clipboard_content = page.get_clipboard()
                 if clipboard_content:
                     text_area.value = clipboard_content
-                    status_text.value = "✓ Data pasted from clipboard! Tap 'Import Data' to continue."
+                    status_text.value = "✓ Data pasted! Tap 'Import'"
                     status_text.color = self.success_color
                     page.update()
                 else:
-                    status_text.value = "❌ Clipboard is empty. Copy data from Excel first."
+                    status_text.value = "❌ Clipboard empty. Copy from Excel first."
                     status_text.color = self.danger_color
                     page.update()
             except Exception as ex:
-                status_text.value = f"❌ Cannot access clipboard: {str(ex)}"
+                status_text.value = f"❌ Error: {str(ex)}"
                 status_text.color = self.danger_color
                 page.update()
         
         def clear_text(e):
             text_area.value = ""
-            status_text.value = "✓ Cleared. Paste new data."
+            status_text.value = "✓ Cleared"
             status_text.color = self.success_color
             page.update()
         
         # Form fields
         text_area = ft.TextField(
             label="Paste Excel Data Here",
-            hint_text="Copy from Excel and paste here (Ctrl+V)",
+            hint_text="Copy from Excel and paste here",
             multiline=True,
-            min_lines=10,
-            max_lines=15,
-            width=dialog_width - 50,
+            min_lines=8,
+            max_lines=12,
+            width=dialog_width - 40,
             height=text_area_height,
             bgcolor=self.card_color,
         )
         
         status_text = ft.Text("", size=12)
         
-        # Instructions for Excel
+        # Simple instructions
         instructions = ft.Column([
-            ft.Text("📊 How to import from Excel:", size=14, weight=ft.FontWeight.BOLD),
-            ft.Text("1. Open your Excel file", size=11),
-            ft.Text("2. Select your data (including headers)", size=11),
-            ft.Text("3. Press Ctrl+C (or Cmd+C) to copy", size=11),
-            ft.Text("4. Tap '📋 Paste from Clipboard' below", size=11),
-            ft.Text("5. Review the data in the box", size=11),
-            ft.Text("6. Tap '📥 Import Data'", size=11),
-            ft.Container(height=8),
-            ft.Text("Excel Format - First row must be headers:", size=10, color="#888888"),
-            ft.Text("Name | Quantity | Category | Quality | Location", size=9, color="#888888"),
-            ft.Text("Screwdriver | 25 | Hardware | New | Toolbox 1", size=9, color="#888888"),
+            ft.Text("📊 How to import:", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("1. Copy data from Excel (Ctrl+C)", size=11),
+            ft.Text("2. Tap '📋 Paste'", size=11),
+            ft.Text("3. Tap '📥 Import'", size=11),
         ], spacing=6)
         
-        # Create scrollable column
+        # Scrollable fields
         scrollable_fields = ft.Column([
             instructions,
-            ft.Container(height=5),
+            ft.Container(height=8),
             text_area,
             status_text,
         ], spacing=8, scroll=ft.ScrollMode.AUTO, height=scroll_height)
         
-        # Dialog content
+        # Dialog content - NO Cancel button, only X icon
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text(f"📥 Import {import_type.title()}", size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ]),
-            ft.Divider(),
+            ft.Divider(height=1),
             scrollable_fields,
-            ft.Divider(),
+            ft.Divider(height=1),
             ft.Row([
                 ft.ElevatedButton(
-                    "📋 Paste from Clipboard", 
+                    "📋 Paste", 
                     on_click=paste_from_clipboard, 
                     icon=ft.icons.CONTENT_PASTE,
                     expand=True,
                     style=ft.ButtonStyle(bgcolor=self.accent_color),
                 ),
-            ], spacing=10),
+            ], spacing=8),
             ft.Row([
                 ft.ElevatedButton(
                     "🗑️ Clear", 
@@ -1115,21 +1100,19 @@ class StoreApp:
                     expand=True,
                 ),
                 ft.ElevatedButton(
-                    "📥 Import Data", 
+                    "📥 Import", 
                     on_click=import_from_text, 
                     icon=ft.icons.UPLOAD,
                     expand=True,
                     style=ft.ButtonStyle(bgcolor=self.success_color),
                 ),
-            ], spacing=10),
-            ft.Row([
-                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
-            ], spacing=10),
+            ], spacing=8),
         ], spacing=10)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=dialog_width, padding=15),
+            content=ft.Container(content=dialog_content, width=dialog_width, padding=12),
+            modal=True,
         )
         
         dialog_ref = dialog
