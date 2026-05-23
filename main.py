@@ -842,14 +842,14 @@ class StoreApp:
         page.update()
 
     def show_import_dialog(self, page: ft.Page, import_type="materials"):
-        """Import CSV file - Opens Downloads folder directly on mobile"""
+        """Import CSV - Mobile friendly with buttons always visible"""
         import csv
         import sqlite3
         from database import DB_PATH
         from datetime import datetime
         import random
         import string
-        import os
+        import io
         
         def generate_barcode():
             prefix = "890"
@@ -864,6 +864,18 @@ class StoreApp:
             checksum = (10 - (total % 10)) % 10
             return barcode_without_checksum + str(checksum)
         
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Set heights based on device
+        if is_mobile:
+            text_area_height = 180
+            scroll_height = 350
+            dialog_width = 400
+        else:
+            text_area_height = 250
+            scroll_height = 450
+            dialog_width = 450
+        
         dialog_ref = None
         
         def close_dialog(e):
@@ -871,198 +883,193 @@ class StoreApp:
                 dialog_ref.open = False
                 page.update()
         
-        def on_file_picked(e: ft.FilePickerResultEvent):
-            if e.files:
-                file = e.files[0]
-                filepath = file.path
+        def process_csv_data(csv_text):
+            try:
+                csv_io = io.StringIO(csv_text)
+                reader = csv.DictReader(csv_io)
                 
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                
+                success_count = 0
+                error_count = 0
+                
+                for row_num, row in enumerate(reader, start=2):
+                    try:
+                        name = row.get('Name', '').strip()
+                        if not name:
+                            name = row.get('name', '').strip()
+                        if not name:
+                            error_count += 1
+                            continue
+                        
+                        try:
+                            quantity = int(float(row.get('Quantity', 0)))
+                        except:
+                            quantity = 0
+                        
+                        category = row.get('Category', 'Other').strip()
+                        if not category:
+                            category = 'Other'
+                        
+                        quality = row.get('Quality', 'New').strip()
+                        if quality not in ['New', 'Used', 'Damaged', 'Repaired']:
+                            quality = 'New'
+                        
+                        location = row.get('Location', '').strip()
+                        
+                        barcode = row.get('Barcode', '').strip()
+                        if not barcode:
+                            barcode = generate_barcode()
+                        
+                        cursor.execute("SELECT id FROM categories WHERE name = ?", (category,))
+                        cat_result = cursor.fetchone()
+                        category_id = cat_result[0] if cat_result else 8
+                        
+                        if import_type == "materials":
+                            cursor.execute("SELECT id FROM materials WHERE barcode_value = ?", (barcode,))
+                            if cursor.fetchone():
+                                barcode = generate_barcode()
+                            
+                            size = row.get('Size', '').strip()
+                            
+                            length_val = None
+                            try:
+                                length_val = float(row.get('Length', 0))
+                            except:
+                                pass
+                            
+                            colors = row.get('Colors', '').strip()
+                            notes = row.get('Notes', '').strip()
+                            
+                            cursor.execute('''
+                                INSERT INTO materials (name, category_id, quantity, quality, location_ids, 
+                                                    size, length, colors, notes, barcode_value, created_at, updated_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (
+                                name, category_id, quantity, quality, location,
+                                size, length_val, colors, notes, barcode,
+                                current_time, current_time
+                            ))
+                        else:
+                            cursor.execute("SELECT id FROM accessories WHERE barcode_value = ?", (barcode,))
+                            if cursor.fetchone():
+                                barcode = generate_barcode()
+                            
+                            price = 0.0
+                            try:
+                                price = float(row.get('Price', 0))
+                            except:
+                                pass
+                            
+                            notes = row.get('Notes', '').strip()
+                            
+                            cursor.execute('''
+                                INSERT INTO accessories (name, category_id, quantity, price, quality, location, 
+                                                        notes, barcode_value, created_at, updated_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (
+                                name, category_id, quantity, price, quality, location,
+                                notes, barcode, current_time, current_time
+                            ))
+                        
+                        success_count += 1
+                        
+                    except Exception as ex:
+                        error_count += 1
+                        print(f"Row {row_num} error: {ex}")
+                
+                conn.commit()
+                conn.close()
+                
+                msg = f"✓ Imported {success_count} {import_type}"
+                if error_count > 0:
+                    msg += f", {error_count} skipped"
+                
+                page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=self.success_color, duration=4000)
+                page.snack_bar.open = True
+                
+                if import_type == "materials":
+                    self.show_materials_screen(page)
+                else:
+                    self.show_accessories(page)
+                
+                page.update()
                 close_dialog(None)
                 
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"📥 Importing {import_type} from {file.name}..."),
-                    bgcolor=self.accent_color,
-                    duration=2000
-                )
-                page.snack_bar.open = True
+            except Exception as e:
+                status_text.value = f"❌ Error: {str(e)}"
+                status_text.color = self.danger_color
                 page.update()
-                
-                try:
-                    success_count = 0
-                    error_count = 0
-                    
-                    if not os.path.exists(filepath):
-                        raise Exception("File not found")
-                    
-                    with open(filepath, 'r', encoding='utf-8-sig') as csvfile:
-                        reader = csv.DictReader(csvfile)
-                        
-                        conn = sqlite3.connect(DB_PATH)
-                        cursor = conn.cursor()
-                        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        
-                        for row_num, row in enumerate(reader, start=2):
-                            try:
-                                name = row.get('Name', '').strip()
-                                if not name:
-                                    name = row.get('name', '').strip()
-                                if not name:
-                                    error_count += 1
-                                    continue
-                                
-                                try:
-                                    quantity = int(float(row.get('Quantity', 0)))
-                                except:
-                                    quantity = 0
-                                
-                                category = row.get('Category', 'Other').strip()
-                                if not category:
-                                    category = 'Other'
-                                
-                                quality = row.get('Quality', 'New').strip()
-                                if quality not in ['New', 'Used', 'Damaged', 'Repaired']:
-                                    quality = 'New'
-                                
-                                location = row.get('Location', '').strip()
-                                
-                                barcode = row.get('Barcode', '').strip()
-                                if not barcode:
-                                    barcode = generate_barcode()
-                                
-                                cursor.execute("SELECT id FROM categories WHERE name = ?", (category,))
-                                cat_result = cursor.fetchone()
-                                category_id = cat_result[0] if cat_result else 8
-                                
-                                if import_type == "materials":
-                                    cursor.execute("SELECT id FROM materials WHERE barcode_value = ?", (barcode,))
-                                    if cursor.fetchone():
-                                        barcode = generate_barcode()
-                                    
-                                    size = row.get('Size', '').strip()
-                                    
-                                    length_val = None
-                                    try:
-                                        length_val = float(row.get('Length', 0))
-                                    except:
-                                        pass
-                                    
-                                    colors = row.get('Colors', '').strip()
-                                    notes = row.get('Notes', '').strip()
-                                    
-                                    cursor.execute('''
-                                        INSERT INTO materials (name, category_id, quantity, quality, location_ids, 
-                                                            size, length, colors, notes, barcode_value, created_at, updated_at)
-                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                    ''', (
-                                        name, category_id, quantity, quality, location,
-                                        size, length_val, colors, notes, barcode,
-                                        current_time, current_time
-                                    ))
-                                else:
-                                    cursor.execute("SELECT id FROM accessories WHERE barcode_value = ?", (barcode,))
-                                    if cursor.fetchone():
-                                        barcode = generate_barcode()
-                                    
-                                    price = 0.0
-                                    try:
-                                        price = float(row.get('Price', 0))
-                                    except:
-                                        pass
-                                    
-                                    notes = row.get('Notes', '').strip()
-                                    
-                                    cursor.execute('''
-                                        INSERT INTO accessories (name, category_id, quantity, price, quality, location, 
-                                                                notes, barcode_value, created_at, updated_at)
-                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                    ''', (
-                                        name, category_id, quantity, price, quality, location,
-                                        notes, barcode, current_time, current_time
-                                    ))
-                                
-                                success_count += 1
-                                
-                            except Exception as ex:
-                                error_count += 1
-                                print(f"Row {row_num} error: {ex}")
-                        
-                        conn.commit()
-                        conn.close()
-                    
-                    msg = f"✓ Imported {success_count} {import_type}"
-                    if error_count > 0:
-                        msg += f", {error_count} skipped"
-                    
-                    page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=self.success_color, duration=4000)
-                    page.snack_bar.open = True
-                    
-                    if import_type == "materials":
-                        self.show_materials_screen(page)
-                    else:
-                        self.show_accessories(page)
-                    
-                    page.update()
-                        
-                except Exception as ex:
-                    page.snack_bar = ft.SnackBar(
-                        ft.Text(f"❌ Import failed: {str(ex)}"),
-                        bgcolor=self.danger_color,
-                        duration=4000
-                    )
-                    page.snack_bar.open = True
-                    page.update()
-            else:
-                pass
         
-        file_picker = ft.FilePicker(on_result=on_file_picked)
-        page.overlay.append(file_picker)
+        def import_from_text(e):
+            csv_text = text_area.value.strip()
+            if not csv_text:
+                status_text.value = "❌ Please paste CSV data"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            process_csv_data(csv_text)
         
-        def pick_file(e):
-            file_picker.pick_files(
-                allow_multiple=False,
-                allowed_extensions=["csv", "CSV"],
-                dialog_title=f"Select {import_type.title()} CSV File"
-            )
+        def paste_example(e):
+            example_csv = """Name,Quantity,Category,Quality,Location
+    Screwdriver,25,Hardware,New,Toolbox 1
+    Hammer,10,Hardware,Used,Toolbox 2
+    Wrench,5,Hardware,New,Toolbox 3"""
+            text_area.value = example_csv
+            status_text.value = "✓ Example pasted! You can edit it now."
+            status_text.color = self.success_color
+            page.update()
         
-        def open_downloads(e):
-            import webbrowser
-            webbrowser.open("file:///storage/emulated/0/Download")
-            close_dialog(None)
+        # Form fields
+        text_area = ft.TextField(
+            label="Paste CSV Data Here",
+            hint_text="Name,Quantity,Category,Quality,Location\nScrewdriver,25,Hardware,New,Toolbox 1",
+            multiline=True,
+            min_lines=8,
+            max_lines=12,
+            width=dialog_width - 50,
+            height=text_area_height,
+            bgcolor=self.card_color,
+        )
         
-        instruction = ft.Column([
-            ft.Text("📁 Where to find your CSV file:", size=14, weight=ft.FontWeight.BOLD),
-            ft.Text("1. Tap 'Select CSV File' below", size=12),
-            ft.Text("2. Tap the three lines (☰) in top-left", size=12),
-            ft.Text("3. Select 'Download' from the menu", size=12),
-            ft.Text("4. Navigate to 'StoreManagement' folder", size=12),
-            ft.Text("5. Select your CSV file", size=12),
-            ft.Container(height=10),
-            ft.Text("💡 Tip: Save your CSV files to:", size=11, color="#888888"),
-            ft.Text("/storage/emulated/0/Download/StoreManagement/", size=10, color="#888888"),
-        ], spacing=8)
+        status_text = ft.Text("", size=12)
         
+        # Create scrollable column (scroll on Column, NOT on Container)
+        scrollable_fields = ft.Column([
+            ft.Text("How to import:", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("1. Copy CSV data from your file", size=11),
+            ft.Text("2. Paste into the box below", size=11),
+            ft.Text("3. Tap 'Import Data'", size=11),
+            ft.Container(height=8),
+            ft.Text("CSV Format (first row must be headers):", size=10, color="#888888"),
+            text_area,
+            status_text,
+        ], spacing=8, scroll=ft.ScrollMode.AUTO, height=scroll_height)
+        
+        # Dialog content with buttons SEPARATE from scroll
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text(f"📥 Import {import_type.title()}", size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ]),
             ft.Divider(),
-            instruction,
-            ft.Container(height=15),
+            scrollable_fields,
+            ft.Divider(),
             ft.Row([
                 ft.ElevatedButton(
-                    "📁 Open Downloads Folder", 
-                    on_click=open_downloads, 
-                    icon=ft.icons.FOLDER_OPEN,
+                    "📋 Paste Example", 
+                    on_click=paste_example, 
+                    icon=ft.icons.CONTENT_PASTE,
                     expand=True,
                 ),
-            ], spacing=10),
-            ft.Row([
                 ft.ElevatedButton(
-                    "📄 Select CSV File", 
-                    on_click=pick_file, 
-                    icon=ft.icons.UPLOAD_FILE,
+                    "📥 Import Data", 
+                    on_click=import_from_text, 
+                    icon=ft.icons.UPLOAD,
                     expand=True,
-                    style=ft.ButtonStyle(bgcolor=self.accent_color),
+                    style=ft.ButtonStyle(bgcolor=self.success_color),
                 ),
             ], spacing=10),
             ft.Row([
@@ -1072,7 +1079,7 @@ class StoreApp:
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=400, height=480, padding=15),
+            content=ft.Container(content=dialog_content, width=dialog_width, padding=15),
         )
         
         dialog_ref = dialog
