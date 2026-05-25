@@ -104,6 +104,168 @@ class StoreApp:
                 row_dict[key] = row[key]
             result.append(row_dict)
         return result
+    def create_category_chart(self, page: ft.Page):
+        """Create a category distribution chart"""
+        import sqlite3
+        from database import DB_PATH
+        
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Get category counts from database
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Get materials by category
+        cursor.execute('''
+            SELECT c.name, c.icon, COUNT(m.id) as count
+            FROM categories c
+            LEFT JOIN materials m ON m.category_id = c.id
+            GROUP BY c.id
+            ORDER BY count DESC
+        ''')
+        material_cats = cursor.fetchall()
+        
+        # Get accessories by category
+        cursor.execute('''
+            SELECT c.name, c.icon, COUNT(a.id) as count
+            FROM categories c
+            LEFT JOIN accessories a ON a.category_id = c.id
+            GROUP BY c.id
+            ORDER BY count DESC
+        ''')
+        accessory_cats = cursor.fetchall()
+        
+        conn.close()
+        
+        # Combine counts
+        category_counts = {}
+        category_icons = {}
+        
+        for row in material_cats:
+            name = row[0]
+            icon = row[1]
+            count = row[2]
+            category_counts[name] = category_counts.get(name, 0) + count
+            category_icons[name] = icon
+        
+        for row in accessory_cats:
+            name = row[0]
+            icon = row[1]
+            count = row[2]
+            category_counts[name] = category_counts.get(name, 0) + count
+            category_icons[name] = icon
+        
+        # Filter out categories with 0 items
+        categories_with_items = [(name, category_counts[name], category_icons.get(name, '📁')) 
+                                for name in category_counts if category_counts[name] > 0]
+        categories_with_items.sort(key=lambda x: x[1], reverse=True)
+        
+        if not categories_with_items:
+            return ft.Container(
+                content=ft.Column([
+                    ft.Icon(ft.icons.PIE_CHART, size=50, color="#888888"),
+                    ft.Text("No data available", size=14, color="#888888"),
+                    ft.Text("Add materials or accessories to see chart", size=12, color="#888888"),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=20,
+                bgcolor=self.card_color,
+                border_radius=10,
+            )
+        
+        # Calculate total for percentages
+        total_items = sum(count for _, count, _ in categories_with_items)
+        
+        # Create color palette
+        colors = [
+            "#1976D2", "#4CAF50", "#FF9800", "#F44336", "#9C27B0",
+            "#00BCD4", "#FF5722", "#795548", "#607D8B", "#E91E63",
+            "#8BC34A", "#673AB7", "#009688", "#FFC107", "#3F51B5"
+        ]
+        
+        # Create chart items
+        chart_items = []
+        for i, (name, count, icon) in enumerate(categories_with_items[:10]):
+            percentage = (count / total_items) * 100
+            color = colors[i % len(colors)]
+            
+            # Calculate bar width based on percentage
+            bar_width = int(percentage * 2) if not is_mobile else int(percentage * 1.5)
+            bar_width = max(20, min(bar_width, 200))
+            
+            chart_items.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Text(f"{icon} {name}", size=13, color=self.text_color, width=120),
+                            ft.Text(f"{count} items", size=12, color="#888888", width=70),
+                            ft.Text(f"{percentage:.1f}%", size=12, color=self.accent_color, width=50),
+                            ft.Container(
+                                content=ft.Container(
+                                    width=bar_width,
+                                    height=8,
+                                    bgcolor=color,
+                                    border_radius=4,
+                                ),
+                                expand=True,
+                            ),
+                        ], spacing=8),
+                    ], spacing=4),
+                    margin=ft.margin.only(bottom=8),
+                )
+            )
+        
+        # Create donut items for desktop
+        donut_items = []
+        for i, (name, count, icon) in enumerate(categories_with_items[:6]):
+            percentage = (count / total_items) * 100
+            color = colors[i % len(colors)]
+            
+            donut_items.append(
+                ft.Row([
+                    ft.Container(width=12, height=12, bgcolor=color, border_radius=2),
+                    ft.Text(f"{icon} {name}", size=11, color=self.text_color, expand=True),
+                    ft.Text(f"{percentage:.1f}%", size=11, color="#888888"),
+                ], spacing=6)
+            )
+        
+        if is_mobile:
+            # Mobile layout - stacked
+            return ft.Container(
+                content=ft.Column([
+                    ft.Text("📊 Materials by Category", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Text(f"Distribution across {len(categories_with_items)} categories", size=11, color="#888888"),
+                    ft.Divider(),
+                    ft.Column(chart_items, spacing=6),
+                    ft.Container(height=10),
+                    ft.Text(f"Total: {total_items} items", size=12, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                ], spacing=8),
+                padding=15,
+                bgcolor=self.card_color,
+                border_radius=12,
+            )
+        else:
+            # Desktop layout - side by side
+            return ft.Container(
+                content=ft.Row([
+                    ft.Column([
+                        ft.Text("📊 Materials by Category", size=18, weight=ft.FontWeight.BOLD, color=self.text_color),
+                        ft.Text(f"Distribution across {len(categories_with_items)} categories", size=12, color="#888888"),
+                        ft.Divider(),
+                        ft.Column(chart_items, spacing=8),
+                        ft.Container(height=10),
+                        ft.Text(f"Total: {total_items} items", size=13, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                    ], expand=2),
+                    ft.VerticalDivider(),
+                    ft.Column([
+                        ft.Text("📈 Category Share", size=16, weight=ft.FontWeight.BOLD, color=self.text_color),
+                        ft.Container(height=10),
+                        ft.Column(donut_items, spacing=8),
+                    ], expand=1),
+                ], spacing=20),
+                padding=20,
+                bgcolor=self.card_color,
+                border_radius=12,
+            )
     def show_material_detail_dialog_from_row(self, page: ft.Page, row):
         """Show detail dialog using sqlite3.Row object"""
         
@@ -180,7 +342,7 @@ class StoreApp:
         page.update()
     
     def get_company_info(self):
-        """Load company information from config file with error handling"""
+        """Load company information from config file"""
         import json
         import os
         
@@ -201,26 +363,11 @@ class StoreApp:
             try:
                 with open(config_file, 'r', encoding='utf-8') as f:
                     content = f.read().strip()
-                    if content:  # Check if file is not empty
+                    if content:
                         data = json.loads(content)
                         default_info.update(data)
-                        print(f"Loaded company info: {default_info}")  # Debug print
             except (json.JSONDecodeError, ValueError, IOError) as e:
                 print(f"Error reading company config: {e}")
-                # If file is corrupted, create a new valid one
-                try:
-                    with open(config_file, 'w', encoding='utf-8') as f:
-                        json.dump(default_info, f, indent=4, ensure_ascii=False)
-                except:
-                    pass
-        else:
-            # Create default config file if it doesn't exist
-            try:
-                with open(config_file, 'w', encoding='utf-8') as f:
-                    json.dump(default_info, f, indent=4, ensure_ascii=False)
-                print(f"Created default company config at {config_file}")
-            except:
-                pass
         
         return default_info
     
@@ -595,7 +742,7 @@ class StoreApp:
         )
                 # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Ultra-simple dashboard - GUARANTEED TO WORK"""
+        """Dashboard with category distribution chart"""
         page.controls.clear()
         
         # Check if mobile
@@ -635,8 +782,8 @@ class StoreApp:
             q = a.get('quality', 'Used')
             quality_counts[q] = quality_counts.get(q, 0) + 1
         
-        # Create a simple Column (NO ListView)
-        main_column = ft.Column(spacing=15, expand=True)
+        # Create main column
+        main_column = ft.Column(spacing=12, expand=True)
         
         # ========== SECTION 1: HEADER ==========
         main_column.controls.append(
@@ -647,53 +794,27 @@ class StoreApp:
         # ========== SECTION 2: STATS CARDS ==========
         main_column.controls.append(
             ft.Row([
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("📦", size=20),
-                        ft.Text(str(total_items), size=24, weight=ft.FontWeight.BOLD),
-                        ft.Text("Items", size=10, color="#CCCCCC"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=12, bgcolor=self.accent_color, border_radius=10, expand=True,
-                ),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("📊", size=20),
-                        ft.Text(str(total_stock), size=24, weight=ft.FontWeight.BOLD),
-                        ft.Text("Stock", size=10, color="#CCCCCC"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=12, bgcolor=self.success_color, border_radius=10, expand=True,
-                ),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("⚠️", size=20),
-                        ft.Text(str(total_low_stock), size=24, weight=ft.FontWeight.BOLD),
-                        ft.Text("Low", size=10, color="#CCCCCC"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=12, bgcolor=self.warning_color, border_radius=10, expand=True,
-                ),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("👥", size=20),
-                        ft.Text(str(total_users), size=24, weight=ft.FontWeight.BOLD),
-                        ft.Text("Users", size=10, color="#CCCCCC"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                    padding=12, bgcolor="#9C27B0", border_radius=10, expand=True,
-                ),
+                self._create_stat_card("📦", str(total_items), "Items"),
+                self._create_stat_card("📊", str(total_stock), "Stock"),
+                self._create_stat_card("⚠️", str(total_low_stock), "Low Stock"),
+                self._create_stat_card("👥", str(total_users), "Users"),
             ], spacing=8)
         )
         
-        # ========== SECTION 3: QUALITY DISTRIBUTION ==========
+        # ========== SECTION 3: CATEGORY DISTRIBUTION CHART ==========
+        main_column.controls.append(self.create_category_chart(page))
+        
+        # ========== SECTION 4: QUALITY DISTRIBUTION ==========
         main_column.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
         
-        # Create quality cards as simple containers
         quality_container = ft.Container(
             content=ft.Row([
                 ft.Container(
-                    content=ft.Text(f"🟢 New: {quality_counts.get('New', 0)}", size=14),
+                    content=ft.Text(f"🟢 New: {quality_counts.get('New', 0)}", size=13),
                     padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
                 ),
                 ft.Container(
-                    content=ft.Text(f"🟠 Used: {quality_counts.get('Used', 0)}", size=14),
+                    content=ft.Text(f"🟠 Used: {quality_counts.get('Used', 0)}", size=13),
                     padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
                 ),
             ], spacing=8),
@@ -704,18 +825,18 @@ class StoreApp:
         quality_container2 = ft.Container(
             content=ft.Row([
                 ft.Container(
-                    content=ft.Text(f"🔴 Damaged: {quality_counts.get('Damaged', 0)}", size=14),
+                    content=ft.Text(f"🔴 Damaged: {quality_counts.get('Damaged', 0)}", size=13),
                     padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
                 ),
                 ft.Container(
-                    content=ft.Text(f"🔵 Repaired: {quality_counts.get('Repaired', 0)}", size=14),
+                    content=ft.Text(f"🔵 Repaired: {quality_counts.get('Repaired', 0)}", size=13),
                     padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
                 ),
             ], spacing=8),
         )
         main_column.controls.append(quality_container2)
         
-        # ========== SECTION 4: STOCK HEALTH ==========
+        # ========== SECTION 5: STOCK HEALTH ==========
         healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100) if total_stock > 0 else 100)
         healthy_percentage = max(0, min(healthy_percentage, 100))
         
@@ -731,7 +852,7 @@ class StoreApp:
             )
         )
         
-        # ========== SECTION 5: RECENT MATERIALS ==========
+        # ========== SECTION 6: RECENT MATERIALS ==========
         main_column.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
         
         if materials:
@@ -756,17 +877,20 @@ class StoreApp:
         else:
             main_column.controls.append(ft.Text("No materials", size=12, color="#888888"))
         
-        # ========== SECTION 6: RECENT ACCESSORIES ==========
+        # ========== SECTION 7: RECENT ACCESSORIES ==========
         main_column.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
         
         if accessories:
             for a in accessories[:3]:
+                price = a.get('price', 0)
+                price_text = f"${price:.2f}" if price else ""
                 main_column.controls.append(
                     ft.Container(
                         content=ft.Row([
                             ft.Text("🔧", size=18),
                             ft.Text(a.get('name', 'N/A'), size=14, expand=True),
                             ft.Text(f"Qty: {a.get('quantity', 0)}", size=14),
+                            ft.Text(price_text, size=12, color="#4CAF50"),
                             ft.Container(
                                 content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
                                 bgcolor=self.get_quality_color(a.get('quality', 'Used')),
@@ -781,9 +905,9 @@ class StoreApp:
         else:
             main_column.controls.append(ft.Text("No accessories", size=12, color="#888888"))
         
-            # ========== SECTION 7: QUICK ACTIONS ==========
+        # ========== SECTION 8: QUICK ACTIONS ==========
         main_column.controls.append(ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD))
-
+        
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton("Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
@@ -796,10 +920,6 @@ class StoreApp:
                 ft.ElevatedButton("Export Data", on_click=lambda e: self.export_all_data_simple(page), expand=True),
             ], spacing=8)
         )
-        
-        # ========== SECTION 8: IMPORT/EXPORT ==========
-        main_column.controls.append(ft.Text("Import / Export", size=16, weight=ft.FontWeight.BOLD))
-
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton("Import Materials", on_click=lambda e: self.show_import_dialog(page, "materials"), expand=True),
@@ -808,13 +928,8 @@ class StoreApp:
         )
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_all_data_simple(page), expand=True),
                 ft.ElevatedButton("Export HTML", on_click=lambda e: self.export_inventory_html(page), expand=True),
-            ], spacing=8)
-        )
-        main_column.controls.append(
-            ft.Row([
-                ft.ElevatedButton("Low Stock Report", on_click=lambda e: self.export_low_stock_html(page), expand=True,
+                ft.ElevatedButton("Low Stock HTML", on_click=lambda e: self.export_low_stock_html(page), expand=True,
                                 style=ft.ButtonStyle(bgcolor=self.danger_color)),
             ], spacing=8)
         )
@@ -826,7 +941,6 @@ class StoreApp:
             padding=15,
         )
         
-        # Make it scrollable by wrapping in a Column with scroll
         scrollable_container = ft.Container(
             content=ft.Column([main_container], scroll=ft.ScrollMode.AUTO, expand=True),
             expand=True,
@@ -841,6 +955,19 @@ class StoreApp:
         self.current_view = "dashboard"
         page.update()
 
+    def _create_stat_card(self, icon, value, label):
+        """Create a statistics card"""
+        return ft.Container(
+            content=ft.Column([
+                ft.Text(icon, size=20),
+                ft.Text(value, size=24, weight=ft.FontWeight.BOLD),
+                ft.Text(label, size=10, color="#CCCCCC"),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+            padding=10,
+            bgcolor=self.accent_color,
+            border_radius=10,
+            expand=True,
+        )
     def show_import_dialog(self, page: ft.Page, import_type="materials"):
         """Import CSV - Clean layout with X icon only"""
         import csv
@@ -2180,7 +2307,7 @@ class StoreApp:
         )
             
     def show_materials_screen(self, page: ft.Page):
-        """Materials screen - Clean layout, no refresh button"""
+        """Materials screen with side by side filters"""
         page.controls.clear()
         
         import sqlite3
@@ -2206,7 +2333,7 @@ class StoreApp:
         nav = self.create_bottom_nav(page)
         is_mobile = page.width < 800 if page.width else False
         
-        # Main container - full width
+        # Main container
         main_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
         
         # Header
@@ -2223,16 +2350,34 @@ class StoreApp:
             dense=True,
         )
         main_column.controls.append(search_field)
+        main_column.controls.append(ft.Container(height=5))
         
-        # Category filter row
+        # ========== FILTERS ROW - Side by Side ==========
+        # Category filter dropdown
         cat_options = [ft.dropdown.Option("All", "All Categories")]
         for c in categories:
             cat_options.append(ft.dropdown.Option(str(c["id"]), f"{c['icon']} {c['name']}"))
         
         category_filter = ft.Dropdown(
             label="Category",
-            width=140 if not is_mobile else 120,
+            width=160 if not is_mobile else 140,
             options=cat_options,
+            value="All",
+            bgcolor=self.card_color,
+            dense=True,
+        )
+        
+        # Quality filter dropdown
+        quality_filter = ft.Dropdown(
+            label="Quality",
+            width=130 if not is_mobile else 110,
+            options=[
+                ft.dropdown.Option("All", "All Qualities"),
+                ft.dropdown.Option("New", "🟢 New"),
+                ft.dropdown.Option("Used", "🟠 Used"),
+                ft.dropdown.Option("Damaged", "🔴 Damaged"),
+                ft.dropdown.Option("Repaired", "🔵 Repaired"),
+            ],
             value="All",
             bgcolor=self.card_color,
             dense=True,
@@ -2246,7 +2391,8 @@ class StoreApp:
                     conn2 = sqlite3.connect(DB_PATH)
                     cur = conn2.cursor()
                     try:
-                        cur.execute("INSERT INTO categories (name, icon) VALUES (?, ?)", (new_name, icon_dropdown.value))
+                        cur.execute("INSERT INTO categories (name, icon, user_id) VALUES (?, ?, ?)", 
+                                (new_name, icon_dropdown.value, 1))
                         conn2.commit()
                         page.snack_bar = ft.SnackBar(ft.Text(f"✓ Category '{new_name}' added"), bgcolor=self.success_color)
                         page.snack_bar.open = True
@@ -2276,29 +2422,33 @@ class StoreApp:
                 ),
                 actions=[
                     ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False)),
-                    ft.FilledButton("Add", on_click=lambda e: add_new_category(), style=ft.ButtonStyle(bgcolor=self.success_color))
+                    ft.FilledButton("Add", on_click=lambda e: add_new_category(), 
+                                style=ft.ButtonStyle(bgcolor=self.success_color))
                 ]
             )
             page.dialog = dialog
             dialog.open = True
             page.update()
-                
-        # In show_materials_screen, update the add_category_btn:
-
-        # In show_materials_screen, update the add_category_btn:
-
+        
         add_category_btn = ft.IconButton(
             icon=ft.icons.ADD_CIRCLE_OUTLINE,
             icon_size=22,
             icon_color=self.success_color,
             tooltip="Add New Category",
-            on_click=lambda e: self.open_add_category_dialog(page, lambda: self.show_materials_screen(page)),
+            on_click=show_add_category_dialog,
         )
-                
-        # Category row
-        main_column.controls.append(ft.Row([category_filter, add_category_btn], spacing=6))
         
-        # Cards container - DEFINED BEFORE update_cards
+        # Filters row - side by side
+        filters_row = ft.Row([
+            category_filter,
+            quality_filter,
+            add_category_btn,
+        ], spacing=8, alignment=ft.MainAxisAlignment.START)
+        
+        main_column.controls.append(filters_row)
+        main_column.controls.append(ft.Container(height=5))
+        
+        # Cards container
         cards_container = ft.Column(spacing=8)
         main_column.controls.append(cards_container)
         
@@ -2306,18 +2456,25 @@ class StoreApp:
             cards_container.controls.clear()
             search_query = search_field.value.lower() if search_field.value else ""
             selected_cat_id = category_filter.value
+            selected_quality = quality_filter.value
             
             filtered_count = 0
             for m in materials:
+                # Search filter
                 if search_query and search_query not in m["name"].lower():
                     continue
+                # Category filter
                 if selected_cat_id != "All" and str(m["category_id"]) != selected_cat_id:
+                    continue
+                # Quality filter
+                if selected_quality != "All" and m["quality"] != selected_quality:
                     continue
                 
                 filtered_count += 1
                 cat_name = m["category_name"] if m["category_name"] else "Other"
                 cat_icon = m["category_icon"] if m["category_icon"] else "📁"
                 qty = m["quantity"]
+                quality = m["quality"]
                 
                 card = ft.Card(
                     content=ft.Container(
@@ -2330,8 +2487,8 @@ class StoreApp:
                             ft.Row([
                                 ft.Text(f"{cat_icon} {cat_name}", size=11, color=self.accent_color, expand=True),
                                 ft.Container(
-                                    content=ft.Text(m["quality"], size=9, color="white"),
-                                    bgcolor=self.get_quality_color(m["quality"]),
+                                    content=ft.Text(quality, size=9, color="white"),
+                                    bgcolor=self.get_quality_color(quality),
                                     border_radius=6,
                                     padding=ft.padding.symmetric(horizontal=6, vertical=2),
                                 ),
@@ -2359,16 +2516,16 @@ class StoreApp:
                     )
                 )
             else:
-                # Add count at top if there are cards
                 if len(cards_container.controls) > 0:
                     count_text = ft.Text(f"{filtered_count} of {len(materials)}", size=10, color="#888888")
                     cards_container.controls.insert(0, count_text)
             
             page.update()
         
-        # Set event handlers
+        # Event handlers
         search_field.on_change = lambda e: update_cards()
         category_filter.on_change = lambda e: update_cards()
+        quality_filter.on_change = lambda e: update_cards()
         
         # Initial load
         update_cards()
@@ -2708,7 +2865,7 @@ class StoreApp:
 
                     # ============ ACCESSORIES SCREEN ============
     def show_accessories(self, page: ft.Page):
-        """Accessories screen - Working with categories"""
+        """Accessories screen with side by side filters"""
         page.controls.clear()
         
         import sqlite3
@@ -2734,7 +2891,7 @@ class StoreApp:
         nav = self.create_bottom_nav(page)
         is_mobile = page.width < 800 if page.width else False
         
-        # Main container - full width
+        # Main container
         main_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
         
         # Header
@@ -2751,16 +2908,34 @@ class StoreApp:
             dense=True,
         )
         main_column.controls.append(search_field)
+        main_column.controls.append(ft.Container(height=5))
         
-        # Category filter row
+        # ========== FILTERS ROW - Side by Side ==========
+        # Category filter dropdown
         cat_options = [ft.dropdown.Option("All", "All Categories")]
         for c in categories:
             cat_options.append(ft.dropdown.Option(str(c["id"]), f"{c['icon']} {c['name']}"))
         
         category_filter = ft.Dropdown(
             label="Category",
-            width=140 if not is_mobile else 120,
+            width=160 if not is_mobile else 140,
             options=cat_options,
+            value="All",
+            bgcolor=self.card_color,
+            dense=True,
+        )
+        
+        # Quality filter dropdown
+        quality_filter = ft.Dropdown(
+            label="Quality",
+            width=130 if not is_mobile else 110,
+            options=[
+                ft.dropdown.Option("All", "All Qualities"),
+                ft.dropdown.Option("New", "🟢 New"),
+                ft.dropdown.Option("Used", "🟠 Used"),
+                ft.dropdown.Option("Damaged", "🔴 Damaged"),
+                ft.dropdown.Option("Repaired", "🔵 Repaired"),
+            ],
             value="All",
             bgcolor=self.card_color,
             dense=True,
@@ -2774,7 +2949,8 @@ class StoreApp:
                     conn2 = sqlite3.connect(DB_PATH)
                     cur = conn2.cursor()
                     try:
-                        cur.execute("INSERT INTO categories (name, icon) VALUES (?, ?)", (new_name, icon_dropdown.value))
+                        cur.execute("INSERT INTO categories (name, icon, user_id) VALUES (?, ?, ?)", 
+                                (new_name, icon_dropdown.value, 1))
                         conn2.commit()
                         page.snack_bar = ft.SnackBar(ft.Text(f"✓ Category '{new_name}' added"), bgcolor=self.success_color)
                         page.snack_bar.open = True
@@ -2804,25 +2980,31 @@ class StoreApp:
                 ),
                 actions=[
                     ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False)),
-                    ft.FilledButton("Add", on_click=lambda e: add_new_category(), style=ft.ButtonStyle(bgcolor=self.success_color))
+                    ft.FilledButton("Add", on_click=lambda e: add_new_category(), 
+                                style=ft.ButtonStyle(bgcolor=self.success_color))
                 ]
             )
             page.dialog = dialog
             dialog.open = True
             page.update()
         
-# In show_accessories, update the add_category_btn:
-
         add_category_btn = ft.IconButton(
             icon=ft.icons.ADD_CIRCLE_OUTLINE,
             icon_size=22,
             icon_color=self.success_color,
             tooltip="Add New Category",
-            on_click=lambda e: self.open_add_category_dialog(page, lambda: self.show_accessories(page)),
+            on_click=show_add_category_dialog,
         )
         
-        # Category row
-        main_column.controls.append(ft.Row([category_filter, add_category_btn], spacing=6))
+        # Filters row - side by side
+        filters_row = ft.Row([
+            category_filter,
+            quality_filter,
+            add_category_btn,
+        ], spacing=8, alignment=ft.MainAxisAlignment.START)
+        
+        main_column.controls.append(filters_row)
+        main_column.controls.append(ft.Container(height=5))
         
         # Cards container
         cards_container = ft.Column(spacing=8)
@@ -2832,18 +3014,25 @@ class StoreApp:
             cards_container.controls.clear()
             search_query = search_field.value.lower() if search_field.value else ""
             selected_cat_id = category_filter.value
+            selected_quality = quality_filter.value
             
             filtered_count = 0
             for a in accessories:
+                # Search filter
                 if search_query and search_query not in a["name"].lower():
                     continue
+                # Category filter
                 if selected_cat_id != "All" and str(a["category_id"]) != selected_cat_id:
+                    continue
+                # Quality filter
+                if selected_quality != "All" and a["quality"] != selected_quality:
                     continue
                 
                 filtered_count += 1
                 cat_name = a["category_name"] if a["category_name"] else "Other"
                 cat_icon = a["category_icon"] if a["category_icon"] else "📁"
                 qty = a["quantity"]
+                quality = a["quality"]
                 price = a["price"] if a["price"] else 0
                 price_text = f"${price:.2f}" if price > 0 else ""
                 
@@ -2858,8 +3047,8 @@ class StoreApp:
                             ft.Row([
                                 ft.Text(f"{cat_icon} {cat_name}", size=11, color=self.accent_color, expand=True),
                                 ft.Container(
-                                    content=ft.Text(a["quality"], size=9, color="white"),
-                                    bgcolor=self.get_quality_color(a["quality"]),
+                                    content=ft.Text(quality, size=9, color="white"),
+                                    bgcolor=self.get_quality_color(quality),
                                     border_radius=6,
                                     padding=ft.padding.symmetric(horizontal=6, vertical=2),
                                 ),
@@ -2893,8 +3082,12 @@ class StoreApp:
             
             page.update()
         
+        # Event handlers
         search_field.on_change = lambda e: update_cards()
         category_filter.on_change = lambda e: update_cards()
+        quality_filter.on_change = lambda e: update_cards()
+        
+        # Initial load
         update_cards()
         
         # FAB Button for Add Accessory
@@ -4575,7 +4768,7 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Add material - Complete working version with barcode scan"""
+        """Add material - Working Cancel and Close buttons"""
         import random
         import string
         import sqlite3
@@ -4602,11 +4795,11 @@ class StoreApp:
         if is_mobile:
             field_width = page.width - 40 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
-            scroll_height = 420
+            scroll_height = 380
         else:
             field_width = 350
-            dialog_width = 450
-            scroll_height = 480
+            dialog_width = 500
+            scroll_height = 450
         
         # Create images folder
         images_folder = "images"
@@ -4636,7 +4829,7 @@ class StoreApp:
         color_field = ft.TextField(label="Colors", width=field_width, bgcolor=self.card_color)
         notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
-        # Create barcode field with inline paste button
+        # Barcode field with paste and scan buttons
         barcode_field = ft.TextField(
             label="Barcode", 
             width=field_width - 80,
@@ -4650,13 +4843,11 @@ class StoreApp:
                 clipboard = page.get_clipboard()
                 if clipboard:
                     barcode_field.value = clipboard
-                    page.snack_bar = ft.SnackBar(ft.Text(f"✓ Pasted: {clipboard}"), bgcolor=self.success_color, duration=2000)
+                    page.snack_bar = ft.SnackBar(ft.Text(f"✓ Pasted: {clipboard}"), bgcolor=self.success_color, duration=1500)
                     page.snack_bar.open = True
                     page.update()
-                    # Auto search after paste
-                    self.search_barcode_by_value(clipboard, page)
                 else:
-                    page.snack_bar = ft.SnackBar(ft.Text("❌ Nothing in clipboard"), bgcolor=self.danger_color, duration=2000)
+                    page.snack_bar = ft.SnackBar(ft.Text("❌ Nothing in clipboard"), bgcolor=self.danger_color)
                     page.snack_bar.open = True
                     page.update()
             except:
@@ -4676,45 +4867,14 @@ class StoreApp:
             icon=ft.icons.QR_CODE_SCANNER,
             icon_size=20,
             icon_color=self.accent_color,
-            tooltip="Open Scanner",
+            tooltip="Scan Barcode",
             on_click=lambda e: self.show_barcode_scanner(page, barcode_field),
         )
         
-        barcode_row = ft.Row([
-            barcode_field,
-            barcode_paste_btn,
-            barcode_scan_btn,
-        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-
+        barcode_row = ft.Row([barcode_field, barcode_paste_btn, barcode_scan_btn], spacing=8)
         regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=lambda e: setattr(barcode_field, 'value', generate_barcode()) or page.update())
         
-        # Auto-update length from size
-        def update_length(e):
-            size_value = size_field.value
-            if size_value:
-                try:
-                    if ' ' in size_value and '/' in size_value:
-                        parts = size_value.split()
-                        whole = float(parts[0])
-                        frac = parts[1].split('/')
-                        length_value = whole + float(frac[0]) / float(frac[1])
-                        length_field.value = f"{length_value:.2f}"
-                    elif '/' in size_value:
-                        frac = size_value.split('/')
-                        length_value = float(frac[0]) / float(frac[1])
-                        length_field.value = f"{length_value:.2f}"
-                    else:
-                        length_value = float(size_value)
-                        length_field.value = f"{length_value:.2f}"
-                except:
-                    length_field.value = size_value
-            else:
-                length_field.value = ""
-            page.update()
-        
-        size_field.on_change = update_length
-        
-        # Image upload - Mobile friendly
+        # Image upload
         image_status_text = ft.Text("No image (max 2MB)", size=10, color="#888888")
         selected_image_data = None
         
@@ -4744,9 +4904,7 @@ class StoreApp:
                     
                     image_status_text.value = f"✓ {file.name[:20]} ({size_kb:.0f}KB)"
                     image_status_text.color = self.success_color
-                    print(f"DEBUG: Image selected: {file.name}")
                 except Exception as ex:
-                    print(f"DEBUG: Error reading image: {ex}")
                     image_status_text.value = f"❌ Error reading image"
                     image_status_text.color = self.danger_color
                 page.update()
@@ -4758,7 +4916,7 @@ class StoreApp:
             image_picker.pick_files(allow_multiple=False, allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
         
         upload_btn = ft.ElevatedButton(
-            "📁 Upload Image",
+            "📁 Upload",
             on_click=upload_image,
             icon=ft.icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
@@ -4777,15 +4935,43 @@ class StoreApp:
                     with open(new_path, 'wb') as f:
                         f.write(selected_image_data['data'])
                     
-                    print(f"DEBUG: Image saved to: {new_path}")
                     return f"images/{new_filename}"
-                except Exception as e:
-                    print(f"DEBUG: Error saving image: {e}")
+                except:
                     return None
             return None
         
-        # Create scrollable column
-        scroll_fields = ft.Column([
+        def update_length(e):
+            size_value = size_field.value
+            if size_value:
+                try:
+                    if ' ' in size_value and '/' in size_value:
+                        parts = size_value.split()
+                        whole = float(parts[0])
+                        frac = parts[1].split('/')
+                        length_value = whole + float(frac[0]) / float(frac[1])
+                        length_field.value = f"{length_value:.2f}"
+                    elif '/' in size_value:
+                        frac = size_value.split('/')
+                        length_value = float(frac[0]) / float(frac[1])
+                        length_field.value = f"{length_value:.2f}"
+                    else:
+                        length_value = float(size_value)
+                        length_field.value = f"{length_value:.2f}"
+                except:
+                    length_field.value = size_value
+            else:
+                length_field.value = ""
+            page.update()
+        
+        size_field.on_change = update_length
+        
+        # Function to close dialog
+        def close_dialog():
+            page.dialog.open = False
+            page.update()
+        
+        # Create scrollable fields (WITHOUT buttons)
+        scrollable_fields = ft.Column([
             name_field,
             category_field,
             quantity_field,
@@ -4800,30 +4986,33 @@ class StoreApp:
             notes_field,
         ], spacing=10, scroll=ft.ScrollMode.AUTO, height=scroll_height)
         
-        # Function to close dialog
-        def close_dialog():
-            page.dialog.open = False
-            page.update()
+        # Dialog content with buttons SEPARATE from scroll
+        dialog_content = ft.Column([
+            ft.Row([
+                ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
+            ]),
+            ft.Divider(height=1),
+            scrollable_fields,
+            ft.Divider(height=1),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog(), expand=True),
+                ft.FilledButton("Save", on_click=lambda e: save_material(), 
+                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
+            ], spacing=10),
+        ], spacing=10)
         
         def save_material():
-            print("DEBUG: Save material called")
-            
             if not name_field.value:
                 page.snack_bar = ft.SnackBar(ft.Text("Please enter a name!"), bgcolor=self.danger_color)
                 page.snack_bar.open = True
                 page.update()
                 return
             
-            # Save image if selected
-            saved_image_path = None
-            if selected_image_data:
-                saved_image_path = save_uploaded_image()
-                print(f"DEBUG: Saved image path: {saved_image_path}")
-            
+            saved_image_path = save_uploaded_image() if selected_image_data else None
             selected_category_id = int(category_field.value)
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            # Calculate length from size
             size_val = size_field.value
             length_val = None
             if size_val:
@@ -4841,53 +5030,31 @@ class StoreApp:
                 except:
                     length_val = None
             
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO materials (name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    name_field.value, selected_category_id,
-                    int(quantity_field.value) if quantity_field.value else 0,
-                    quality_field.value, location_field.value,
-                    size_field.value, length_val,
-                    color_field.value, notes_field.value,
-                    saved_image_path,
-                    barcode_field.value, current_time, current_time
-                ))
-                conn.commit()
-                conn.close()
-                print("DEBUG: Material saved successfully")
-                
-                close_dialog()
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=2000)
-                page.snack_bar.open = True
-                self.show_materials_screen(page)
-            except Exception as e:
-                print(f"DEBUG: Error saving material: {e}")
-                page.snack_bar = ft.SnackBar(ft.Text(f"Error: {str(e)}"), bgcolor=self.danger_color)
-                page.snack_bar.open = True
-                page.update()
-        
-        # Dialog content
-        dialog_content = ft.Column([
-            ft.Row([
-                ft.Text("Add New Material", size=16, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=18, on_click=lambda e: close_dialog()),
-            ]),
-            ft.Divider(height=1),
-            scroll_fields,
-            ft.Divider(height=1),
-            ft.Row([
-                ft.TextButton("Cancel", on_click=lambda e: close_dialog(), expand=True),
-                ft.FilledButton("Save", on_click=lambda e: save_material(), style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
-            ], spacing=8),
-        ], spacing=8)
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO materials (name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                name_field.value, selected_category_id,
+                int(quantity_field.value) if quantity_field.value else 0,
+                quality_field.value, location_field.value,
+                size_field.value, length_val,
+                color_field.value, notes_field.value,
+                saved_image_path,
+                barcode_field.value, current_time, current_time
+            ))
+            conn.commit()
+            conn.close()
+            
+            close_dialog()
+            page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=2000)
+            page.snack_bar.open = True
+            self.show_materials_screen(page)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=350, height=480, padding=15),
+            content=ft.Container(content=dialog_content, width=dialog_width, padding=10),
             modal=True,
         )
         
@@ -6767,11 +6934,11 @@ class StoreApp:
                         ft.Text("🏢 Company Information", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
                         ft.Container(expand=True),
                         ft.ElevatedButton(
-                            "✏️ Edit",
-                            on_click=lambda e: self.edit_company_info_dialog(page),
-                            icon=ft.icons.EDIT,
-                            style=ft.ButtonStyle(bgcolor=self.accent_color),
-                        ),
+                        "✏️ Edit",
+                        on_click=lambda e: self.edit_company_info_dialog(page),
+                        icon=ft.icons.EDIT,
+                        style=ft.ButtonStyle(bgcolor=self.accent_color),
+                    ),
                     ]),
                     ft.Divider(),
                     # Company Name - full width
@@ -7243,14 +7410,21 @@ class StoreApp:
         page.update()
         
     def edit_company_info_dialog(self, page: ft.Page):
-        """Open dialog to edit company information with working cancel button"""
+        """Open dialog to edit company information with working buttons"""
+        
+        import json
+        import os
+        
+        # Get base directory from current file
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        config_file = os.path.join(base_dir, "company_config.json")
         
         # Get current company info
         current = self.get_company_info()
         
-        # Use full width fields on mobile
         is_mobile = page.width < 800 if page.width else False
         field_width = page.width - 80 if is_mobile else 350
+        dialog_width = page.width - 40 if is_mobile else 450
         
         name_field = ft.TextField(label="Company Name", value=current.get('company_name', ''), width=field_width, bgcolor=self.card_color)
         phone_field = ft.TextField(label="Phone", value=current.get('phone', ''), width=field_width, bgcolor=self.card_color)
@@ -7258,7 +7432,6 @@ class StoreApp:
         website_field = ft.TextField(label="Website", value=current.get('website', ''), width=field_width, bgcolor=self.card_color)
         address_field = ft.TextField(label="Address", value=current.get('address', ''), width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2)
         
-        # City and Tax ID - stacked on mobile, side by side on desktop
         if is_mobile:
             city_field = ft.TextField(label="City", value=current.get('city', ''), width=field_width, bgcolor=self.card_color)
             tax_id_field = ft.TextField(label="Tax ID / VAT", value=current.get('tax_id', ''), width=field_width, bgcolor=self.card_color)
@@ -7268,20 +7441,17 @@ class StoreApp:
             tax_id_field = ft.TextField(label="Tax ID / VAT", value=current.get('tax_id', ''), width=170, bgcolor=self.card_color)
             city_tax_row = ft.Row([city_field, tax_id_field], spacing=10)
         
-        status_text = ft.Text("", size=12, color="#888888")
+        status_text = ft.Text("", size=12)
         
-        # Store reference to dialog
+        # Dialog reference
         dialog_ref = None
         
-        def close_dialog(e):
+        def close_dialog():
             if dialog_ref:
                 dialog_ref.open = False
                 page.update()
         
         def save_info(e):
-            import json
-            import os
-            
             if not name_field.value:
                 status_text.value = "❌ Company name is required!"
                 status_text.color = self.danger_color
@@ -7299,11 +7469,10 @@ class StoreApp:
             }
             
             try:
-                config_file = os.path.join(BASE_DIR, "company_config.json")
                 with open(config_file, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=4, ensure_ascii=False)
                 
-                # Update the display widgets directly
+                # Update the display widgets if they exist in settings screen
                 if hasattr(self, 'company_name_display'):
                     self.company_name_display.value = data['company_name']
                     self.company_phone_display.value = data['phone']
@@ -7314,44 +7483,50 @@ class StoreApp:
                     self.company_tax_display.value = data['tax_id']
                     page.update()
                 
-                close_dialog(None)
+                close_dialog()
                 page.snack_bar = ft.SnackBar(
                     ft.Text("✓ Company information saved!"),
                     bgcolor=self.success_color,
                     duration=3000
                 )
                 page.snack_bar.open = True
+                page.update()
                 
             except Exception as ex:
                 status_text.value = f"❌ Error saving: {str(ex)}"
                 status_text.color = self.danger_color
                 page.update()
         
+        # Scrollable content
+        scroll_content = ft.Column([
+            name_field,
+            phone_field,
+            email_field,
+            website_field,
+            address_field,
+            city_tax_row,
+            status_text,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=400 if is_mobile else 450)
+        
         dialog_content = ft.Column([
-            ft.Text("Edit Company Information", size=18, weight=ft.FontWeight.BOLD),
+            ft.Row([
+                ft.Text("Edit Company Information", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
+            ]),
             ft.Divider(),
-            ft.Container(
-                content=ft.Column([
-                    name_field,
-                    phone_field,
-                    email_field,
-                    website_field,
-                    address_field,
-                    city_tax_row,
-                    status_text,
-                ], spacing=12, scroll=ft.ScrollMode.AUTO),
-                height=400,
-            ),
+            scroll_content,
             ft.Divider(),
             ft.Row([
-                ft.TextButton("Cancel", on_click=close_dialog),
-                ft.FilledButton("Save Changes", on_click=save_info, style=ft.ButtonStyle(bgcolor=self.success_color)),
-            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog(), expand=True),
+                ft.FilledButton("Save Changes", on_click=save_info, 
+                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
+            ], spacing=10),
         ], spacing=12)
         
         dialog = ft.AlertDialog(
-            title=ft.Text("Edit Company Information"),
-            content=ft.Container(content=dialog_content, width=450, height=550, padding=15),
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=dialog_width, padding=15),
+            modal=True,
         )
         
         dialog_ref = dialog
@@ -7541,20 +7716,39 @@ class StoreApp:
         self.show_settings(page)
 
     def backup_database(self, page: ft.Page):
-        """Backup database to file"""
+        """Backup database to Downloads folder (accessible on mobile)"""
         import shutil
-        from datetime import datetime
         import os
+        from datetime import datetime
+        
+        dialog_ref = None
+        
+        def close_dialog(e):
+            if dialog_ref:
+                dialog_ref.open = False
+                page.update()
+        
+        def open_downloads(e):
+            import webbrowser
+            webbrowser.open("file:///storage/emulated/0/Download/StoreManagement")
+            close_dialog(None)
         
         try:
-            # Get the absolute path to the database
-            db_path = os.path.abspath("store_management.db")
+            # Use Downloads folder for backup (user accessible on mobile)
+            # Mobile path
+            downloads_dir = "/storage/emulated/0/Download/StoreManagement/Backups"
             
-            # Create backups folder if not exists
-            backup_dir = os.path.abspath("backups")
-            if not os.path.exists(backup_dir):
-                os.makedirs(backup_dir)
-                print(f"Created backups folder: {backup_dir}")
+            # For desktop fallback
+            if not os.path.exists("/storage/emulated/0/Download"):
+                downloads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
+            
+            # Create backup folder if not exists
+            if not os.path.exists(downloads_dir):
+                os.makedirs(downloads_dir, exist_ok=True)
+                print(f"Created backup folder: {downloads_dir}")
+            
+            # Source database path
+            db_path = os.path.abspath("store_management.db")
             
             # Check if database exists
             if not os.path.exists(db_path):
@@ -7570,7 +7764,7 @@ class StoreApp:
             # Create backup filename with timestamp
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             backup_name = f"backup_{timestamp}.db"
-            backup_path = os.path.join(backup_dir, backup_name)
+            backup_path = os.path.join(downloads_dir, backup_name)
             
             # Copy database file
             shutil.copy2(db_path, backup_path)
@@ -7584,16 +7778,53 @@ class StoreApp:
             else:
                 size_str = f"{file_size / (1024 * 1024):.1f} MB"
             
+            # Show success dialog
+            dialog_content = ft.Column([
+                ft.Row([
+                    ft.Text("✅ Backup Complete", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+                ]),
+                ft.Divider(),
+                ft.Text("Backup saved to:", size=12, color="#888888"),
+                ft.Text(backup_path, size=10, color="#888888", selectable=True),
+                ft.Text(f"Size: {size_str}", size=11, color=self.success_color),
+                ft.Container(height=15),
+                ft.Row([
+                    ft.ElevatedButton(
+                        "📂 Open Backups Folder", 
+                        on_click=open_downloads, 
+                        icon=ft.icons.FOLDER_OPEN,
+                        expand=True,
+                        style=ft.ButtonStyle(bgcolor=self.accent_color),
+                    ),
+                    ft.ElevatedButton(
+                        "✓ Done", 
+                        on_click=close_dialog, 
+                        icon=ft.icons.CHECK,
+                        expand=True,
+                        style=ft.ButtonStyle(bgcolor=self.success_color),
+                    ),
+                ], spacing=10),
+            ], spacing=10)
+            
+            dialog = ft.AlertDialog(
+                title=ft.Text(""),
+                content=ft.Container(content=dialog_content, width=450, height=350, padding=15),
+            )
+            
+            dialog_ref = dialog
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
+            
+            # Also show snackbar
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ Database backed up to: {backup_name} ({size_str})"),
+                ft.Text(f"✓ Database backed up to Downloads/StoreManagement/Backups/"),
                 bgcolor=self.success_color,
                 duration=4000
             )
             page.snack_bar.open = True
             page.update()
-            
-            # Refresh settings to show updated backup list
-            self.show_settings(page)
             
         except Exception as e:
             print(f"Backup error: {e}")
@@ -7729,17 +7960,22 @@ class StoreApp:
         page.update()
     # Add after the backup/restore buttons
     def show_backup_list(self, page: ft.Page):
-        """Show list of available backups - COMPLETE WORKING VERSION"""
+        """Show list of available backups from Downloads folder"""
         import os
         from datetime import datetime
         
-        backup_dir = os.path.abspath("backups")
+        # Look for backups in Downloads folder first
+        downloads_dir = "/storage/emulated/0/Download/StoreManagement/Backups"
+        
+        # Fallback to local backups folder
+        if not os.path.exists(downloads_dir):
+            downloads_dir = os.path.abspath("backups")
+        
         backups = []
         
-        # Check if backups folder exists and get backups
-        if os.path.exists(backup_dir):
-            backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
-            backups.sort(reverse=True)  # Newest first
+        if os.path.exists(downloads_dir):
+            backups = [f for f in os.listdir(downloads_dir) if f.endswith('.db')]
+            backups.sort(reverse=True)
         
         if not backups:
             page.snack_bar = ft.SnackBar(
@@ -7751,14 +7987,15 @@ class StoreApp:
             page.update()
             return
         
+        dialog_ref = None
+        
         def close_dialog(e):
-            page.dialog.open = False
-            page.update()
+            if dialog_ref:
+                dialog_ref.open = False
+                page.update()
         
         def delete_backup(e, backup_file):
-            """Delete selected backup file"""
-            import os
-            backup_path = os.path.join(backup_dir, backup_file)
+            backup_path = os.path.join(downloads_dir, backup_file)
             try:
                 os.remove(backup_path)
                 page.snack_bar = ft.SnackBar(
@@ -7767,8 +8004,8 @@ class StoreApp:
                     duration=3000
                 )
                 page.snack_bar.open = True
-                page.dialog.open = False
-                self.show_backup_list(page)  # Refresh the list
+                close_dialog(None)
+                self.show_backup_list(page)
             except Exception as ex:
                 page.snack_bar = ft.SnackBar(
                     ft.Text(f"❌ Delete failed: {str(ex)}"),
@@ -7779,22 +8016,21 @@ class StoreApp:
             page.update()
         
         def restore_backup(e, backup_file):
-            """Restore selected backup"""
             import shutil
             
             try:
-                backup_path = os.path.join(backup_dir, backup_file)
+                backup_path = os.path.join(downloads_dir, backup_file)
                 db_path = os.path.abspath("store_management.db")
                 
                 # Create a backup of current database before restore
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                pre_restore_backup = os.path.join(backup_dir, f"before_restore_{timestamp}.db")
+                pre_restore_backup = os.path.join(downloads_dir, f"before_restore_{timestamp}.db")
                 shutil.copy2(db_path, pre_restore_backup)
                 
                 # Restore the selected backup
                 shutil.copy2(backup_path, db_path)
                 
-                page.dialog.open = False
+                close_dialog(None)
                 page.snack_bar = ft.SnackBar(
                     ft.Text(f"✓ Database restored from {backup_file}"),
                     bgcolor=self.success_color,
@@ -7816,10 +8052,9 @@ class StoreApp:
         backup_list = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, height=400)
         
         for backup in backups[:30]:
-            backup_path = os.path.join(backup_dir, backup)
+            backup_path = os.path.join(downloads_dir, backup)
             size_bytes = os.path.getsize(backup_path)
             
-            # Format file size
             if size_bytes < 1024:
                 size_str = f"{size_bytes} B"
             elif size_bytes < 1024 * 1024:
@@ -7827,9 +8062,7 @@ class StoreApp:
             else:
                 size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
             
-            # Extract date from filename
             date_str = backup.replace('backup_', '').replace('.db', '')
-            # Format date to be more readable
             if len(date_str) == 15:
                 formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {date_str[9:11]}:{date_str[11:13]}:{date_str[13:15]}"
             else:
@@ -7864,25 +8097,24 @@ class StoreApp:
                 )
             )
         
-        # Add header with backup count
         header_text = ft.Text(f"📁 Available Backups ({len(backups)})", size=16, weight=ft.FontWeight.BOLD)
         
         dialog_content = ft.Column([
-            header_text,
+            ft.Row([
+                header_text,
+                ft.Container(expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ]),
             ft.Divider(),
             backup_list,
-            ft.Container(height=10),
-            ft.Row([
-                ft.TextButton("Close", on_click=close_dialog, expand=True),
-            ]),
         ], spacing=10)
         
         dialog = ft.AlertDialog(
-            title=ft.Text("Backup Manager", size=18, weight=ft.FontWeight.BOLD),
-            content=ft.Container(content=dialog_content, width=500, height=500, padding=15),
-            actions_alignment=ft.MainAxisAlignment.END,
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=550, height=550, padding=15),
         )
         
+        dialog_ref = dialog
         page.dialog = dialog
         dialog.open = True
         page.update()
