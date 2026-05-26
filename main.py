@@ -6774,8 +6774,198 @@ class StoreApp:
         page.overlay.append(modal)
         page.update()
 
+    def backup_database_saf(self, page: ft.Page):
+        """Backup database using Storage Access Framework - Works on Samsung Note 8"""
+        import shutil
+        import os
+        from datetime import datetime
+        
+        dialog_ref = None
+        
+        def close_dialog(e):
+            if dialog_ref:
+                dialog_ref.open = False
+                page.update()
+        
+        def on_save_location(e: ft.FilePickerResultEvent):
+            if e.path:
+                try:
+                    app_dir = os.path.dirname(os.path.abspath(__file__))
+                    db_path = os.path.join(app_dir, "store_management.db")
+                    shutil.copy2(db_path, e.path)
+                    
+                    close_dialog(None)
+                    
+                    file_size = os.path.getsize(e.path)
+                    if file_size < 1024:
+                        size_str = f"{file_size} B"
+                    elif file_size < 1024 * 1024:
+                        size_str = f"{file_size / 1024:.1f} KB"
+                    else:
+                        size_str = f"{file_size / (1024 * 1024):.1f} MB"
+                    
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✓ Backup saved! Size: {size_str}"),
+                        bgcolor=self.success_color,
+                        duration=4000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+                    
+                except Exception as ex:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"❌ Backup failed: {str(ex)}"),
+                        bgcolor=self.danger_color,
+                        duration=4000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+            else:
+                close_dialog(None)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        default_filename = f"backup_{timestamp}.db"
+        
+        file_picker = ft.FilePicker(on_result=on_save_location)
+        page.overlay.append(file_picker)
+        
+        def choose_location(e):
+            file_picker.save_file(
+                file_name=default_filename,
+                dialog_title="Save Backup to...",
+                initial_directory="/storage/emulated/0/Download"
+            )
+            page.update()
+        
+        dialog_content = ft.Column([
+            ft.Row([
+                ft.Text("💾 Backup Database", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ]),
+            ft.Divider(),
+            ft.Text("Choose where to save your backup:", size=14),
+            ft.Container(height=10),
+            ft.Text("📍 Recommended: Downloads folder", size=12, color=self.accent_color),
+            ft.Text("📍 You can also save to SD card", size=11, color="#888888"),
+            ft.Text("📍 The backup contains all your inventory data", size=11, color="#888888"),
+            ft.Container(height=15),
+            ft.ElevatedButton(
+                "📁 Choose Save Location", 
+                on_click=choose_location, 
+                icon=ft.icons.SAVE,
+                expand=True,
+                style=ft.ButtonStyle(bgcolor=self.accent_color),
+            ),
+            ft.Container(height=10),
+            ft.TextButton("Cancel", on_click=close_dialog, expand=True),
+        ], spacing=10)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=400, height=380, padding=15),
+        )
+        
+        dialog_ref = dialog
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def restore_database_saf(self, page: ft.Page):
+        """Restore database by selecting a backup file using SAF"""
+        import shutil
+        import os
+        from datetime import datetime
+        
+        dialog_ref = None
+        
+        def close_dialog(e):
+            if dialog_ref:
+                dialog_ref.open = False
+                page.update()
+        
+        def on_file_selected(e: ft.FilePickerResultEvent):
+            if e.files:
+                backup_path = e.files[0].path
+                
+                try:
+                    app_dir = os.path.dirname(os.path.abspath(__file__))
+                    db_path = os.path.join(app_dir, "store_management.db")
+                    backup_dir = os.path.join(app_dir, "backups")
+                    
+                    if not os.path.exists(backup_dir):
+                        os.makedirs(backup_dir, exist_ok=True)
+                    
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    pre_restore_backup = os.path.join(backup_dir, f"before_restore_{timestamp}.db")
+                    shutil.copy2(db_path, pre_restore_backup)
+                    
+                    shutil.copy2(backup_path, db_path)
+                    
+                    close_dialog(None)
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✓ Database restored from {os.path.basename(backup_path)}"),
+                        bgcolor=self.success_color,
+                        duration=5000
+                    )
+                    page.snack_bar.open = True
+                    self.show_settings(page)
+                    
+                except Exception as ex:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"❌ Restore failed: {str(ex)}"),
+                        bgcolor=self.danger_color,
+                        duration=4000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+            else:
+                close_dialog(None)
+        
+        file_picker = ft.FilePicker(on_result=on_file_selected)
+        page.overlay.append(file_picker)
+        
+        def choose_file(e):
+            file_picker.pick_files(
+                allow_multiple=False,
+                allowed_extensions=["db"],
+                dialog_title="Select Backup File to Restore"
+            )
+            page.update()
+        
+        dialog_content = ft.Column([
+            ft.Row([
+                ft.Text("🔄 Restore Database", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ]),
+            ft.Divider(),
+            ft.Text("Select a backup file to restore:", size=14),
+            ft.Container(height=10),
+            ft.ElevatedButton(
+                "📁 Choose Backup File", 
+                on_click=choose_file, 
+                icon=ft.icons.FOLDER_OPEN,
+                expand=True,
+                style=ft.ButtonStyle(bgcolor=self.accent_color),
+            ),
+            ft.Container(height=15),
+            ft.Text("⚠️ IMPORTANT:", size=13, weight=ft.FontWeight.BOLD, color=self.danger_color),
+            ft.Text("• This will OVERWRITE your current data!", size=11, color=self.danger_color),
+            ft.Text("• A backup of your current data will be created first", size=11, color="#888888"),
+            ft.Container(height=10),
+            ft.TextButton("Cancel", on_click=close_dialog, expand=True),
+        ], spacing=10)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=450, height=400, padding=15),
+        )
+        
+        dialog_ref = dialog
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
     def show_settings(self, page: ft.Page):
-        """Show settings screen - COMPLETE WORKING VERSION"""
+        """Show settings screen - Using SAF for backup/restore"""
         page.controls.clear()
         
         # Check if mobile
@@ -6913,12 +7103,10 @@ class StoreApp:
             margin=ft.margin.only(bottom=12),
         )
         scroll_content.controls.append(appearance_card)
-                
+        
         # ========== COMPANY INFO SECTION ==========
-        # Get company info
         company_info = self.get_company_info()
-
-        # Store display widgets as instance variables for later update
+        
         self.company_name_display = ft.Text(company_info.get('company_name', 'Not set'), size=font_normal, weight=ft.FontWeight.BOLD)
         self.company_phone_display = ft.Text(company_info.get('phone', 'Not set'), size=font_small)
         self.company_email_display = ft.Text(company_info.get('email', 'Not set'), size=font_small)
@@ -6926,7 +7114,7 @@ class StoreApp:
         self.company_address_display = ft.Text(company_info.get('address', 'Not set'), size=font_small)
         self.company_city_display = ft.Text(company_info.get('city', 'Not set'), size=font_small)
         self.company_tax_display = ft.Text(company_info.get('tax_id', 'Not set'), size=font_small)
-
+        
         company_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
@@ -6934,14 +7122,13 @@ class StoreApp:
                         ft.Text("🏢 Company Information", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
                         ft.Container(expand=True),
                         ft.ElevatedButton(
-                        "✏️ Edit",
-                        on_click=lambda e: self.edit_company_info_dialog(page),
-                        icon=ft.icons.EDIT,
-                        style=ft.ButtonStyle(bgcolor=self.accent_color),
-                    ),
+                            "✏️ Edit",
+                            on_click=lambda e: self.edit_company_info_dialog(page),
+                            icon=ft.icons.EDIT,
+                            style=ft.ButtonStyle(bgcolor=self.accent_color),
+                        ),
                     ]),
                     ft.Divider(),
-                    # Company Name - full width
                     ft.Row([
                         ft.Icon(ft.icons.BUSINESS, size=20, color=self.accent_color),
                         ft.Column([
@@ -6949,7 +7136,6 @@ class StoreApp:
                             self.company_name_display,
                         ], spacing=2, expand=True),
                     ], spacing=10),
-                    # Phone and Email - side by side on tablet, stacked on mobile
                     ft.ResponsiveRow([
                         ft.Container(
                             content=ft.Row([
@@ -6972,7 +7158,6 @@ class StoreApp:
                             col={"xs": 12, "md": 6},
                         ),
                     ], spacing=10),
-                    # Website - full width
                     ft.Row([
                         ft.Icon(ft.icons.LANGUAGE, size=20, color=self.accent_color),
                         ft.Column([
@@ -6980,7 +7165,6 @@ class StoreApp:
                             self.company_website_display,
                         ], spacing=2, expand=True),
                     ], spacing=10),
-                    # Address - full width
                     ft.Row([
                         ft.Icon(ft.icons.LOCATION_ON, size=20, color=self.accent_color),
                         ft.Column([
@@ -6988,7 +7172,6 @@ class StoreApp:
                             self.company_address_display,
                         ], spacing=2, expand=True),
                     ], spacing=10),
-                    # City and Tax ID - stacked on mobile, side by side on tablet
                     ft.ResponsiveRow([
                         ft.Container(
                             content=ft.Row([
@@ -7018,10 +7201,11 @@ class StoreApp:
             margin=ft.margin.only(bottom=12),
         )
         scroll_content.controls.append(company_card)
-        # ========== DATABASE SECTION ==========
-        # Get database size
+        
+        # ========== DATABASE SECTION (Using SAF) ==========
         db_size = "N/A"
         try:
+            import os
             if os.path.exists("store_management.db"):
                 size_bytes = os.path.getsize("store_management.db")
                 if size_bytes < 1024:
@@ -7032,8 +7216,7 @@ class StoreApp:
                     db_size = f"{size_bytes / (1024 * 1024):.1f} MB"
         except:
             db_size = "N/A"
-
-        # Use simple Container instead of Card to avoid click issues
+        
         database_section = ft.Container(
             content=ft.Column([
                 ft.Text("💾 Database", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
@@ -7050,13 +7233,13 @@ class StoreApp:
                 ft.Row([
                     ft.ElevatedButton(
                         "📥 Backup", 
-                        on_click=lambda e: self.backup_database(page), 
+                        on_click=lambda e: self.backup_database_saf(page), 
                         expand=True,
                         style=ft.ButtonStyle(bgcolor=self.accent_color),
                     ),
                     ft.ElevatedButton(
                         "🔄 Restore", 
-                        on_click=lambda e: self.restore_database(page), 
+                        on_click=lambda e: self.restore_database_saf(page), 
                         expand=True,
                         style=ft.ButtonStyle(bgcolor=self.warning_color),
                     ),
@@ -7074,11 +7257,6 @@ class StoreApp:
                         style=ft.ButtonStyle(bgcolor=self.danger_color),
                     ),
                 ], spacing=10),
-                ft.ElevatedButton(
-                    "📊 Export All Data", 
-                    on_click=lambda e: self.export_all_data(page), 
-                    style=ft.ButtonStyle(bgcolor=self.success_color),
-                ),
             ], spacing=12),
             padding=15,
             bgcolor=self.card_color,
@@ -7086,8 +7264,8 @@ class StoreApp:
             margin=ft.margin.only(bottom=12),
         )
         scroll_content.controls.append(database_section)
-
-                # ========== LOGOUT SECTION ==========
+        
+        # ========== LOGOUT SECTION ==========
         logout_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
@@ -7114,15 +7292,13 @@ class StoreApp:
             margin=ft.margin.only(bottom=12),
         )
         scroll_content.controls.append(logout_card)
-
+        
         # ========== ABOUT SECTION ==========
         about_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
                     ft.Text("ℹ️ About", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
                     ft.Divider(),
-                    
-                    # App Logo/Icon
                     ft.Container(
                         content=ft.Column([
                             ft.Text("🏪", size=60),
@@ -7131,8 +7307,6 @@ class StoreApp:
                         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
                         margin=ft.margin.only(bottom=10),
                     ),
-                    
-                    # Company Info (from company config)
                     ft.Container(
                         content=ft.Column([
                             ft.Text("Developed By", size=font_small, weight=ft.FontWeight.BOLD, color="#888888"),
@@ -7144,10 +7318,7 @@ class StoreApp:
                         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
                         margin=ft.margin.only(bottom=10),
                     ),
-                    
                     ft.Divider(),
-                    
-                    # Features List
                     ft.Text("✨ Features", size=font_small, weight=ft.FontWeight.BOLD),
                     ft.Column([
                         ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Inventory Management", size=font_small - 1)], spacing=8),
@@ -7156,16 +7327,11 @@ class StoreApp:
                         ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Export Reports (CSV/PDF)", size=font_small - 1)], spacing=8),
                         ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Database Backup & Restore", size=font_small - 1)], spacing=8),
                     ], spacing=6),
-                    
                     ft.Container(height=10),
                     ft.Divider(),
-                    
-                    # Footer
                     ft.Text("© 2024 Store Management System", size=font_small - 2, color="#888888", text_align=ft.TextAlign.CENTER),
                     ft.Text("All Rights Reserved", size=font_small - 2, color="#888888", text_align=ft.TextAlign.CENTER),
                     ft.Text("Made with ❤️ using Flet", size=font_small - 2, color="#888888", text_align=ft.TextAlign.CENTER),
-                    
-                    # Action Buttons
                     ft.Container(height=10),
                     ft.Row([
                         ft.IconButton(icon=ft.icons.PRIVACY_TIP, icon_size=20, on_click=lambda e: self.show_privacy_policy(page), tooltip="Privacy Policy"),
@@ -7868,7 +8034,7 @@ class StoreApp:
             )
             page.snack_bar.open = True
             page.update()
-            
+
     def restore_database(self, page: ft.Page):
         """Restore database from backup - Using app's storage"""
         import os
