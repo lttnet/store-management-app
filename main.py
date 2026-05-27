@@ -6803,7 +6803,7 @@ class StoreApp:
             page.update()
             
     def backup_database_saf(self, page: ft.Page):
-        """Backup database - Simple working version"""
+        """Backup database - Uses Android/data folder (visible on Samsung)"""
         import shutil
         import os
         from datetime import datetime
@@ -6817,7 +6817,27 @@ class StoreApp:
         
         def do_backup(e):
             try:
+                # Use Android/data folder (accessible on Samsung)
+                package_name = "com.flet.store_management"
+                android_data_path = f"/storage/emulated/0/Android/data/{package_name}/files/backups"
+                
+                # Fallback to app directory
                 app_dir = os.path.dirname(os.path.abspath(__file__))
+                fallback_path = os.path.join(app_dir, "backups")
+                
+                # Try Android/data path first
+                backup_dir = android_data_path
+                try:
+                    if not os.path.exists(backup_dir):
+                        os.makedirs(backup_dir, exist_ok=True)
+                    print(f"Using Android/data path: {backup_dir}")
+                except:
+                    backup_dir = fallback_path
+                    if not os.path.exists(backup_dir):
+                        os.makedirs(backup_dir, exist_ok=True)
+                    print(f"Using fallback path: {backup_dir}")
+                
+                # Source database
                 db_path = os.path.join(app_dir, "store_management.db")
                 
                 if not os.path.exists(db_path):
@@ -6830,17 +6850,15 @@ class StoreApp:
                     page.update()
                     return
                 
-                cache_dir = os.path.join(app_dir, "cache", "backups")
-                if not os.path.exists(cache_dir):
-                    os.makedirs(cache_dir, exist_ok=True)
-                
+                # Create backup
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 backup_name = f"backup_{timestamp}.db"
-                cache_backup_path = os.path.join(cache_dir, backup_name)
+                backup_path = os.path.join(backup_dir, backup_name)
                 
-                shutil.copy2(db_path, cache_backup_path)
+                shutil.copy2(db_path, backup_path)
                 
-                file_size = os.path.getsize(cache_backup_path)
+                # Get file size
+                file_size = os.path.getsize(backup_path)
                 if file_size < 1024:
                     size_str = f"{file_size} B"
                 elif file_size < 1024 * 1024:
@@ -6858,7 +6876,10 @@ class StoreApp:
                 page.snack_bar.open = True
                 page.update()
                 
+                print(f"Backup saved to: {backup_path}")
+                
             except Exception as ex:
+                print(f"Backup error: {ex}")
                 page.snack_bar = ft.SnackBar(
                     ft.Text(f"❌ Backup failed: {str(ex)}"),
                     bgcolor=self.danger_color,
@@ -6871,7 +6892,8 @@ class StoreApp:
             ft.Text("💾 Backup Database", size=18, weight=ft.FontWeight.BOLD),
             ft.Divider(),
             ft.Text("Create a backup of your database?", size=14),
-            ft.Container(height=20),
+            ft.Text("Saved to: Android/data/.../backups", size=10, color="#888888"),
+            ft.Container(height=15),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog, expand=True),
                 ft.FilledButton("Create Backup", on_click=do_backup, 
@@ -6881,7 +6903,7 @@ class StoreApp:
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=350, height=200, padding=15),
+            content=ft.Container(content=dialog_content, width=380, height=230, padding=15),
             modal=True,
         )
         
@@ -6891,17 +6913,25 @@ class StoreApp:
         page.update()
 
     def restore_database_saf(self, page: ft.Page):
-        """Restore database - Simple working version"""
+        """Restore database - From Android/data folder"""
         import shutil
         import os
         from datetime import datetime
         
+        # Get package name
+        package_name = "com.flet.store_management"
+        android_data_path = f"/storage/emulated/0/Android/data/{package_name}/files/backups"
+        
+        # Fallback to app directory
         app_dir = os.path.dirname(os.path.abspath(__file__))
-        cache_dir = os.path.join(app_dir, "cache", "backups")
+        fallback_path = os.path.join(app_dir, "backups")
+        
+        # Use Android/data path if exists
+        backup_dir = android_data_path if os.path.exists(android_data_path) else fallback_path
         backups = []
         
-        if os.path.exists(cache_dir):
-            backups = [f for f in os.listdir(cache_dir) if f.endswith('.db')]
+        if os.path.exists(backup_dir):
+            backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
             backups.sort(reverse=True)
         
         dialog_ref = None
@@ -6959,11 +6989,13 @@ class StoreApp:
                 try:
                     db_path = os.path.join(app_dir, "store_management.db")
                     
+                    # Create pre-restore backup
                     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    pre_restore_backup = os.path.join(cache_dir, f"before_restore_{timestamp}.db")
+                    pre_restore_backup = os.path.join(backup_dir, f"before_restore_{timestamp}.db")
                     shutil.copy2(db_path, pre_restore_backup)
                     
-                    backup_path = os.path.join(cache_dir, backup_file)
+                    # Restore
+                    backup_path = os.path.join(backup_dir, backup_file)
                     shutil.copy2(backup_path, db_path)
                     
                     confirm_dialog.open = False
@@ -7019,11 +7051,13 @@ class StoreApp:
             ]),
             ft.Divider(),
             ft.Column(backup_items, spacing=5, scroll=ft.ScrollMode.AUTO, height=300),
+            ft.Container(height=10),
+            ft.Text(f"📍 Location: {backup_dir}", size=8, color="#888888", selectable=True),
         ], spacing=10)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=450, height=450, padding=15),
+            content=ft.Container(content=dialog_content, width=500, height=480, padding=15),
         )
         
         dialog_ref = dialog
@@ -7950,16 +7984,24 @@ class StoreApp:
 
 
     def show_backup_list(self, page: ft.Page):
-        """Show list of available backups - Simple version"""
+        """Show list of available backups - From Android/data folder"""
         import os
         from datetime import datetime
         
+        # Get package name
+        package_name = "com.flet.store_management"
+        android_data_path = f"/storage/emulated/0/Android/data/{package_name}/files/backups"
+        
+        # Fallback to app directory
         app_dir = os.path.dirname(os.path.abspath(__file__))
-        cache_dir = os.path.join(app_dir, "cache", "backups")
+        fallback_path = os.path.join(app_dir, "backups")
+        
+        # Use Android/data path if exists
+        backup_dir = android_data_path if os.path.exists(android_data_path) else fallback_path
         backups = []
         
-        if os.path.exists(cache_dir):
-            backups = [f for f in os.listdir(cache_dir) if f.endswith('.db')]
+        if os.path.exists(backup_dir):
+            backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
             backups.sort(reverse=True)
         
         dialog_ref = None
@@ -7972,7 +8014,7 @@ class StoreApp:
         def copy_to_downloads(backup_file):
             import shutil
             try:
-                source = os.path.join(cache_dir, backup_file)
+                source = os.path.join(backup_dir, backup_file)
                 dest = f"/storage/emulated/0/Download/{backup_file}"
                 shutil.copy2(source, dest)
                 page.snack_bar = ft.SnackBar(
@@ -7993,7 +8035,7 @@ class StoreApp:
         
         def delete_backup(backup_file):
             try:
-                os.remove(os.path.join(cache_dir, backup_file))
+                os.remove(os.path.join(backup_dir, backup_file))
                 page.snack_bar = ft.SnackBar(
                     ft.Text(f"✓ Deleted: {backup_file}"),
                     bgcolor=self.success_color,
@@ -8036,7 +8078,7 @@ class StoreApp:
         
         backup_items = []
         for backup in backups[:20]:
-            backup_path = os.path.join(cache_dir, backup)
+            backup_path = os.path.join(backup_dir, backup)
             size_bytes = os.path.getsize(backup_path)
             size_kb = size_bytes / 1024
             size_str = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{size_kb / 1024:.1f} MB"
@@ -8078,11 +8120,13 @@ class StoreApp:
             ]),
             ft.Divider(),
             ft.Column(backup_items, spacing=5, scroll=ft.ScrollMode.AUTO, height=400),
+            ft.Container(height=10),
+            ft.Text(f"📍 Location: {backup_dir}", size=8, color="#888888", selectable=True),
         ], spacing=10)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=500, height=500, padding=15),
+            content=ft.Container(content=dialog_content, width=550, height=550, padding=15),
         )
         
         dialog_ref = dialog
