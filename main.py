@@ -6803,7 +6803,7 @@ class StoreApp:
             page.update()
             
     def backup_database_saf(self, page: ft.Page):
-        """Backup database - Uses Android/data folder (visible on Samsung)"""
+        """Backup database - Saves directly to Downloads folder (visible on Samsung)"""
         import shutil
         import os
         from datetime import datetime
@@ -6817,27 +6817,8 @@ class StoreApp:
         
         def do_backup(e):
             try:
-                # Use Android/data folder (accessible on Samsung)
-                package_name = "com.flet.store_management"
-                android_data_path = f"/storage/emulated/0/Android/data/{package_name}/files/backups"
-                
-                # Fallback to app directory
-                app_dir = os.path.dirname(os.path.abspath(__file__))
-                fallback_path = os.path.join(app_dir, "backups")
-                
-                # Try Android/data path first
-                backup_dir = android_data_path
-                try:
-                    if not os.path.exists(backup_dir):
-                        os.makedirs(backup_dir, exist_ok=True)
-                    print(f"Using Android/data path: {backup_dir}")
-                except:
-                    backup_dir = fallback_path
-                    if not os.path.exists(backup_dir):
-                        os.makedirs(backup_dir, exist_ok=True)
-                    print(f"Using fallback path: {backup_dir}")
-                
                 # Source database
+                app_dir = os.path.dirname(os.path.abspath(__file__))
                 db_path = os.path.join(app_dir, "store_management.db")
                 
                 if not os.path.exists(db_path):
@@ -6850,11 +6831,15 @@ class StoreApp:
                     page.update()
                     return
                 
-                # Create backup
+                # Create backup directly in Downloads folder (visible to user)
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                backup_name = f"backup_{timestamp}.db"
-                backup_path = os.path.join(backup_dir, backup_name)
+                backup_name = f"store_backup_{timestamp}.db"
                 
+                # Try Downloads folder first
+                downloads_path = "/storage/emulated/0/Download"
+                backup_path = os.path.join(downloads_path, backup_name)
+                
+                # Copy to Downloads
                 shutil.copy2(db_path, backup_path)
                 
                 # Get file size
@@ -6869,17 +6854,38 @@ class StoreApp:
                 close_dialog(None)
                 
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✓ Backup saved! Size: {size_str}"),
+                    ft.Text(f"✓ Backup saved to Downloads!\nFile: {backup_name}\nSize: {size_str}"),
                     bgcolor=self.success_color,
-                    duration=4000
+                    duration=5000
                 )
                 page.snack_bar.open = True
                 page.update()
                 
-                print(f"Backup saved to: {backup_path}")
-                
+            except PermissionError:
+                # If Downloads permission denied, try cache and offer copy
+                try:
+                    cache_dir = os.path.join(app_dir, "cache", "backups")
+                    if not os.path.exists(cache_dir):
+                        os.makedirs(cache_dir, exist_ok=True)
+                    
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    backup_name = f"backup_{timestamp}.db"
+                    backup_path = os.path.join(cache_dir, backup_name)
+                    shutil.copy2(db_path, backup_path)
+                    
+                    close_dialog(None)
+                    
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✓ Backup saved! Use 'View Backups' to copy to Downloads."),
+                        bgcolor=self.success_color,
+                        duration=4000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+                except Exception as ex:
+                    raise ex
+                    
             except Exception as ex:
-                print(f"Backup error: {ex}")
                 page.snack_bar = ft.SnackBar(
                     ft.Text(f"❌ Backup failed: {str(ex)}"),
                     bgcolor=self.danger_color,
@@ -6892,7 +6898,8 @@ class StoreApp:
             ft.Text("💾 Backup Database", size=18, weight=ft.FontWeight.BOLD),
             ft.Divider(),
             ft.Text("Create a backup of your database?", size=14),
-            ft.Text("Saved to: Android/data/.../backups", size=10, color="#888888"),
+            ft.Text("📁 Saved to: Downloads folder", size=12, color=self.success_color),
+            ft.Text("You can find it in My Files → Downloads", size=11, color="#888888"),
             ft.Container(height=15),
             ft.Row([
                 ft.TextButton("Cancel", on_click=close_dialog, expand=True),
@@ -6903,7 +6910,7 @@ class StoreApp:
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=380, height=230, padding=15),
+            content=ft.Container(content=dialog_content, width=400, height=260, padding=15),
             modal=True,
         )
         
@@ -6913,26 +6920,30 @@ class StoreApp:
         page.update()
 
     def restore_database_saf(self, page: ft.Page):
-        """Restore database - From Android/data folder"""
+        """Restore database - Look for backups in Downloads and app storage"""
         import shutil
         import os
         from datetime import datetime
         
-        # Get package name
-        package_name = "com.flet.store_management"
-        android_data_path = f"/storage/emulated/0/Android/data/{package_name}/files/backups"
-        
-        # Fallback to app directory
         app_dir = os.path.dirname(os.path.abspath(__file__))
-        fallback_path = os.path.join(app_dir, "backups")
+        downloads_path = "/storage/emulated/0/Download"
+        app_backup_dir = os.path.join(app_dir, "cache", "backups")
         
-        # Use Android/data path if exists
-        backup_dir = android_data_path if os.path.exists(android_data_path) else fallback_path
         backups = []
         
-        if os.path.exists(backup_dir):
-            backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
-            backups.sort(reverse=True)
+        # Check Downloads folder for backups
+        if os.path.exists(downloads_path):
+            for f in os.listdir(downloads_path):
+                if f.startswith('store_backup_') and f.endswith('.db'):
+                    backups.append(('📁 Downloads', f))
+        
+        # Check app cache for backups
+        if os.path.exists(app_backup_dir):
+            for f in os.listdir(app_backup_dir):
+                if f.endswith('.db'):
+                    backups.append(('📦 App Storage', f))
+        
+        backups.sort(key=lambda x: x[1], reverse=True)
         
         dialog_ref = None
         
@@ -6965,17 +6976,20 @@ class StoreApp:
             return
         
         backup_items = []
-        for backup in backups[:10]:
+        for location, backup in backups[:10]:
             backup_items.append(
                 ft.Container(
                     content=ft.Row([
                         ft.Icon(ft.icons.FILE_PRESENT, size=20, color=self.accent_color),
-                        ft.Text(backup, size=12, expand=True),
+                        ft.Column([
+                            ft.Text(backup, size=12, weight=ft.FontWeight.BOLD),
+                            ft.Text(location, size=9, color="#888888"),
+                        ], spacing=2, expand=True),
                         ft.IconButton(
                             icon=ft.icons.RESTORE,
                             icon_size=20,
                             icon_color=self.success_color,
-                            on_click=lambda e, b=backup: restore_selected(b),
+                            on_click=lambda e, b=backup, loc=location: restore_selected(b, loc),
                             tooltip="Restore",
                         ),
                     ]),
@@ -6984,25 +6998,30 @@ class StoreApp:
                 )
             )
         
-        def restore_selected(backup_file):
+        def restore_selected(backup_file, location):
             def confirm_restore(e):
                 try:
                     db_path = os.path.join(app_dir, "store_management.db")
                     
-                    # Create pre-restore backup
+                    # Find backup path
+                    if location == '📁 Downloads':
+                        backup_path = os.path.join(downloads_path, backup_file)
+                    else:
+                        backup_path = os.path.join(app_backup_dir, backup_file)
+                    
+                    # Create pre-restore backup in Downloads
                     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    pre_restore_backup = os.path.join(backup_dir, f"before_restore_{timestamp}.db")
+                    pre_restore_backup = os.path.join(downloads_path, f"before_restore_{timestamp}.db")
                     shutil.copy2(db_path, pre_restore_backup)
                     
                     # Restore
-                    backup_path = os.path.join(backup_dir, backup_file)
                     shutil.copy2(backup_path, db_path)
                     
                     confirm_dialog.open = False
                     close_dialog(None)
                     
                     page.snack_bar = ft.SnackBar(
-                        ft.Text(f"✓ Database restored from {backup_file}"),
+                        ft.Text(f"✓ Database restored from {backup_file}\nPre-restore backup saved to Downloads"),
                         bgcolor=self.success_color,
                         duration=5000
                     )
@@ -7027,6 +7046,7 @@ class StoreApp:
                 ft.Divider(),
                 ft.Text(f"Restore from: {backup_file}?", size=13),
                 ft.Text("This will OVERWRITE your current data!", size=11, color=self.danger_color),
+                ft.Text("A backup will be saved to Downloads first.", size=11, color="#888888"),
                 ft.Container(height=15),
                 ft.Row([
                     ft.TextButton("Cancel", on_click=cancel_restore, expand=True),
@@ -7037,7 +7057,7 @@ class StoreApp:
             
             confirm_dialog = ft.AlertDialog(
                 title=ft.Text(""),
-                content=ft.Container(content=confirm_content, width=350, height=250, padding=15),
+                content=ft.Container(content=confirm_content, width=380, height=280, padding=15),
             )
             
             page.dialog = confirm_dialog
@@ -7046,18 +7066,20 @@ class StoreApp:
         
         dialog_content = ft.Column([
             ft.Row([
-                ft.Text(f"📁 Backups ({len(backups)})", size=16, weight=ft.FontWeight.BOLD, expand=True),
+                ft.Text("🔄 Restore Database", size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ]),
             ft.Divider(),
+            ft.Text("Select a backup to restore:", size=14),
+            ft.Container(height=5),
             ft.Column(backup_items, spacing=5, scroll=ft.ScrollMode.AUTO, height=300),
             ft.Container(height=10),
-            ft.Text(f"📍 Location: {backup_dir}", size=8, color="#888888", selectable=True),
+            ft.Text("📁 Backups in Downloads are visible in My Files", size=10, color="#888888"),
         ], spacing=10)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=500, height=480, padding=15),
+            content=ft.Container(content=dialog_content, width=500, height=450, padding=15),
         )
         
         dialog_ref = dialog
