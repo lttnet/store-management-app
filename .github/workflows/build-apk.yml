@@ -17,10 +17,10 @@ jobs:
         with:
           python-version: '3.11'
       
-      - name: Setup Java
+      - name: Setup Java (Fixed version)
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: 'temurin'
           java-version: '17'
       
       - name: Setup Flutter
