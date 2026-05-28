@@ -742,7 +742,7 @@ class StoreApp:
         )
                 # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Dashboard with fixed quality icons and separate Import/Export section"""
+        """Dashboard with proper quality icons"""
         page.controls.clear()
         
         # Check if mobile
@@ -782,7 +782,7 @@ class StoreApp:
             q = a.get('quality', 'Used')
             quality_counts[q] = quality_counts.get(q, 0) + 1
         
-        # Create a simple Column
+        # Create main column
         main_column = ft.Column(spacing=15, expand=True)
         
         # ========== SECTION 1: HEADER ==========
@@ -801,50 +801,58 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # ========== SECTION 3: QUALITY DISTRIBUTION (FIXED ICONS) ==========
+        # ========== SECTION 3: QUALITY DISTRIBUTION (WITH EMOJI ICONS) ==========
         main_column.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
         
-        # Quality cards with proper icons (using emoji instead of colored circles)
-        quality_container = ft.Container(
-            content=ft.Row([
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text("🟢", size=14),
-                        ft.Text(f"New: {quality_counts.get('New', 0)}", size=14),
-                    ], spacing=5),
-                    padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
-                ),
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text("🟠", size=14),
-                        ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=14),
-                    ], spacing=5),
-                    padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
-                ),
-            ], spacing=8),
-            margin=ft.margin.only(bottom=5),
-        )
-        main_column.controls.append(quality_container)
+        # First row - New and Used
+        quality_row1 = ft.Row([
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#4CAF50"),
+                    ft.Text(f"New: {quality_counts.get('New', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#FF9800"),
+                    ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+        ], spacing=8)
+        main_column.controls.append(quality_row1)
         
-        quality_container2 = ft.Container(
-            content=ft.Row([
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text("🔴", size=14),
-                        ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=14),
-                    ], spacing=5),
-                    padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
-                ),
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text("🔵", size=14),
-                        ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=14),
-                    ], spacing=5),
-                    padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
-                ),
-            ], spacing=8),
-        )
-        main_column.controls.append(quality_container2)
+        # Second row - Damaged and Repaired
+        quality_row2 = ft.Row([
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#F44336"),
+                    ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#2196F3"),
+                    ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+        ], spacing=8)
+        main_column.controls.append(quality_row2)
         
         # ========== SECTION 4: STOCK HEALTH ==========
         healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100) if total_stock > 0 else 100)
@@ -931,7 +939,7 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # ========== SECTION 8: IMPORT / EXPORT (SEPARATE SECTION) ==========
+        # ========== SECTION 8: IMPORT / EXPORT ==========
         main_column.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
         
         main_column.controls.append(
@@ -974,7 +982,6 @@ class StoreApp:
         
         self.current_view = "dashboard"
         page.update()
-
     def _create_stat_card(self, icon, value, label):
         """Create a statistics card"""
         return ft.Container(
