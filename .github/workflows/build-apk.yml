@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: '3.11'
       
-       - name: Setup Java (Java 11 for compatibility)
+      - name: Setup Java (Java 11 for compatibility)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
