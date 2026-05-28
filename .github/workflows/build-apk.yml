@@ -17,60 +17,42 @@ jobs:
         with:
           python-version: '3.11'
       
-      - name: Setup Java (Java 11 for compatibility)
+       - name: Setup Java (Java 11 for compatibility)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '11'  # Use Java 11 instead of 17
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
       
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.19.6'
           channel: 'stable'
-          cache: true
       
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-      
-      - name: Accept Android licenses
+      - name: Install dependencies
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
-      
-      - name: Create necessary directories
-        run: |
-          mkdir -p images
-          mkdir -p backups
-          mkdir -p exports
-      
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
           pip install flet==0.21.2
           pip install requests
       
       - name: Build APK
         id: build
         run: |
-          export JAVA_HOME=$JAVA_HOME_11_X64
           flet build apk --verbose
           
           # Search for APK
           echo "=== Searching for APK ==="
           find . -name "*.apk" -type f
           
+          # Get APK path
           APK_FILE=$(find . -name "*.apk" -type f | head -1)
-          
           if [ -n "$APK_FILE" ]; then
             echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
-            echo "apk_name=$(basename $APK_FILE)" >> $GITHUB_OUTPUT
             echo "✅ APK found: $APK_FILE"
-            ls -la "$APK_FILE"
           else
             echo "⚠️ No APK found"
-            echo "Contents of build folder:"
-            ls -la build/ || echo "No build folder"
           fi
       
       - name: Upload APK
