@@ -23,9 +23,6 @@ jobs:
           distribution: 'temurin'
           java-version: '11'  # Use Java 11 instead of 17
       
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-      
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
