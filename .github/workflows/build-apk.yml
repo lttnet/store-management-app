@@ -1,39 +1,110 @@
-name: Build APK
+name: Build Store Management APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  build:
+  build-android:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-    
-    - name: Setup Java (Fixed version)
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install flet==0.21.2
-    
-    - name: Build APK
-      run: |
-        flet build apk
-    
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: StoreManagement-App
-        path: ./build/apk/*.apk
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.6'
+          channel: 'stable'
+      
+      - name: Create necessary directories
+        run: |
+          mkdir -p images
+          mkdir -p backups
+          mkdir -p exports
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flet==0.21.2
+          pip install requests
+          # Add other dependencies if needed
+      
+      - name: Verify installation
+        run: |
+          python -c "import flet; print(f'Flet version: {flet.__version__}')"
+      
+      - name: Build APK
+        id: build
+        run: |
+          flet build apk --verbose
+          
+          # Search for APK in various locations
+          echo "=== Searching for APK ==="
+          find . -name "*.apk" -type f
+          
+          # Common APK locations
+          APK_FILE=""
+          for path in "./build/apk/*.apk" "./build/apk/**/*.apk" "./build/**/*.apk"; do
+            for file in $path; do
+              if [ -f "$file" ]; then
+                APK_FILE="$file"
+                break 2
+              fi
+            done
+          done
+          
+          # Also try to find any apk file
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find . -name "*.apk" -type f | head -1)
+          fi
+          
+          if [ -n "$APK_FILE" ]; then
+            echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
+            echo "apk_name=$(basename $APK_FILE)" >> $GITHUB_OUTPUT
+            echo "✅ APK found: $APK_FILE"
+            ls -la "$APK_FILE"
+          else
+            echo "⚠️ No APK found"
+            echo "Contents of build folder:"
+            ls -la build/ || echo "No build folder"
+          fi
+      
+      - name: Upload APK
+        if: steps.build.outputs.apk_path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: Store-Management-APK
+          path: ${{ steps.build.outputs.apk_path }}
+      
+      - name: Upload entire build folder (debug)
+        if: steps.build.outputs.apk_path == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-folder-debug
+          path: build/
+      
+      - name: Upload source (debug if build failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-code-debug
+          path: |
+            *.py
+            **/*.py
+            !__pycache__/
