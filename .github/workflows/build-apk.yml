@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     
     steps:
     - uses: actions/checkout@v4
@@ -29,26 +29,37 @@ jobs:
         flutter-version: '3.19.6'
         channel: 'stable'
     
-    - name: Install Flet and dependencies
+    - name: Create local.properties for Android
+      run: |
+        mkdir -p android
+        echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=2g" >> android/gradle.properties
+        echo "android.useAndroidX=true" >> android/gradle.properties
+        echo "android.enableJetifier=true" >> android/gradle.properties
+    
+    - name: Set Java Home
+      run: |
+        echo "JAVA_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+        echo "JAVA_HOME_11=$JAVA_HOME_11_X64" >> $GITHUB_ENV
+    
+    - name: Install Flet
       run: |
         python -m pip install --upgrade pip
         pip install flet==0.21.2
     
-    - name: Create app directories
+    - name: Create directories
       run: |
         mkdir -p images
         mkdir -p backups
     
-    - name: Build Android APK
+    - name: Build APK
       run: |
-        echo "Using Java:"
+        export JAVA_HOME=$JAVA_HOME_11_X64
+        export PATH=$JAVA_HOME/bin:$PATH
         java -version
         flet build apk --verbose
     
-    - name: Find and upload APK
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: Store-Management-App
-        path: |
-          build/apk/*.apk
-          build/app/outputs/flutter-apk/*.apk
+        path: build/apk/
