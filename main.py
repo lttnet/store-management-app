@@ -742,7 +742,7 @@ class StoreApp:
         )
                 # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Dashboard with category distribution chart"""
+        """Dashboard with fixed quality icons and separate Import/Export section"""
         page.controls.clear()
         
         # Check if mobile
@@ -782,8 +782,8 @@ class StoreApp:
             q = a.get('quality', 'Used')
             quality_counts[q] = quality_counts.get(q, 0) + 1
         
-        # Create main column
-        main_column = ft.Column(spacing=12, expand=True)
+        # Create a simple Column
+        main_column = ft.Column(spacing=15, expand=True)
         
         # ========== SECTION 1: HEADER ==========
         main_column.controls.append(
@@ -801,20 +801,24 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # ========== SECTION 3: CATEGORY DISTRIBUTION CHART ==========
-        main_column.controls.append(self.create_category_chart(page))
-        
-        # ========== SECTION 4: QUALITY DISTRIBUTION ==========
+        # ========== SECTION 3: QUALITY DISTRIBUTION (FIXED ICONS) ==========
         main_column.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
         
+        # Quality cards with proper icons (using emoji instead of colored circles)
         quality_container = ft.Container(
             content=ft.Row([
                 ft.Container(
-                    content=ft.Text(f"🟢 New: {quality_counts.get('New', 0)}", size=13),
+                    content=ft.Row([
+                        ft.Text("🟢", size=14),
+                        ft.Text(f"New: {quality_counts.get('New', 0)}", size=14),
+                    ], spacing=5),
                     padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
                 ),
                 ft.Container(
-                    content=ft.Text(f"🟠 Used: {quality_counts.get('Used', 0)}", size=13),
+                    content=ft.Row([
+                        ft.Text("🟠", size=14),
+                        ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=14),
+                    ], spacing=5),
                     padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
                 ),
             ], spacing=8),
@@ -825,18 +829,24 @@ class StoreApp:
         quality_container2 = ft.Container(
             content=ft.Row([
                 ft.Container(
-                    content=ft.Text(f"🔴 Damaged: {quality_counts.get('Damaged', 0)}", size=13),
+                    content=ft.Row([
+                        ft.Text("🔴", size=14),
+                        ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=14),
+                    ], spacing=5),
                     padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
                 ),
                 ft.Container(
-                    content=ft.Text(f"🔵 Repaired: {quality_counts.get('Repaired', 0)}", size=13),
+                    content=ft.Row([
+                        ft.Text("🔵", size=14),
+                        ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=14),
+                    ], spacing=5),
                     padding=8, bgcolor=self.card_color, border_radius=8, expand=True,
                 ),
             ], spacing=8),
         )
         main_column.controls.append(quality_container2)
         
-        # ========== SECTION 5: STOCK HEALTH ==========
+        # ========== SECTION 4: STOCK HEALTH ==========
         healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100) if total_stock > 0 else 100)
         healthy_percentage = max(0, min(healthy_percentage, 100))
         
@@ -852,7 +862,7 @@ class StoreApp:
             )
         )
         
-        # ========== SECTION 6: RECENT MATERIALS ==========
+        # ========== SECTION 5: RECENT MATERIALS ==========
         main_column.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
         
         if materials:
@@ -877,7 +887,7 @@ class StoreApp:
         else:
             main_column.controls.append(ft.Text("No materials", size=12, color="#888888"))
         
-        # ========== SECTION 7: RECENT ACCESSORIES ==========
+        # ========== SECTION 6: RECENT ACCESSORIES ==========
         main_column.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
         
         if accessories:
@@ -905,7 +915,7 @@ class StoreApp:
         else:
             main_column.controls.append(ft.Text("No accessories", size=12, color="#888888"))
         
-        # ========== SECTION 8: QUICK ACTIONS ==========
+        # ========== SECTION 7: QUICK ACTIONS ==========
         main_column.controls.append(ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD))
         
         main_column.controls.append(
@@ -920,6 +930,10 @@ class StoreApp:
                 ft.ElevatedButton("Export Data", on_click=lambda e: self.export_all_data_simple(page), expand=True),
             ], spacing=8)
         )
+        
+        # ========== SECTION 8: IMPORT / EXPORT (SEPARATE SECTION) ==========
+        main_column.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
+        
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton("Import Materials", on_click=lambda e: self.show_import_dialog(page, "materials"), expand=True),
@@ -928,8 +942,13 @@ class StoreApp:
         )
         main_column.controls.append(
             ft.Row([
+                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_all_data_simple(page), expand=True),
                 ft.ElevatedButton("Export HTML", on_click=lambda e: self.export_inventory_html(page), expand=True),
-                ft.ElevatedButton("Low Stock HTML", on_click=lambda e: self.export_low_stock_html(page), expand=True,
+            ], spacing=8)
+        )
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton("Low Stock Report", on_click=lambda e: self.export_low_stock_html(page), expand=True,
                                 style=ft.ButtonStyle(bgcolor=self.danger_color)),
             ], spacing=8)
         )
@@ -941,6 +960,7 @@ class StoreApp:
             padding=15,
         )
         
+        # Make it scrollable
         scrollable_container = ft.Container(
             content=ft.Column([main_container], scroll=ft.ScrollMode.AUTO, expand=True),
             expand=True,
