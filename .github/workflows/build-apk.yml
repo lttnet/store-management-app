@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     
     steps:
     - uses: actions/checkout@v4
@@ -17,27 +17,17 @@ jobs:
       with:
         python-version: '3.11'
     
-    - name: Setup Java 11
+    - name: Setup Java
       uses: actions/setup-java@v4
       with:
-        distribution: 'zulu'
+        distribution: 'temurin'
         java-version: '11'
     
-    - name: Setup Flutter
+    - name: Setup Flutter (Required version for Flet)
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.13.9'
+        flutter-version: '3.19.6'
         channel: 'stable'
-    
-    - name: Set JAVA_HOME
-      run: |
-        echo "JAVA_HOME=$JAVA_HOME_11_X64" >> $GITHUB_ENV
-        echo "JAVA_HOME_11=$JAVA_HOME_11_X64" >> $GITHUB_ENV
-    
-    - name: Verify Java version
-      run: |
-        java -version
-        echo "JAVA_HOME=$JAVA_HOME"
     
     - name: Install Flet
       run: |
@@ -49,12 +39,15 @@ jobs:
         mkdir -p images
         mkdir -p backups
     
+    - name: Fix serious_python compatibility
+      run: |
+        # Create pubspec.yaml override if needed
+        echo "dependency_overrides:" >> pubspec.yaml
+        echo "  serious_python: 0.7.0" >> pubspec.yaml
+    
     - name: Build APK
       run: |
-        export JAVA_HOME=/usr/lib/jvm/temurin-11-jdk-amd64
-        export PATH=$JAVA_HOME/bin:$PATH
-        java -version
-        flutter --version
+        export JAVA_HOME=$JAVA_HOME_11_X64
         flet build apk --verbose
     
     - name: Upload APK
