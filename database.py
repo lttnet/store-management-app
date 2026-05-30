@@ -30,8 +30,9 @@ def init_database():
         CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
-            icon TEXT DEFAULT '📦',
+            icon TEXT DEFAULT '📁',
             color TEXT DEFAULT '#1976D2',
+            user_id INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
