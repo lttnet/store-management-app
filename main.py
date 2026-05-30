@@ -2486,7 +2486,7 @@ class StoreApp:
         dialog.open = True
         page.update()
     def open_category_dialog(self, page: ft.Page, refresh_callback=None):
-        """Category dialog - Using same pattern as add_modal (GUARANTEED TO WORK)"""
+        """Category dialog - Working add and delete"""
         import sqlite3
         from database import DB_PATH
         
@@ -2518,10 +2518,11 @@ class StoreApp:
         )
         status_text = ft.Text("", size=12)
         
-        # Categories list
+        # Categories list container
         cats_container = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=200)
         
         def refresh_cats():
+            """Refresh the categories list"""
             cats_container.controls.clear()
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
@@ -2538,7 +2539,7 @@ class StoreApp:
                             icon=ft.icons.DELETE,
                             icon_size=20,
                             icon_color=self.danger_color,
-                            on_click=lambda e, id=cid: delete_cat(id),
+                            on_click=lambda e, id=cid: delete_category(id, cname),
                         ),
                     ], spacing=10),
                     padding=10,
@@ -2548,15 +2549,34 @@ class StoreApp:
                 cats_container.controls.append(row)
             
             if not cats_container.controls:
-                cats_container.controls.append(ft.Text("No custom categories", size=13, color="#888888"))
+                cats_container.controls.append(ft.Text("No custom categories yet", size=13, color="#888888"))
             page.update()
         
-        def delete_cat(cat_id):
+        def delete_category(cat_id, cat_name):
+            """Delete category immediately"""
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
+            
+            # Check if category is being used
+            cur.execute("SELECT COUNT(*) FROM materials WHERE category_id = ?", (cat_id,))
+            material_count = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM accessories WHERE category_id = ?", (cat_id,))
+            accessory_count = cur.fetchone()[0]
+            
+            if material_count > 0 or accessory_count > 0:
+                status_text.value = f"❌ Cannot delete: {material_count + accessory_count} items use this category"
+                status_text.color = self.danger_color
+                page.update()
+                conn.close()
+                return
+            
+            # Delete category
             cur.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat_id, current_user_id))
             conn.commit()
             conn.close()
+            
+            status_text.value = f"✓ Deleted: {cat_name}"
+            status_text.color = self.success_color
             refresh_cats()
             if refresh_callback:
                 refresh_callback()
@@ -2572,6 +2592,18 @@ class StoreApp:
             
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
+            
+            # Check if category already exists for this user
+            cur.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
+            existing = cur.fetchone()
+            
+            if existing:
+                status_text.value = f"❌ Category '{name}' already exists!"
+                status_text.color = self.danger_color
+                page.update()
+                conn.close()
+                return
+            
             try:
                 cur.execute(
                     "INSERT INTO categories (name, icon, user_id) VALUES (?, ?, ?)",
@@ -2585,8 +2617,8 @@ class StoreApp:
                 if refresh_callback:
                     refresh_callback()
                 page.update()
-            except:
-                status_text.value = "❌ Category already exists!"
+            except Exception as ex:
+                status_text.value = f"❌ Error: {str(ex)}"
                 status_text.color = self.danger_color
                 page.update()
             finally:
@@ -2622,9 +2654,11 @@ class StoreApp:
         
         dialog.content = ft.Container(content=dialog_content, width=450, padding=15)
         
+        refresh_cats()
         page.dialog = dialog
         dialog.open = True
         page.update()
+
     def show_materials_screen(self, page: ft.Page):
         """Materials screen with Overlay category dialog"""
         page.controls.clear()
@@ -2870,7 +2904,6 @@ class StoreApp:
             tooltip="Add Category",
             on_click=lambda e: self.open_category_dialog(page, lambda: self.show_materials_screen(page)),
         )
-        
         # Filters row
         filters_row = ft.Row([
             category_filter,
