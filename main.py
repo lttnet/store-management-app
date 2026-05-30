@@ -2485,7 +2485,146 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
-
+    def open_category_dialog(self, page: ft.Page, refresh_callback=None):
+        """Category dialog - Using same pattern as add_modal (GUARANTEED TO WORK)"""
+        import sqlite3
+        from database import DB_PATH
+        
+        current_user_id = self.current_user.get('id') if self.current_user else 0
+        
+        # Create dialog like open_add_modal
+        dialog = ft.AlertDialog(
+            title=ft.Text(""),
+            modal=True,
+        )
+        
+        # Form fields
+        name_field = ft.TextField(label="Category Name", width=300, bgcolor=self.card_color)
+        icon_dropdown = ft.Dropdown(
+            label="Icon",
+            width=100,
+            options=[
+                ft.dropdown.Option("📦", "📦 Box"),
+                ft.dropdown.Option("🔩", "🔩 Screw"),
+                ft.dropdown.Option("🔧", "🔧 Tool"),
+                ft.dropdown.Option("⚡", "⚡ Electric"),
+                ft.dropdown.Option("💧", "💧 Water"),
+                ft.dropdown.Option("🪵", "🪵 Wood"),
+                ft.dropdown.Option("⚙️", "⚙️ Metal"),
+                ft.dropdown.Option("📁", "📁 Folder"),
+            ],
+            value="📁",
+            bgcolor=self.card_color,
+        )
+        status_text = ft.Text("", size=12)
+        
+        # Categories list
+        cats_container = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=200)
+        
+        def refresh_cats():
+            cats_container.controls.clear()
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute("SELECT id, name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
+            cats = cur.fetchall()
+            conn.close()
+            
+            for cid, cname, cicon in cats:
+                row = ft.Container(
+                    content=ft.Row([
+                        ft.Text(cicon, size=20),
+                        ft.Text(cname, size=14, expand=True),
+                        ft.IconButton(
+                            icon=ft.icons.DELETE,
+                            icon_size=20,
+                            icon_color=self.danger_color,
+                            on_click=lambda e, id=cid: delete_cat(id),
+                        ),
+                    ], spacing=10),
+                    padding=10,
+                    bgcolor="#2C2C2C",
+                    border_radius=8,
+                )
+                cats_container.controls.append(row)
+            
+            if not cats_container.controls:
+                cats_container.controls.append(ft.Text("No custom categories", size=13, color="#888888"))
+            page.update()
+        
+        def delete_cat(cat_id):
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat_id, current_user_id))
+            conn.commit()
+            conn.close()
+            refresh_cats()
+            if refresh_callback:
+                refresh_callback()
+            page.update()
+        
+        def add_category(e):
+            name = name_field.value.strip()
+            if not name:
+                status_text.value = "❌ Please enter a category name"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    "INSERT INTO categories (name, icon, user_id) VALUES (?, ?, ?)",
+                    (name, icon_dropdown.value, current_user_id)
+                )
+                conn.commit()
+                name_field.value = ""
+                status_text.value = "✓ Category added!"
+                status_text.color = self.success_color
+                refresh_cats()
+                if refresh_callback:
+                    refresh_callback()
+                page.update()
+            except:
+                status_text.value = "❌ Category already exists!"
+                status_text.color = self.danger_color
+                page.update()
+            finally:
+                conn.close()
+        
+        def close_dialog():
+            dialog.open = False
+            page.update()
+        
+        # Create scrollable content
+        scrollable_content = ft.Column([
+            name_field,
+            icon_dropdown,
+            status_text,
+            ft.Row([
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog()),
+                ft.FilledButton("Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ], spacing=10),
+            ft.Divider(),
+            ft.Text("Your Custom Categories:", size=14, weight=ft.FontWeight.BOLD),
+            cats_container,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=450)
+        
+        # Dialog content
+        dialog_content = ft.Column([
+            ft.Row([
+                ft.Text("Manage Categories", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
+            ]),
+            ft.Divider(height=1),
+            scrollable_content,
+        ], spacing=12)
+        
+        dialog.content = ft.Container(content=dialog_content, width=450, padding=15)
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
     def show_materials_screen(self, page: ft.Page):
         """Materials screen with Overlay category dialog"""
         page.controls.clear()
@@ -2729,7 +2868,7 @@ class StoreApp:
             icon_size=24,
             icon_color=self.success_color,
             tooltip="Add Category",
-            on_click=show_category_overlay,
+            on_click=lambda e: self.open_category_dialog(page, lambda: self.show_materials_screen(page)),
         )
         
         # Filters row
@@ -3281,11 +3420,11 @@ class StoreApp:
             page.update()
         
         add_category_btn = ft.IconButton(
-            icon=ft.icons.ADD_CIRCLE,
-            icon_size=28,
+            icon=ft.icons.ADD_CIRCLE_OUTLINE,
+            icon_size=24,
             icon_color=self.success_color,
             tooltip="Add Category",
-            on_click=lambda e: self.show_simple_category_dialog(page, lambda: self.show_materials_screen(page)),
+            on_click=lambda e: self.open_category_dialog(page, lambda: self.show_accessories(page)),
         )
 
         # Filters row
