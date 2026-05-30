@@ -2351,17 +2351,30 @@ class StoreApp:
         )
      
     def show_simple_category_dialog(self, page: ft.Page, refresh_callback=None):
-        """Simple working category dialog - BottomSheet for mobile"""
+        """Simple dialog - Guaranteed to fit mobile"""
         import sqlite3
         from database import DB_PATH
         
+        print("DEBUG: Opening category dialog")
+        
         current_user_id = self.current_user.get('id') if self.current_user else 0
         
-        # Simple fields
-        name_field = ft.TextField(label="Category Name", width=280, bgcolor=self.card_color)
-        icon_dropdown = ft.Dropdown(
+        # Create dialog with fixed size
+        dialog = ft.AlertDialog(
+            title=ft.Text("Categories", size=16, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=300,
+                height=450,
+                padding=10,
+            ),
+            modal=True,
+        )
+        
+        # Simple form
+        name_input = ft.TextField(label="New Category", width=270, bgcolor=self.card_color)
+        icon_select = ft.Dropdown(
             label="Icon",
-            width=80,
+            width=70,
             options=[
                 ft.dropdown.Option("📦", "📦"),
                 ft.dropdown.Option("🔩", "🔩"),
@@ -2375,13 +2388,13 @@ class StoreApp:
             value="📁",
             bgcolor=self.card_color,
         )
-        status_text = ft.Text("", size=11)
+        status = ft.Text("", size=10)
         
-        # Container for categories list
-        categories_container = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=150)
+        # Categories list
+        cats_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=180)
         
-        def refresh_list():
-            categories_container.controls.clear()
+        def load_cats():
+            cats_list.controls.clear()
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
             cur.execute("SELECT id, name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
@@ -2391,29 +2404,40 @@ class StoreApp:
             for cid, cname, cicon in cats:
                 row = ft.Container(
                     content=ft.Row([
-                        ft.Text(cicon, size=18),
-                        ft.Text(cname, size=13, expand=True),
+                        ft.Text(cicon, size=14),
+                        ft.Text(cname, size=11, expand=True),
                         ft.IconButton(
                             icon=ft.icons.DELETE,
-                            icon_size=18,
+                            icon_size=16,
                             icon_color="#FF5252",
-                            on_click=lambda e, id=cid, name=cname: delete_category(id, name),
+                            on_click=lambda e, id=cid: delete_cat(id),
                         ),
-                    ], spacing=8),
-                    padding=8,
+                    ], spacing=6),
+                    padding=6,
                     bgcolor="#2C2C2C",
-                    border_radius=5,
+                    border_radius=4,
                 )
-                categories_container.controls.append(row)
+                cats_list.controls.append(row)
             
-            if not categories_container.controls:
-                categories_container.controls.append(ft.Text("No custom categories", size=12, color="#888888"))
+            if not cats_list.controls:
+                cats_list.controls.append(ft.Text("No custom categories", size=11, color="#888888"))
             page.update()
         
-        def add_category(e):
-            name = name_field.value.strip()
+        def delete_cat(cat_id):
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat_id, current_user_id))
+            conn.commit()
+            conn.close()
+            load_cats()
+            if refresh_callback:
+                refresh_callback()
+            page.update()
+        
+        def add_cat(e):
+            name = name_input.value.strip()
             if not name:
-                status_text.value = "❌ Enter name"
+                status.value = "❌ Enter name"
                 page.update()
                 return
             
@@ -2422,68 +2446,48 @@ class StoreApp:
             try:
                 cur.execute(
                     "INSERT INTO categories (name, icon, user_id) VALUES (?, ?, ?)",
-                    (name, icon_dropdown.value, current_user_id)
+                    (name, icon_select.value, current_user_id)
                 )
                 conn.commit()
-                name_field.value = ""
-                status_text.value = "✓ Added!"
-                refresh_list()
+                name_input.value = ""
+                status.value = "✓ Added!"
+                load_cats()
                 if refresh_callback:
                     refresh_callback()
                 page.update()
             except:
-                status_text.value = "❌ Already exists"
+                status.value = "❌ Already exists"
                 page.update()
             finally:
                 conn.close()
         
-        def delete_category(cat_id, cat_name):
-            conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
-            cur.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat_id, current_user_id))
-            conn.commit()
-            conn.close()
-            refresh_list()
-            if refresh_callback:
-                refresh_callback()
+        def close_dlg():
+            dialog.open = False
             page.update()
         
-        def close_sheet():
-            bottom_sheet.open = False
-            page.update()
+        # Build content
+        content = ft.Column([
+            name_input,
+            icon_select,
+            status,
+            ft.Row([
+                ft.TextButton("Cancel", on_click=lambda e: close_dlg()),
+                ft.FilledButton("Add", on_click=add_cat, style=ft.ButtonStyle(bgcolor="#4CAF50")),
+            ], spacing=8),
+            ft.Divider(),
+            ft.Text("Your Categories:", size=12, weight=ft.FontWeight.BOLD),
+            cats_list,
+        ], spacing=8)
         
-        # Create BottomSheet
-        bottom_sheet = ft.BottomSheet(
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Row([
-                        ft.Text("Categories", size=18, weight=ft.FontWeight.BOLD, expand=True),
-                        ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_sheet()),
-                    ]),
-                    ft.Divider(),
-                    name_field,
-                    icon_dropdown,
-                    status_text,
-                    ft.Row([
-                        ft.TextButton("Cancel", on_click=lambda e: close_sheet()),
-                        ft.FilledButton("Add", on_click=add_category, style=ft.ButtonStyle(bgcolor="#4CAF50")),
-                    ], spacing=8),
-                    ft.Divider(),
-                    ft.Text("Your Categories:", size=13, weight=ft.FontWeight.BOLD),
-                    categories_container,
-                ], spacing=8),
-                padding=15,
-                height=480,
-            ),
-            open=True,
-        )
+        dialog.content.content = content
         
-        refresh_list()
-        page.overlay.append(bottom_sheet)
+        load_cats()
+        page.dialog = dialog
+        dialog.open = True
         page.update()
 
     def show_materials_screen(self, page: ft.Page):
-        """Materials screen with icon buttons and filters"""
+        """Materials screen with working category button"""
         page.controls.clear()
         
         import sqlite3
@@ -2529,11 +2533,11 @@ class StoreApp:
         main_column.controls.append(ft.Container(height=5))
         
         # Category filter dropdown with icons
-        cat_options = [ft.dropdown.Option("All", "All")]
+        cat_options = [ft.dropdown.Option("All", "All Categories")]
         for c in categories:
             icon = c['icon'] if c['icon'] else "📁"
             cat_options.append(ft.dropdown.Option(str(c["id"]), f"{icon} {c['name']}"))
-
+        
         category_filter = ft.Dropdown(
             label="Category",
             width=160 if not is_mobile else 140,
@@ -2548,7 +2552,7 @@ class StoreApp:
             label="Quality",
             width=130 if not is_mobile else 110,
             options=[
-                ft.dropdown.Option("All", "All"),
+                ft.dropdown.Option("All", "All Qualities"),
                 ft.dropdown.Option("New", "🟢 New"),
                 ft.dropdown.Option("Used", "🟠 Used"),
                 ft.dropdown.Option("Damaged", "🔴 Damaged"),
@@ -2559,64 +2563,165 @@ class StoreApp:
             dense=True,
         )
         
-        # Add Category Icon Button
-        def show_add_category(e):
-            def add_new_category():
-                new_name = new_cat_field.value.strip()
-                if new_name:
-                    conn2 = sqlite3.connect(DB_PATH)
-                    cur = conn2.cursor()
-                    try:
-                        cur.execute("INSERT INTO categories (name, icon) VALUES (?, ?)", 
-                                (new_name, icon_dropdown.value))
-                        conn2.commit()
-                        add_dialog.open = False
-                        page.snack_bar = ft.SnackBar(ft.Text(f"✓ Category '{new_name}' added"), bgcolor=self.success_color)
-                        page.snack_bar.open = True
-                        self.show_materials_screen(page)
-                    except:
-                        page.snack_bar = ft.SnackBar(ft.Text("Category already exists!"), bgcolor=self.danger_color)
-                        page.snack_bar.open = True
-                    finally:
-                        conn2.close()
+        # Add Category Button - Text button for better mobile compatibility
+        def open_category_dialog(e):
+            """Open category management dialog"""
+            import sqlite3
+            from database import DB_PATH
             
-            icon_options = ["📦", "🔩", "🔧", "⚡", "💧", "🪵", "⚙️", "📁"]
-            new_cat_field = ft.TextField(label="Category Name", width=250)
-            icon_dropdown = ft.Dropdown(
-                label="Icon", 
-                width=100, 
-                options=[ft.dropdown.Option(icon, icon) for icon in icon_options],
-                value="📁"
+            current_user_id = self.current_user.get('id') if self.current_user else 0
+            
+            # Create dialog
+            cat_dialog = ft.AlertDialog(
+                title=ft.Text("Categories", size=16, weight=ft.FontWeight.BOLD),
+                modal=True,
             )
             
-            add_dialog = ft.AlertDialog(
-                title=ft.Text("Add New Category"),
-                content=ft.Container(
-                    content=ft.Column([new_cat_field, icon_dropdown], spacing=10),
-                    width=350, 
-                    padding=20
-                ),
-                actions=[
-                    ft.TextButton("Cancel", on_click=lambda e: setattr(add_dialog, 'open', False)),
-                    ft.FilledButton("Add", on_click=lambda e: add_new_category(), 
-                                style=ft.ButtonStyle(bgcolor=self.success_color))
+            # Form fields
+            cat_name_input = ft.TextField(label="New Category", width=260, bgcolor=self.card_color)
+            cat_icon_select = ft.Dropdown(
+                label="Icon",
+                width=70,
+                options=[
+                    ft.dropdown.Option("📦", "📦"),
+                    ft.dropdown.Option("🔩", "🔩"),
+                    ft.dropdown.Option("🔧", "🔧"),
+                    ft.dropdown.Option("⚡", "⚡"),
+                    ft.dropdown.Option("💧", "💧"),
+                    ft.dropdown.Option("🪵", "🪵"),
+                    ft.dropdown.Option("⚙️", "⚙️"),
+                    ft.dropdown.Option("📁", "📁"),
                 ],
+                value="📁",
+                bgcolor=self.card_color,
             )
-            page.dialog = add_dialog
-            add_dialog.open = True
+            cat_status = ft.Text("", size=10)
+            
+            # Categories list
+            cat_list_container = ft.Column(spacing=4, scroll=ft.ScrollMode.AUTO, height=160)
+            
+            def refresh_cat_list():
+                cat_list_container.controls.clear()
+                conn2 = sqlite3.connect(DB_PATH)
+                cur2 = conn2.cursor()
+                cur2.execute("SELECT id, name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
+                cats = cur2.fetchall()
+                conn2.close()
+                
+                for cid, cname, cicon in cats:
+                    row = ft.Container(
+                        content=ft.Row([
+                            ft.Text(cicon, size=14),
+                            ft.Text(cname, size=11, expand=True),
+                            ft.IconButton(
+                                icon=ft.icons.DELETE,
+                                icon_size=16,
+                                icon_color="#FF5252",
+                                on_click=lambda e, id=cid: delete_cat(id),
+                            ),
+                        ], spacing=6),
+                        padding=6,
+                        bgcolor="#2C2C2C",
+                        border_radius=4,
+                    )
+                    cat_list_container.controls.append(row)
+                
+                if not cat_list_container.controls:
+                    cat_list_container.controls.append(ft.Text("No custom categories", size=11, color="#888888"))
+                page.update()
+            
+            def delete_cat(cat_id):
+                conn2 = sqlite3.connect(DB_PATH)
+                cur2 = conn2.cursor()
+                cur2.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat_id, current_user_id))
+                conn2.commit()
+                conn2.close()
+                refresh_cat_list()
+                refresh_callback()
+                page.update()
+            
+            def add_cat(e):
+                name = cat_name_input.value.strip()
+                if not name:
+                    cat_status.value = "❌ Enter name"
+                    page.update()
+                    return
+                
+                conn2 = sqlite3.connect(DB_PATH)
+                cur2 = conn2.cursor()
+                try:
+                    cur2.execute(
+                        "INSERT INTO categories (name, icon, user_id) VALUES (?, ?, ?)",
+                        (name, cat_icon_select.value, current_user_id)
+                    )
+                    conn2.commit()
+                    cat_name_input.value = ""
+                    cat_status.value = "✓ Added!"
+                    refresh_cat_list()
+                    refresh_callback()
+                    page.update()
+                except:
+                    cat_status.value = "❌ Already exists"
+                    page.update()
+                finally:
+                    conn2.close()
+            
+            def close_cat_dialog():
+                cat_dialog.open = False
+                page.update()
+            
+            def refresh_callback():
+                # Refresh the category filter and cards
+                nonlocal categories
+                conn2 = sqlite3.connect(DB_PATH)
+                cur2 = conn2.cursor()
+                cur2.execute("SELECT id, name, icon FROM categories ORDER BY name")
+                categories = cur2.fetchall()
+                conn2.close()
+                
+                # Update category filter options
+                new_cat_options = [ft.dropdown.Option("All", "All Categories")]
+                for c in categories:
+                    icon = c['icon'] if c['icon'] else "📁"
+                    new_cat_options.append(ft.dropdown.Option(str(c["id"]), f"{icon} {c['name']}"))
+                category_filter.options = new_cat_options
+                category_filter.update()
+                
+                # Refresh cards
+                update_cards()
+            
+            # Build dialog content
+            cat_dialog.content = ft.Container(
+                content=ft.Column([
+                    cat_name_input,
+                    cat_icon_select,
+                    cat_status,
+                    ft.Row([
+                        ft.TextButton("Cancel", on_click=lambda e: close_cat_dialog()),
+                        ft.FilledButton("Add", on_click=add_cat, style=ft.ButtonStyle(bgcolor="#4CAF50")),
+                    ], spacing=8),
+                    ft.Divider(),
+                    ft.Text("Your Categories:", size=12, weight=ft.FontWeight.BOLD),
+                    cat_list_container,
+                ], spacing=8),
+                width=320,
+                height=450,
+                padding=12,
+            )
+            
+            refresh_cat_list()
+            page.dialog = cat_dialog
+            cat_dialog.open = True
             page.update()
         
-# In show_materials_screen, the add category button should be:
-
-        add_category_btn = ft.IconButton(
-            icon=ft.icons.ADD_CIRCLE,
-            icon_size=28,
-            icon_color=self.success_color,
-            tooltip="Add Category",
-            on_click=lambda e: self.show_simple_category_dialog(page, lambda: self.show_materials_screen(page)),
+        add_category_btn = ft.ElevatedButton(
+            "+ Category",
+            on_click=open_category_dialog,
+            icon=ft.icons.ADD,
+            style=ft.ButtonStyle(bgcolor=self.success_color, color=self.text_color),
         )
         
-        # Filters row
+        # Filters row - side by side
         filters_row = ft.Row([
             category_filter,
             add_category_btn,
@@ -2638,10 +2743,13 @@ class StoreApp:
             
             filtered_count = 0
             for m in materials:
+                # Search filter
                 if search_query and search_query not in m["name"].lower():
                     continue
+                # Category filter
                 if selected_cat_id != "All" and str(m["category_id"]) != selected_cat_id:
                     continue
+                # Quality filter
                 if selected_quality != "All" and m["quality"] != selected_quality:
                     continue
                 
@@ -2703,12 +2811,13 @@ class StoreApp:
             
             page.update()
         
+        # Event handlers
         search_field.on_change = lambda e: update_cards()
         category_filter.on_change = lambda e: update_cards()
         quality_filter.on_change = lambda e: update_cards()
         update_cards()
         
-        # FAB Button
+        # FAB Button for Add Material
         add_button = ft.FloatingActionButton(
             icon=ft.icons.ADD,
             bgcolor=self.success_color,
