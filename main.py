@@ -2485,9 +2485,9 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
-        
+
     def open_category_dialog(self, page: ft.Page, refresh_callback=None):
-        """Category dialog - Same pattern as open_add_modal"""
+        """ULTRA SIMPLE - Just add category, no list"""
         import sqlite3
         from database import DB_PATH
         
@@ -2498,11 +2498,9 @@ class StoreApp:
         if is_mobile:
             field_width = page.width - 60 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
-            scroll_height = 400
         else:
             field_width = 350
             dialog_width = 450
-            scroll_height = 450
         
         # Create dialog
         dialog = ft.AlertDialog(
@@ -2510,7 +2508,7 @@ class StoreApp:
             modal=True,
         )
         
-        # Simple form - NO complex lists, just add category
+        # Only add form - NO list of categories
         name_field = ft.TextField(label="Category Name", width=field_width, bgcolor=self.card_color)
         icon_dropdown = ft.Dropdown(
             label="Icon",
@@ -2530,33 +2528,6 @@ class StoreApp:
         )
         status_text = ft.Text("", size=12)
         
-        # Simple list of existing categories (read-only, no delete)
-        cats_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=scroll_height - 200)
-        
-        def refresh_cats():
-            cats_list.controls.clear()
-            conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
-            cur.execute("SELECT name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
-            cats = cur.fetchall()
-            conn.close()
-            
-            for cname, cicon in cats:
-                row = ft.Container(
-                    content=ft.Row([
-                        ft.Text(cicon, size=16),
-                        ft.Text(cname, size=12, expand=True),
-                    ], spacing=8),
-                    padding=8,
-                    bgcolor="#2C2C2C",
-                    border_radius=5,
-                )
-                cats_list.controls.append(row)
-            
-            if not cats_list.controls:
-                cats_list.controls.append(ft.Text("No custom categories yet", size=11, color="#888888"))
-            page.update()
-        
         def add_category(e):
             name = name_field.value.strip()
             if not name:
@@ -2568,7 +2539,6 @@ class StoreApp:
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
             
-            # Check if exists
             cur.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
             if cur.fetchone():
                 status_text.value = "❌ Already exists"
@@ -2584,14 +2554,13 @@ class StoreApp:
                 )
                 conn.commit()
                 name_field.value = ""
-                status_text.value = "✓ Added!"
+                status_text.value = "✓ Category added!"
                 status_text.color = self.success_color
-                refresh_cats()
                 if refresh_callback:
                     refresh_callback()
                 page.update()
-            except Exception as ex:
-                status_text.value = f"❌ Error"
+            except:
+                status_text.value = "❌ Error"
                 status_text.color = self.danger_color
                 page.update()
             finally:
@@ -2601,33 +2570,25 @@ class StoreApp:
             dialog.open = False
             page.update()
         
-        # Create scrollable fields
-        scroll_fields = ft.Column([
-            name_field,
-            icon_dropdown,
-            status_text,
-            ft.Row([
-                ft.TextButton("Cancel", on_click=lambda e: close_dialog()),
-                ft.FilledButton("Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
-            ], spacing=10),
-            ft.Divider(),
-            ft.Text("Your Categories:", size=13, weight=ft.FontWeight.BOLD),
-            cats_list,
-        ], spacing=10, scroll=ft.ScrollMode.AUTO, height=scroll_height)
-        
-        # Dialog content
+        # Simple layout - no scroll needed
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text("Add Category", size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
             ]),
-            ft.Divider(height=1),
-            scroll_fields,
-        ], spacing=10)
+            ft.Divider(),
+            name_field,
+            icon_dropdown,
+            status_text,
+            ft.Container(height=10),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog()),
+                ft.FilledButton("Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ], alignment=ft.MainAxisAlignment.END, spacing=10),
+        ], spacing=12)
         
         dialog.content = ft.Container(content=dialog_content, width=dialog_width, padding=15)
         
-        refresh_cats()
         page.dialog = dialog
         dialog.open = True
         page.update()
