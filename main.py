@@ -2485,12 +2485,24 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
+        
     def open_category_dialog(self, page: ft.Page, refresh_callback=None):
-        """Simple category dialog - No delete buttons (TEST)"""
+        """Category dialog - Same pattern as open_add_modal"""
         import sqlite3
         from database import DB_PATH
         
         current_user_id = self.current_user.get('id') if self.current_user else 0
+        
+        is_mobile = page.width < 800 if page.width else False
+        
+        if is_mobile:
+            field_width = page.width - 60 if page.width else 300
+            dialog_width = page.width - 20 if page.width else 380
+            scroll_height = 400
+        else:
+            field_width = 350
+            dialog_width = 450
+            scroll_height = 450
         
         # Create dialog
         dialog = ft.AlertDialog(
@@ -2498,8 +2510,8 @@ class StoreApp:
             modal=True,
         )
         
-        # Form fields
-        name_field = ft.TextField(label="Category Name", width=300, bgcolor=self.card_color)
+        # Simple form - NO complex lists, just add category
+        name_field = ft.TextField(label="Category Name", width=field_width, bgcolor=self.card_color)
         icon_dropdown = ft.Dropdown(
             label="Icon",
             width=100,
@@ -2518,8 +2530,8 @@ class StoreApp:
         )
         status_text = ft.Text("", size=12)
         
-        # Simple list - NO DELETE BUTTONS
-        cats_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=150)
+        # Simple list of existing categories (read-only, no delete)
+        cats_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=scroll_height - 200)
         
         def refresh_cats():
             cats_list.controls.clear()
@@ -2532,31 +2544,35 @@ class StoreApp:
             for cname, cicon in cats:
                 row = ft.Container(
                     content=ft.Row([
-                        ft.Text(cicon, size=18),
-                        ft.Text(cname, size=13, expand=True),
-                    ], spacing=10),
+                        ft.Text(cicon, size=16),
+                        ft.Text(cname, size=12, expand=True),
+                    ], spacing=8),
                     padding=8,
                     bgcolor="#2C2C2C",
-                    border_radius=6,
+                    border_radius=5,
                 )
                 cats_list.controls.append(row)
             
             if not cats_list.controls:
-                cats_list.controls.append(ft.Text("No custom categories", size=12, color="#888888"))
+                cats_list.controls.append(ft.Text("No custom categories yet", size=11, color="#888888"))
             page.update()
         
         def add_category(e):
             name = name_field.value.strip()
             if not name:
                 status_text.value = "❌ Enter name"
+                status_text.color = self.danger_color
                 page.update()
                 return
             
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
+            
+            # Check if exists
             cur.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
             if cur.fetchone():
                 status_text.value = "❌ Already exists"
+                status_text.color = self.danger_color
                 page.update()
                 conn.close()
                 return
@@ -2569,12 +2585,14 @@ class StoreApp:
                 conn.commit()
                 name_field.value = ""
                 status_text.value = "✓ Added!"
+                status_text.color = self.success_color
                 refresh_cats()
                 if refresh_callback:
                     refresh_callback()
                 page.update()
-            except:
-                status_text.value = "❌ Error"
+            except Exception as ex:
+                status_text.value = f"❌ Error"
+                status_text.color = self.danger_color
                 page.update()
             finally:
                 conn.close()
@@ -2583,8 +2601,8 @@ class StoreApp:
             dialog.open = False
             page.update()
         
-        # Scrollable content
-        scroll_content = ft.Column([
+        # Create scrollable fields
+        scroll_fields = ft.Column([
             name_field,
             icon_dropdown,
             status_text,
@@ -2593,20 +2611,21 @@ class StoreApp:
                 ft.FilledButton("Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
             ], spacing=10),
             ft.Divider(),
-            ft.Text("Your Categories:", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("Your Categories:", size=13, weight=ft.FontWeight.BOLD),
             cats_list,
-        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=400)
+        ], spacing=10, scroll=ft.ScrollMode.AUTO, height=scroll_height)
         
+        # Dialog content
         dialog_content = ft.Column([
             ft.Row([
-                ft.Text("Manage Categories", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.Text("Add Category", size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
             ]),
             ft.Divider(height=1),
-            scroll_content,
-        ], spacing=12)
+            scroll_fields,
+        ], spacing=10)
         
-        dialog.content = ft.Container(content=dialog_content, width=450, padding=15)
+        dialog.content = ft.Container(content=dialog_content, width=dialog_width, padding=15)
         
         refresh_cats()
         page.dialog = dialog
