@@ -2487,7 +2487,7 @@ class StoreApp:
         page.update()
 
     def open_category_dialog(self, page: ft.Page, refresh_callback=None):
-        """STEP 1: Only name field - NO category list"""
+        """STEP 1 FIXED: Only name field - Proper save"""
         import sqlite3
         from database import DB_PATH
         
@@ -2511,6 +2511,8 @@ class StoreApp:
         
         def save_category(e):
             name = name_field.value.strip()
+            print(f"DEBUG: Save clicked, name = '{name}'")
+            
             if not name:
                 status_text.value = "❌ Enter name"
                 status_text.color = self.danger_color
@@ -2519,20 +2521,36 @@ class StoreApp:
             
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
+            
+            # Check if category already exists
+            cur.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
+            existing = cur.fetchone()
+            
+            if existing:
+                print(f"DEBUG: Category '{name}' already exists")
+                status_text.value = "❌ Category already exists!"
+                status_text.color = self.danger_color
+                page.update()
+                conn.close()
+                return
+            
             try:
                 cur.execute(
                     "INSERT INTO categories (name, icon, user_id) VALUES (?, ?, ?)",
                     (name, "📁", current_user_id)
                 )
                 conn.commit()
+                print(f"DEBUG: Category '{name}' added successfully")
                 close_dialog()
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Category '{name}' added!"), bgcolor=self.success_color)
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Category '{name}' added!"), bgcolor=self.success_color, duration=2000)
                 page.snack_bar.open = True
                 if refresh_callback:
                     refresh_callback()
                 page.update()
-            except:
-                status_text.value = "❌ Already exists"
+            except Exception as ex:
+                print(f"DEBUG: Error - {ex}")
+                status_text.value = f"❌ Error: {str(ex)}"
+                status_text.color = self.danger_color
                 page.update()
             finally:
                 conn.close()
@@ -2562,7 +2580,7 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
-
+        
     def show_materials_screen(self, page: ft.Page):
         """Materials screen with Overlay category dialog"""
         page.controls.clear()
