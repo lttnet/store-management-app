@@ -106,7 +106,7 @@ class StoreApp:
         return result
     
     def show_categories_page(self, page: ft.Page):
-        """Complete Categories Management Page - Mobile friendly"""
+        """Complete Categories Management Page - Works on Desktop AND Mobile"""
         page.controls.clear()
         
         import sqlite3
@@ -131,14 +131,6 @@ class StoreApp:
             padding_size = 20
             icon_size = 28
             card_padding = 15
-        
-        # Navigation
-        if is_mobile:
-            nav = self.create_bottom_nav(page)
-            sidebar = None
-        else:
-            sidebar = self.create_sidebar(page)
-            nav = None
         
         current_user_id = self.current_user.get('id') if self.current_user else 0
         
@@ -173,20 +165,44 @@ class StoreApp:
             {"name": "Other", "icon": "📁", "color": "#607D8B", "system": True},
         ]
         
-        # Create main content
-        main_column = ft.Column(spacing=12, expand=True)
+        # Create main content - SIMPLE COLUMN WITH SCROLL (works on mobile)
+        main_column = ft.Column(
+            spacing=12,
+            scroll=ft.ScrollMode.AUTO,  # This enables scrolling on mobile
+            expand=True,
+        )
         
-        # Name input field reference for add form
+        # Header with back button and add button
+        header_row = ft.Row([
+            ft.IconButton(
+                icon=ft.icons.ARROW_BACK,
+                icon_size=icon_size,
+                on_click=lambda e: self.show_dashboard(page),
+                tooltip="Back to Dashboard",
+            ),
+            ft.Text("Categories", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color, expand=True),
+            ft.IconButton(
+                icon=ft.icons.ADD_CIRCLE,
+                icon_size=icon_size,
+                icon_color=self.success_color,
+                on_click=lambda e: self.open_add_category_form(page, lambda: self.show_categories_page(page)),
+                tooltip="Add New Category",
+            ),
+        ])
+        main_column.controls.append(header_row)
+        main_column.controls.append(ft.Container(height=5))
+        
+        # ========== ADD CATEGORY FORM ==========
         name_input = ft.TextField(
-            hint_text="Category name",
+            hint_text="Enter category name...",
             bgcolor=self.card_color,
             border_color=self.accent_color,
             text_size=font_small,
-            dense=not is_mobile,
+            dense=True,
         )
         
         icon_select = ft.Dropdown(
-            width=100,
+            width=100 if not is_mobile else 80,
             options=[
                 ft.dropdown.Option("📦", "📦"),
                 ft.dropdown.Option("🔩", "🔩"),
@@ -203,7 +219,6 @@ class StoreApp:
             bgcolor=self.card_color,
         )
         
-        # Add category function
         def add_new_category(e):
             name = name_input.value.strip()
             if not name:
@@ -242,38 +257,35 @@ class StoreApp:
             finally:
                 conn.close()
         
-        # ========== SECTION 1: ADD NEW CATEGORY FORM ==========
-        main_column.controls.append(
-            ft.Card(
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Text("➕ Add New Category", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
-                        ft.Divider(height=1),
-                        name_input,
-                        ft.Row([
-                            icon_select,
-                            ft.IconButton(
-                                icon=ft.icons.ADD_CIRCLE,
-                                icon_color=self.success_color,
-                                icon_size=28,
-                                on_click=add_new_category,
-                                tooltip="Add Category",
-                            ),
-                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                    ], spacing=8),
-                    padding=card_padding,
-                ),
-                elevation=1,
-            )
+        add_form_card = ft.Card(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("➕ Add New Category", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                    ft.Divider(height=1),
+                    name_input,
+                    ft.Row([
+                        icon_select,
+                        ft.ElevatedButton(
+                            "Add",
+                            icon=ft.icons.ADD,
+                            on_click=add_new_category,
+                            style=ft.ButtonStyle(bgcolor=self.success_color),
+                        ),
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ], spacing=8),
+                padding=card_padding,
+            ),
+            elevation=1,
         )
+        main_column.controls.append(add_form_card)
+        main_column.controls.append(ft.Container(height=5))
         
-        # ========== SECTION 2: DEFAULT CATEGORIES ==========
+        # ========== DEFAULT CATEGORIES ==========
         main_column.controls.append(
             ft.Text("📁 Default Categories", size=font_normal, weight=ft.FontWeight.BOLD, color="#888888")
         )
         
         for cat in default_categories:
-            # Get count for this category
             count = 0
             for cc in category_counts:
                 if cc['name'] == cat['name']:
@@ -303,23 +315,21 @@ class StoreApp:
         
         main_column.controls.append(ft.Container(height=5))
         
-        # ========== SECTION 3: MY CUSTOM CATEGORIES ==========
+        # ========== CUSTOM CATEGORIES ==========
         if custom_categories:
             main_column.controls.append(
                 ft.Text("✨ My Custom Categories", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color)
             )
             
             for cat in custom_categories:
-                # Get count for this category
                 count = 0
                 for cc in category_counts:
                     if cc['name'] == cat['name']:
                         count = cc['material_count'] + cc['accessory_count']
                         break
                 
-                # Show recent history badge if recently added
+                # Show recent badge
                 is_recent = False
-                recent_text = ""
                 if cat['created_at']:
                     try:
                         created_date_str = str(cat['created_at'])
@@ -329,7 +339,6 @@ class StoreApp:
                         days_ago = (datetime.now() - created_date).days
                         if days_ago <= 7:
                             is_recent = True
-                            recent_text = "🆕 New"
                     except:
                         pass
                 
@@ -342,7 +351,7 @@ class StoreApp:
                                 ft.Row([
                                     ft.Text(f"{count} items", size=font_small - 3, color="#888888"),
                                     ft.Container(
-                                        content=ft.Text(recent_text, size=font_small - 4, color=self.success_color),
+                                        content=ft.Text("🆕 New", size=font_small - 4, color=self.success_color),
                                         padding=ft.padding.symmetric(horizontal=6, vertical=2),
                                         bgcolor="#2E7D3222",
                                         border_radius=8,
@@ -389,61 +398,83 @@ class StoreApp:
                 )
             )
         
-        # ========== SECTION 4: CANCEL BUTTON ==========
+        # ========== CANCEL BUTTON ==========
         main_column.controls.append(ft.Container(height=10))
         main_column.controls.append(
-            ft.ElevatedButton(
-                "Cancel",
-                on_click=lambda e: self.show_dashboard(page),
-                style=ft.ButtonStyle(bgcolor="#3C3C3C", color=self.text_color),
-                width=200 if not is_mobile else 150,
+            ft.Row(
+                [
+                    ft.ElevatedButton(
+                        "Cancel",
+                        on_click=lambda e: self.show_dashboard(page),
+                        style=ft.ButtonStyle(bgcolor="#3C3C3C", color=self.text_color),
+                        width=200 if not is_mobile else 150,
+                    )
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
             )
         )
         main_column.controls.append(ft.Container(height=80))
         
-        # Wrap in scrollable container
-        scroll_container = ft.Container(
+        # Wrap in container with padding
+        main_container = ft.Container(
             content=main_column,
             expand=True,
             padding=padding_size,
         )
         
-        scrollable = ft.Container(
-            content=ft.Column([scroll_container], scroll=ft.ScrollMode.AUTO, expand=True),
-            expand=True,
-        )
-        
-        # Layout
-        if is_mobile and nav:
-            page.add(ft.Column([scrollable, nav], spacing=0, expand=True))
+        # Create bottom navigation for mobile
+        if is_mobile:
+            bottom_nav = self.create_bottom_nav(page)
+            # Use Column with main_container and bottom_nav
+            page.add(
+                ft.Column(
+                    [
+                        main_container,
+                        bottom_nav,
+                    ],
+                    spacing=0,
+                    expand=True,
+                )
+            )
         else:
-            page.add(ft.Row([sidebar, scrollable], spacing=0, expand=True))
+            # Desktop: sidebar + content
+            sidebar = self.create_sidebar(page)
+            page.add(
+                ft.Row(
+                    [
+                        sidebar,
+                        main_container,
+                    ],
+                    spacing=0,
+                    expand=True,
+                )
+            )
         
         self.current_view = "categories"
         page.update()
 
     def open_add_category_form(self, page: ft.Page, refresh_callback=None):
-        """Open form to add new category - Mobile friendly"""
+        """Open dialog to add new category - Mobile friendly"""
         import sqlite3
         from database import DB_PATH
+        from datetime import datetime
         
         current_user_id = self.current_user.get('id') if self.current_user else 0
         is_mobile = page.width < 800 if page.width else False
         
         dialog_width = page.width - 40 if is_mobile and page.width else 380
-        field_width = dialog_width - 40
         
         name_input = ft.TextField(
             label="Category Name",
-            hint_text="e.g., Electronics, Furniture",
-            width=field_width,
+            hint_text="Enter category name",
+            width=dialog_width - 40,
             bgcolor=self.card_color,
             autofocus=True,
         )
         
         icon_select = ft.Dropdown(
             label="Icon",
-            width=80,
+            width=100,
             options=[
                 ft.dropdown.Option("📦", "📦"),
                 ft.dropdown.Option("🔩", "🔩"),
@@ -453,8 +484,6 @@ class StoreApp:
                 ft.dropdown.Option("🪵", "🪵"),
                 ft.dropdown.Option("⚙️", "⚙️"),
                 ft.dropdown.Option("📁", "📁"),
-                ft.dropdown.Option("🎨", "🎨"),
-                ft.dropdown.Option("🔨", "🔨"),
             ],
             value="📁",
             bgcolor=self.card_color,
@@ -477,7 +506,6 @@ class StoreApp:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             
-            # Check if category already exists for this user
             cursor.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
             if cursor.fetchone():
                 status_text.value = "❌ Category already exists!"
@@ -486,7 +514,6 @@ class StoreApp:
                 conn.close()
                 return
             
-            from datetime import datetime
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
             try:
@@ -522,7 +549,7 @@ class StoreApp:
             ]),
             ft.Divider(),
             name_input,
-            ft.Row([icon_select], alignment=ft.MainAxisAlignment.START),
+            icon_select,
             status_text,
             ft.Divider(),
             ft.Row([
