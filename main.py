@@ -2487,7 +2487,7 @@ class StoreApp:
         page.update()
 
     def open_category_dialog(self, page: ft.Page, refresh_callback=None):
-        """Category dialog - Working Add button, no list"""
+        """Category dialog - Alternative approach"""
         import sqlite3
         from database import DB_PATH
         
@@ -2498,19 +2498,10 @@ class StoreApp:
         if is_mobile:
             field_width = page.width - 60 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
-            dialog_height = 320
         else:
             field_width = 350
             dialog_width = 450
-            dialog_height = 350
         
-        # Create dialog
-        dialog = ft.AlertDialog(
-            title=ft.Text(""),
-            modal=True,
-        )
-        
-        # Form fields
         name_field = ft.TextField(label="Category Name", width=field_width, bgcolor=self.card_color)
         icon_dropdown = ft.Dropdown(
             label="Icon",
@@ -2530,10 +2521,28 @@ class StoreApp:
         )
         status_text = ft.Text("", size=12)
         
-        def add_category(e):
-            print("Add button clicked")  # Debug
+        # Create dialog with actions
+        dialog = ft.AlertDialog(
+            title=ft.Text("Add Category", size=18, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                content=ft.Column([
+                    name_field,
+                    icon_dropdown,
+                    status_text,
+                ], spacing=10),
+                width=dialog_width - 40,
+                padding=15,
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False)),
+                ft.FilledButton("Add", on_click=lambda e: add_category(), 
+                            style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        
+        def add_category():
             name = name_field.value.strip()
-            print(f"Category name: {name}")
             
             if not name:
                 status_text.value = "❌ Enter category name"
@@ -2544,7 +2553,6 @@ class StoreApp:
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
             
-            # Check if category already exists for this user
             cur.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
             if cur.fetchone():
                 status_text.value = "❌ Category already exists!"
@@ -2559,44 +2567,18 @@ class StoreApp:
                     (name, icon_dropdown.value, current_user_id)
                 )
                 conn.commit()
-                print(f"Category '{name}' added successfully")
-                name_field.value = ""
-                status_text.value = "✓ Category added!"
-                status_text.color = self.success_color
+                dialog.open = False
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Category '{name}' added!"), bgcolor=self.success_color, duration=2000)
+                page.snack_bar.open = True
                 if refresh_callback:
                     refresh_callback()
                 page.update()
-            except Exception as ex:
-                print(f"Error: {ex}")
+            except:
                 status_text.value = "❌ Error adding category"
                 status_text.color = self.danger_color
                 page.update()
             finally:
                 conn.close()
-        
-        def close_dialog():
-            dialog.open = False
-            page.update()
-        
-        # Simple layout
-        dialog_content = ft.Column([
-            ft.Row([
-                ft.Text("Add Category", size=18, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
-            ]),
-            ft.Divider(),
-            name_field,
-            ft.Row([icon_dropdown], alignment=ft.MainAxisAlignment.START),
-            status_text,
-            ft.Container(height=10),
-            ft.Row([
-                ft.TextButton("Cancel", on_click=lambda e: close_dialog(), expand=True),
-                ft.FilledButton("Add", on_click=add_category, 
-                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
-            ], spacing=10),
-        ], spacing=10)
-        
-        dialog.content = ft.Container(content=dialog_content, width=dialog_width, height=dialog_height, padding=15)
         
         page.dialog = dialog
         dialog.open = True
