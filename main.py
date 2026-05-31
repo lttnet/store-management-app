@@ -3216,7 +3216,7 @@ class StoreApp:
             icon_size=24,
             icon_color=self.success_color,
             tooltip="Manage Categories",
-            on_click=lambda e: self.show_categories_page(page),  # Direct call to categories page
+            on_click=lambda e: self.test_category_dialog(page),  # Test dialog first
         )
         # Filters row
         filters_row = ft.Row([
@@ -9900,6 +9900,39 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
+
+    def test_category_dialog(self, page: ft.Page):
+        """Simple test dialog to verify button click works"""
+        print("DEBUG: test_category_dialog called!")
+        
+        # Create a simple dialog
+        dialog = ft.AlertDialog(
+            title=ft.Text("Categories Test", size=18, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("✅ Button click works on mobile!", size=14, color="green"),
+                    ft.Text("Now we can add the full categories feature", size=12, color="#888888"),
+                    ft.Container(height=10),
+                    ft.Text("This is a test dialog", size=12),
+                ], spacing=10),
+                width=300,
+                padding=20,
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: self.close_dialog(page)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def close_dialog(self, page: ft.Page):
+        """Close the current dialog"""
+        if page.dialog:
+            page.dialog.open = False
+            page.update()
 if __name__ == "__main__":
     app = StoreApp()
     ft.app(target=app.main)
