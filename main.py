@@ -3216,7 +3216,7 @@ class StoreApp:
             icon_size=24,
             icon_color=self.success_color,
             tooltip="Manage Categories",
-            on_click=lambda e: self.test_category_dialog(page),  # Test dialog first
+            on_click=lambda e: self.show_categories_dialog(page),  # Step 1 test
         )
         # Filters row
         filters_row = ft.Row([
@@ -9121,189 +9121,71 @@ class StoreApp:
         dialog.open = True
         page.update()
 
-    def show_category_manager(self, page: ft.Page):
-        """Show category manager - Fixed for mobile"""
+    def show_categories_dialog(self, page: ft.Page):
+        """Step 1: Simple test dialog to verify it works"""
+        print("DEBUG: Step 1 - show_categories_dialog called!")
         
-        import sqlite3
-        from database import DB_PATH
-        
-        page.controls.clear()
-        
-        is_mobile = page.width < 800 if page.width else False
-        
-        print(f"DEBUG: Category Manager - is_mobile: {is_mobile}, page width: {page.width}")
-        
-        if is_mobile:
-            padding_size = 12
-            font_title = 22
-            font_normal = 16
-        else:
-            padding_size = 20
-            font_title = 28
-            font_normal = 18
-        
-        # Navigation
-        if is_mobile:
-            nav = self.create_bottom_nav(page)
-        else:
-            sidebar = self.create_sidebar(page)
-            nav = None
-        
-        # Get current user
-        current_user_id = self.current_user.get('id') if self.current_user else 0
-        print(f"DEBUG: Current user ID: {current_user_id}")
-        
-        # Get custom categories
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS custom_categories (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                icon TEXT DEFAULT '📁',
-                color TEXT DEFAULT '#1976D2',
-                created_by TEXT,
-                user_id INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
-        
-        cursor.execute("SELECT id, name, icon, created_at FROM custom_categories WHERE user_id = ? ORDER BY name", (current_user_id,))
-        custom_categories = cursor.fetchall()
-        print(f"DEBUG: Found {len(custom_categories)} custom categories")
-        
-        # Get item counts
-        cursor.execute("SELECT category, COUNT(*) FROM materials GROUP BY category")
-        material_counts = dict(cursor.fetchall())
-        cursor.execute("SELECT category, COUNT(*) FROM accessories GROUP BY category")
-        accessory_counts = dict(cursor.fetchall())
-        
-        conn.close()
-        
-        # Predefined categories
-        predefined_categories = [
-            {"name": "Raw Material", "icon": "📦", "color": "#1976D2"},
-            {"name": "Hardware", "icon": "🔩", "color": "#757575"},
-            {"name": "Tools", "icon": "🔧", "color": "#FF9800"},
-            {"name": "Electrical", "icon": "⚡", "color": "#FFC107"},
-            {"name": "Plumbing", "icon": "💧", "color": "#00BCD4"},
-            {"name": "Wood", "icon": "🪵", "color": "#8D6E63"},
-            {"name": "Metal", "icon": "⚙️", "color": "#9E9E9E"},
-            {"name": "Plastic", "icon": "🧴", "color": "#9C27B0"},
-            {"name": "Glass", "icon": "🔮", "color": "#E91E63"},
-            {"name": "Paint", "icon": "🎨", "color": "#FF5722"},
-            {"name": "Fasteners", "icon": "📎", "color": "#4CAF50"},
-            {"name": "Safety Equipment", "icon": "🦺", "color": "#F44336"},
-            {"name": "Packaging", "icon": "📦", "color": "#009688"},
-            {"name": "Office Supplies", "icon": "📎", "color": "#3F51B5"},
-            {"name": "Other", "icon": "📁", "color": "#607D8B"},
+        # Create a simple dialog with default categories
+        default_categories = [
+            "📦 Raw Material",
+            "🔩 Hardware", 
+            "🔧 Tools",
+            "⚡ Electrical",
+            "💧 Plumbing",
+            "🪵 Wood",
+            "⚙️ Metal",
+            "📁 Other"
         ]
         
-        # Main scrollable content
-        scroll_content = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+        # Create a list of categories
+        category_items = ft.Column(spacing=8)
         
-        # Header
-        header_row = ft.Row([
-            ft.Text("Category Manager", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
-            ft.Container(expand=True),
-            ft.IconButton(
-                icon=ft.icons.ADD_CIRCLE,
-                icon_size=28,
-                icon_color=self.success_color,
-                on_click=lambda e: self.show_add_category_dialog(page, lambda: self.show_category_manager(page)),
-                tooltip="Add Category",
-            ),
-        ])
-        scroll_content.controls.append(header_row)
-        scroll_content.controls.append(ft.Divider())
-        
-        # Custom Categories Section
-        if custom_categories:
-            scroll_content.controls.append(
-                ft.Text("📌 My Categories", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color)
-            )
-            scroll_content.controls.append(ft.Container(height=5))
-            
-            for cat in custom_categories:
-                cat_id, name, icon, created_at = cat
-                total_count = material_counts.get(name, 0) + accessory_counts.get(name, 0)
-                
-                cat_card = ft.Card(
-                    content=ft.Container(
-                        content=ft.Row([
-                            ft.Text(icon, size=28),
-                            ft.Column([
-                                ft.Text(name, size=15, weight=ft.FontWeight.BOLD),
-                                ft.Text(f"{total_count} items", size=11, color="#888888"),
-                            ], spacing=2, expand=True),
-                            ft.Row([
-                                ft.IconButton(
-                                    icon=ft.icons.EDIT,
-                                    icon_size=20,
-                                    icon_color=self.accent_color,
-                                    on_click=lambda e, cid=cat_id, n=name, i=icon: self.show_edit_category_dialog(
-                                        page, cid, n, i, lambda: self.show_category_manager(page)
-                                    ),
-                                ),
-                                ft.IconButton(
-                                    icon=ft.icons.DELETE,
-                                    icon_size=20,
-                                    icon_color=self.danger_color,
-                                    on_click=lambda e, cid=cat_id, n=name: self.show_delete_category_dialog(
-                                        page, cid, n, lambda: self.show_category_manager(page)
-                                    ),
-                                    visible=(total_count == 0),
-                                ),
-                            ], spacing=0),
-                        ], spacing=10),
-                        padding=12,
-                    ),
-                    elevation=1,
-                )
-                scroll_content.controls.append(cat_card)
-            
-            scroll_content.controls.append(ft.Container(height=10))
-        
-        # Default Categories Section
-        scroll_content.controls.append(
-            ft.Text("📁 Default Categories", size=font_normal, weight=ft.FontWeight.BOLD, color="#888888")
-        )
-        scroll_content.controls.append(ft.Container(height=5))
-        
-        # Display default categories
-        for cat in predefined_categories:
-            name = cat["name"]
-            icon = cat["icon"]
-            total_count = material_counts.get(name, 0) + accessory_counts.get(name, 0)
-            
-            cat_card = ft.Card(
-                content=ft.Container(
+        for cat in default_categories:
+            category_items.controls.append(
+                ft.Container(
                     content=ft.Row([
-                        ft.Text(icon, size=24),
-                        ft.Column([
-                            ft.Text(name, size=14, weight=ft.FontWeight.BOLD),
-                            ft.Text(f"{total_count} items", size=11, color="#888888"),
-                        ], spacing=2, expand=True),
-                    ], spacing=10),
-                    padding=12,
-                ),
-                elevation=0,
+                        ft.Text(cat, size=14),
+                    ]),
+                    padding=10,
+                    bgcolor="#2C2C2C",
+                    border_radius=8,
+                )
             )
-            scroll_content.controls.append(cat_card)
         
-        scroll_content.controls.append(ft.Container(height=80))
+        # Create the dialog
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text("📁 Categories", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(
+                    icon=ft.icons.CLOSE,
+                    icon_size=20,
+                    on_click=lambda e: self.close_dialog(page)
+                ),
+            ]),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Default Categories:", size=14, weight=ft.FontWeight.BOLD),
+                    ft.Container(height=5),
+                    category_items,
+                ], spacing=10),
+                width=350,
+                height=400,
+                padding=15,
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: self.close_dialog(page)),
+            ],
+        )
         
-        main_container = ft.Container(content=scroll_content, expand=True, padding=padding_size)
-        
-        # Layout
-        if is_mobile:
-            page.add(ft.Column([main_container, nav], spacing=0, expand=True))
-        else:
-            page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
-        
+        page.dialog = dialog
+        dialog.open = True
         page.update()
+
+    def close_dialog(self, page: ft.Page):
+        """Close the current dialog"""
+        if page.dialog:
+            page.dialog.open = False
+            page.update()
     def show_add_category_dialog(self, page: ft.Page):
         """Simple dialog to add category - uses overlay for mobile"""
         import sqlite3
