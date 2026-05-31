@@ -2487,7 +2487,7 @@ class StoreApp:
         page.update()
 
     def open_category_dialog(self, page: ft.Page, refresh_callback=None):
-        """ULTRA SIMPLE - Just add category, no list"""
+        """Category dialog - Working Add button, no list"""
         import sqlite3
         from database import DB_PATH
         
@@ -2498,9 +2498,11 @@ class StoreApp:
         if is_mobile:
             field_width = page.width - 60 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
+            dialog_height = 320
         else:
             field_width = 350
             dialog_width = 450
+            dialog_height = 350
         
         # Create dialog
         dialog = ft.AlertDialog(
@@ -2508,7 +2510,7 @@ class StoreApp:
             modal=True,
         )
         
-        # Only add form - NO list of categories
+        # Form fields
         name_field = ft.TextField(label="Category Name", width=field_width, bgcolor=self.card_color)
         icon_dropdown = ft.Dropdown(
             label="Icon",
@@ -2529,9 +2531,12 @@ class StoreApp:
         status_text = ft.Text("", size=12)
         
         def add_category(e):
+            print("Add button clicked")  # Debug
             name = name_field.value.strip()
+            print(f"Category name: {name}")
+            
             if not name:
-                status_text.value = "❌ Enter name"
+                status_text.value = "❌ Enter category name"
                 status_text.color = self.danger_color
                 page.update()
                 return
@@ -2539,9 +2544,10 @@ class StoreApp:
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
             
+            # Check if category already exists for this user
             cur.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
             if cur.fetchone():
-                status_text.value = "❌ Already exists"
+                status_text.value = "❌ Category already exists!"
                 status_text.color = self.danger_color
                 page.update()
                 conn.close()
@@ -2553,14 +2559,16 @@ class StoreApp:
                     (name, icon_dropdown.value, current_user_id)
                 )
                 conn.commit()
+                print(f"Category '{name}' added successfully")
                 name_field.value = ""
                 status_text.value = "✓ Category added!"
                 status_text.color = self.success_color
                 if refresh_callback:
                     refresh_callback()
                 page.update()
-            except:
-                status_text.value = "❌ Error"
+            except Exception as ex:
+                print(f"Error: {ex}")
+                status_text.value = "❌ Error adding category"
                 status_text.color = self.danger_color
                 page.update()
             finally:
@@ -2570,7 +2578,7 @@ class StoreApp:
             dialog.open = False
             page.update()
         
-        # Simple layout - no scroll needed
+        # Simple layout
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text("Add Category", size=18, weight=ft.FontWeight.BOLD, expand=True),
@@ -2578,16 +2586,17 @@ class StoreApp:
             ]),
             ft.Divider(),
             name_field,
-            icon_dropdown,
+            ft.Row([icon_dropdown], alignment=ft.MainAxisAlignment.START),
             status_text,
             ft.Container(height=10),
             ft.Row([
-                ft.TextButton("Cancel", on_click=lambda e: close_dialog()),
-                ft.FilledButton("Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
-            ], alignment=ft.MainAxisAlignment.END, spacing=10),
-        ], spacing=12)
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog(), expand=True),
+                ft.FilledButton("Add", on_click=add_category, 
+                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
+            ], spacing=10),
+        ], spacing=10)
         
-        dialog.content = ft.Container(content=dialog_content, width=dialog_width, padding=15)
+        dialog.content = ft.Container(content=dialog_content, width=dialog_width, height=dialog_height, padding=15)
         
         page.dialog = dialog
         dialog.open = True
