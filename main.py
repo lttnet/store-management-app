@@ -2487,74 +2487,110 @@ class StoreApp:
         page.update()
 
     def open_category_dialog(self, page: ft.Page, refresh_callback=None):
-        """Category dialog - Alternative approach"""
+        """Category dialog - EXACT same pattern as open_add_modal"""
         import sqlite3
         from database import DB_PATH
+        import random
+        import string
         
         current_user_id = self.current_user.get('id') if self.current_user else 0
         
         is_mobile = page.width < 800 if page.width else False
         
         if is_mobile:
-            field_width = page.width - 60 if page.width else 300
+            field_width = page.width - 40 if page.width else 300
             dialog_width = page.width - 20 if page.width else 380
+            scroll_height = 350
         else:
             field_width = 350
             dialog_width = 450
+            scroll_height = 420
         
-        name_field = ft.TextField(label="Category Name", width=field_width, bgcolor=self.card_color)
+        # Create form fields (same style as open_add_modal)
+        name_field = ft.TextField(label="Category Name *", width=field_width, bgcolor=self.card_color)
+        
         icon_dropdown = ft.Dropdown(
-            label="Icon",
-            width=100,
+            label="Icon", width=field_width,
             options=[
-                ft.dropdown.Option("📦", "📦"),
-                ft.dropdown.Option("🔩", "🔩"),
-                ft.dropdown.Option("🔧", "🔧"),
-                ft.dropdown.Option("⚡", "⚡"),
-                ft.dropdown.Option("💧", "💧"),
-                ft.dropdown.Option("🪵", "🪵"),
-                ft.dropdown.Option("⚙️", "⚙️"),
-                ft.dropdown.Option("📁", "📁"),
+                ft.dropdown.Option("📦", "📦 Raw Material"),
+                ft.dropdown.Option("🔩", "🔩 Hardware"),
+                ft.dropdown.Option("🔧", "🔧 Tools"),
+                ft.dropdown.Option("⚡", "⚡ Electrical"),
+                ft.dropdown.Option("💧", "💧 Plumbing"),
+                ft.dropdown.Option("🪵", "🪵 Wood"),
+                ft.dropdown.Option("⚙️", "⚙️ Metal"),
+                ft.dropdown.Option("📁", "📁 Other"),
             ],
             value="📁",
             bgcolor=self.card_color,
         )
-        status_text = ft.Text("", size=12)
         
-        # Create dialog with actions
-        dialog = ft.AlertDialog(
-            title=ft.Text("Add Category", size=18, weight=ft.FontWeight.BOLD),
-            content=ft.Container(
-                content=ft.Column([
-                    name_field,
-                    icon_dropdown,
-                    status_text,
-                ], spacing=10),
-                width=dialog_width - 40,
-                padding=15,
-            ),
-            actions=[
-                ft.TextButton("Cancel", on_click=lambda e: setattr(dialog, 'open', False)),
-                ft.FilledButton("Add", on_click=lambda e: add_category(), 
-                            style=ft.ButtonStyle(bgcolor=self.success_color)),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
+        status_text = ft.Text("", size=12, color="#888888")
         
-        def add_category():
+        # Get existing categories to display (read-only list)
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
+        existing_cats = cursor.fetchall()
+        conn.close()
+        
+        # Create categories list display (like recent materials in dashboard)
+        categories_list = ft.Column(spacing=8)
+        
+        for cat_id, cat_name, cat_icon in existing_cats:
+            categories_list.controls.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Text(cat_icon, size=18),
+                        ft.Text(cat_name, size=14, expand=True),
+                    ], spacing=10),
+                    padding=10,
+                    bgcolor="#2C2C2C",
+                    border_radius=8,
+                )
+            )
+        
+        if not existing_cats:
+            categories_list.controls.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.icons.CATEGORY, size=40, color="#888888"),
+                        ft.Text("No custom categories yet", size=12, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=20,
+                )
+            )
+        
+        # Create scrollable fields (same as open_add_modal)
+        scroll_view = ft.Column([
+            name_field,
+            icon_dropdown,
+            status_text,
+            ft.Divider(),
+            ft.Text("Your Custom Categories:", size=14, weight=ft.FontWeight.BOLD),
+            categories_list,
+        ], spacing=12, scroll=ft.ScrollMode.AUTO, height=scroll_height)
+        
+        # Function to close dialog
+        def close_dialog():
+            page.dialog.open = False
+            page.update()
+        
+        # Function to add category
+        def save_category(e):
             name = name_field.value.strip()
-            
             if not name:
-                status_text.value = "❌ Enter category name"
+                status_text.value = "❌ Please enter a category name!"
                 status_text.color = self.danger_color
                 page.update()
                 return
             
             conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
+            cursor = conn.cursor()
             
-            cur.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
-            if cur.fetchone():
+            # Check if exists
+            cursor.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
+            if cursor.fetchone():
                 status_text.value = "❌ Category already exists!"
                 status_text.color = self.danger_color
                 page.update()
@@ -2562,23 +2598,45 @@ class StoreApp:
                 return
             
             try:
-                cur.execute(
+                cursor.execute(
                     "INSERT INTO categories (name, icon, user_id) VALUES (?, ?, ?)",
                     (name, icon_dropdown.value, current_user_id)
                 )
                 conn.commit()
-                dialog.open = False
+                close_dialog()
                 page.snack_bar = ft.SnackBar(ft.Text(f"✓ Category '{name}' added!"), bgcolor=self.success_color, duration=2000)
                 page.snack_bar.open = True
                 if refresh_callback:
                     refresh_callback()
                 page.update()
-            except:
-                status_text.value = "❌ Error adding category"
+            except Exception as ex:
+                status_text.value = f"❌ Error: {str(ex)}"
                 status_text.color = self.danger_color
                 page.update()
             finally:
                 conn.close()
+        
+        # Dialog content (EXACT same structure as open_add_modal)
+        dialog_content = ft.Column([
+            ft.Row([
+                ft.Text("Add New Category", size=16, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=18, on_click=lambda e: close_dialog()),
+            ]),
+            ft.Divider(height=1),
+            scroll_view,
+            ft.Divider(height=1),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog(), expand=True),
+                ft.FilledButton("Save", on_click=save_category, 
+                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
+            ], spacing=8),
+        ], spacing=8)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=dialog_width, padding=10),
+            modal=True,
+        )
         
         page.dialog = dialog
         dialog.open = True
