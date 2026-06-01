@@ -9122,170 +9122,41 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page):
-        """Mobile-optimized categories dialog"""
-        print("DEBUG: Step 2 - show_categories_dialog called!")
+        """Step 1: Simple dialog - WORKING version"""
+        print("DEBUG: Step 1 - show_categories_dialog called!")
         
-        import sqlite3
-        from database import DB_PATH
-        from datetime import datetime
+        default_categories = [
+            "📦 Raw Material",
+            "🔩 Hardware", 
+            "🔧 Tools",
+            "⚡ Electrical",
+            "💧 Plumbing",
+            "📁 Other"
+        ]
         
-        current_user_id = self.current_user.get('id') if self.current_user else 0
+        # Create simple list
+        category_items = ft.Column(spacing=8)
         
-        # Check if mobile
-        is_mobile = page.width < 800 if page.width else False
-        print(f"DEBUG: is_mobile = {is_mobile}, width = {page.width}")
-        
-        # Mobile-optimized sizes
-        if is_mobile:
-            dialog_width = page.width - 40 if page.width else 320
-            dialog_height = 500
-            field_width = dialog_width - 60
-        else:
-            dialog_width = 400
-            dialog_height = 600
-            field_width = 320
-        
-        # Simple form
-        name_input = ft.TextField(
-            label="Category Name",
-            hint_text="Enter name",
-            width=field_width,
-            bgcolor=self.card_color,
-            dense=True,  # Smaller on mobile
-        )
-        
-        icon_select = ft.Dropdown(
-            label="Icon",
-            width=80,
-            options=[
-                ft.dropdown.Option("📦"),
-                ft.dropdown.Option("🔩"),
-                ft.dropdown.Option("🔧"),
-                ft.dropdown.Option("⚡"),
-                ft.dropdown.Option("📁"),
-            ],
-            value="📁",
-            bgcolor=self.card_color,
-            dense=True,
-        )
-        
-        status_text = ft.Text("", size=11)
-        
-        # Get custom categories
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
-        custom_categories = cursor.fetchall()
-        conn.close()
-        
-        # Create scrollable list (important for mobile)
-        categories_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=250)
-        
-        # Default categories (simplified for mobile)
-        default_list = ["📦 Raw Material", "🔩 Hardware", "🔧 Tools", "⚡ Electrical", "📁 Other"]
-        for cat in default_list:
-            categories_list.controls.append(
+        for cat in default_categories:
+            category_items.controls.append(
                 ft.Container(
-                    content=ft.Row([
-                        ft.Text(cat, size=12, expand=True),
-                        ft.Text("System", size=9, color="#888888"),
-                    ]),
-                    padding=ft.padding.symmetric(vertical=8, horizontal=10),
+                    content=ft.Text(cat, size=14),
+                    padding=10,
                     bgcolor="#2C2C2C",
-                    border_radius=6,
+                    border_radius=8,
                 )
             )
         
-        # Custom categories
-        if custom_categories:
-            categories_list.controls.append(ft.Divider(height=5))
-            categories_list.controls.append(ft.Text("My Categories:", size=12, weight=ft.FontWeight.BOLD))
-            
-            for cat in custom_categories:
-                categories_list.controls.append(
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Text(f"{cat['icon']} {cat['name']}", size=12, expand=True),
-                        ]),
-                        padding=ft.padding.symmetric(vertical=8, horizontal=10),
-                        bgcolor="#2C2C2C",
-                        border_radius=6,
-                    )
-                )
-        
-        def add_category(e):
-            name = name_input.value.strip()
-            if not name:
-                status_text.value = "❌ Enter name"
-                status_text.color = "red"
-                page.update()
-                return
-            
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
-            if cursor.fetchone():
-                status_text.value = "❌ Already exists"
-                status_text.color = "red"
-                page.update()
-                conn.close()
-                return
-            
-            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            cursor.execute(
-                "INSERT INTO categories (name, icon, user_id, created_at) VALUES (?, ?, ?, ?)",
-                (name, icon_select.value, current_user_id, current_time)
-            )
-            conn.commit()
-            conn.close()
-            
-            name_input.value = ""
-            status_text.value = "✓ Added!"
-            status_text.color = "green"
-            page.update()
-            
-            # Refresh dialog
-            page.dialog.open = False
-            self.show_categories_dialog(page)
-        
-        def close_dlg():
-            page.dialog.open = False
-            page.update()
-        
-        # Create content - SIMPLE LAYOUT
-        content = ft.Column([
-            # Header
-            ft.Row([
-                ft.Text("Categories", size=18, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
-            ]),
-            ft.Divider(height=5),
-            
-            # Add form
-            ft.Text("Add New", size=14, weight=ft.FontWeight.BOLD),
-            name_input,
-            icon_select,
-            ft.ElevatedButton("Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
-            status_text,
-            
-            ft.Divider(height=5),
-            
-            # List
-            ft.Text("Categories List", size=14, weight=ft.FontWeight.BOLD),
-            categories_list,
-        ], spacing=8, scroll=ft.ScrollMode.AUTO, height=dialog_height - 80)
-        
+        # Simple dialog without scroll first
         dialog = ft.AlertDialog(
-            title=ft.Text(""),
+            title=ft.Text("Categories", size=18, weight=ft.FontWeight.BOLD),
             content=ft.Container(
-                content=content,
-                width=dialog_width,
-                padding=12,
+                content=category_items,
+                width=300,
+                padding=20,
             ),
             actions=[
-                ft.TextButton("Close", on_click=lambda e: close_dlg()),
+                ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False)),
             ],
         )
         
