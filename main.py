@@ -9122,8 +9122,14 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page):
-        """Step 2: Add ONE input field"""
-        print("DEBUG: Step 2 - show_categories_dialog called!")
+        """Step 3: Working Add button with message"""
+        print("DEBUG: Step 3 - show_categories_dialog called!")
+        
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime
+        
+        current_user_id = self.current_user.get('id') if self.current_user else 0
         
         default_categories = [
             "📦 Raw Material",
@@ -9134,15 +9140,16 @@ class StoreApp:
             "📁 Other"
         ]
         
-        # Create input field
         name_input = ft.TextField(
             hint_text="New category name",
             width=280,
             bgcolor="#2C2C2C",
         )
         
+        status_text = ft.Text("", size=12)
+        
         # Create list
-        category_items = ft.Column(spacing=8)
+        category_items = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, height=300)
         
         for cat in default_categories:
             category_items.controls.append(
@@ -9154,25 +9161,40 @@ class StoreApp:
                 )
             )
         
-        # Add input to content
+        def add_category(e):
+            name = name_input.value.strip()
+            if not name:
+                status_text.value = "❌ Enter a name"
+                status_text.color = "red"
+                page.update()
+                return
+            
+            # Just show success for now (no database save yet)
+            status_text.value = f"✓ Would add: {name}"
+            status_text.color = "green"
+            name_input.value = ""
+            page.update()
+        
         content = ft.Column([
             name_input,
-            ft.Container(height=10),
+            ft.Row([ft.ElevatedButton("Add", on_click=add_category)], alignment=ft.MainAxisAlignment.CENTER),
+            status_text,
+            ft.Divider(),
+            ft.Text("Categories:", size=14, weight=ft.FontWeight.BOLD),
             category_items,
-        ], spacing=5)
+        ], spacing=10)
         
         dialog = ft.AlertDialog(
-            title=ft.Text("Categories", size=18, weight=ft.FontWeight.BOLD),
+            title=ft.Row([
+                ft.Text("Categories", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: setattr(page.dialog, 'open', False)),
+            ]),
             content=ft.Container(
                 content=content,
                 width=350,
-                height=400,
-                padding=20,
+                height=500,
+                padding=15,
             ),
-            actions=[
-                ft.TextButton("Cancel", on_click=lambda e: setattr(page.dialog, 'open', False)),
-                ft.TextButton("Add", on_click=lambda e: print("Add clicked")),
-            ],
         )
         
         page.dialog = dialog
