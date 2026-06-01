@@ -9122,8 +9122,8 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page):
-        """Step 1: Simple dialog - WORKING version"""
-        print("DEBUG: Step 1 - show_categories_dialog called!")
+        """Step 2: Add ONE input field"""
+        print("DEBUG: Step 2 - show_categories_dialog called!")
         
         default_categories = [
             "📦 Raw Material",
@@ -9134,7 +9134,14 @@ class StoreApp:
             "📁 Other"
         ]
         
-        # Create simple list
+        # Create input field
+        name_input = ft.TextField(
+            hint_text="New category name",
+            width=280,
+            bgcolor="#2C2C2C",
+        )
+        
+        # Create list
         category_items = ft.Column(spacing=8)
         
         for cat in default_categories:
@@ -9147,16 +9154,24 @@ class StoreApp:
                 )
             )
         
-        # Simple dialog without scroll first
+        # Add input to content
+        content = ft.Column([
+            name_input,
+            ft.Container(height=10),
+            category_items,
+        ], spacing=5)
+        
         dialog = ft.AlertDialog(
             title=ft.Text("Categories", size=18, weight=ft.FontWeight.BOLD),
             content=ft.Container(
-                content=category_items,
-                width=300,
+                content=content,
+                width=350,
+                height=400,
                 padding=20,
             ),
             actions=[
-                ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.TextButton("Cancel", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.TextButton("Add", on_click=lambda e: print("Add clicked")),
             ],
         )
         
