@@ -9122,60 +9122,150 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page):
-        """With database - FIXED for mobile"""
+        """Complete working version for mobile"""
         
         import sqlite3
         import os
-        from database import DB_PATH
+        from datetime import datetime
         
-        # Get the correct database path
+        # Get correct database path for mobile
         base_dir = os.path.dirname(os.path.abspath(__file__))
         db_path = os.path.join(base_dir, "store_management.db")
         
-        print(f"DEBUG: Database path = {db_path}")
-        print(f"DEBUG: Database exists = {os.path.exists(db_path)}")
-        
         current_user_id = self.current_user.get('id') if self.current_user else 0
         
-        # Try to get categories from database with error handling
-        categories = []
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM categories WHERE user_id = ? LIMIT 5", (current_user_id,))
-            categories = cursor.fetchall()
-            conn.close()
-            print(f"DEBUG: Found {len(categories)} categories")
-        except Exception as e:
-            print(f"DEBUG: Database error: {e}")
-            # If error, show default categories
-            categories = []
+        # UI Components
+        name_input = ft.TextField(hint_text="New category", width=250, bgcolor="#2C2C2C")
+        status_text = ft.Text("", size=12)
         
-        # Create list (show default if no categories)
-        items = ft.Column(spacing=5)
+        # Container for categories list
+        items_container = ft.Column(spacing=5)
+        categories_list = ft.Container(content=items_container, height=250)
         
-        if categories:
-            for cat in categories:
-                items.controls.append(ft.Text(f"📁 {cat[0]}"))
-        else:
-            # Show default categories if database empty or error
-            default_cats = ["Raw Material", "Hardware", "Tools", "Electrical", "Other"]
-            for cat in default_cats:
-                items.controls.append(ft.Text(f"📁 {cat}"))
+        def load_categories():
+            """Load categories from database"""
+            items_container.controls.clear()
+            
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
+                cats = cursor.fetchall()
+                conn.close()
+                
+                if cats:
+                    for cat in cats:
+                        icon = cat[1] if cat[1] else "📁"
+                        items_container.controls.append(
+                            ft.Container(
+                                content=ft.Text(f"{icon} {cat[0]}", size=13),
+                                padding=8,
+                                bgcolor="#2C2C2C",
+                                border_radius=6,
+                                margin=ft.margin.only(bottom=4),
+                            )
+                        )
+                else:
+                    # Show default categories
+                    defaults = ["📦 Raw Material", "🔩 Hardware", "🔧 Tools", "⚡ Electrical", "📁 Other"]
+                    for cat in defaults:
+                        items_container.controls.append(
+                            ft.Container(
+                                content=ft.Text(cat, size=13),
+                                padding=8,
+                                bgcolor="#2C2C2C",
+                                border_radius=6,
+                                margin=ft.margin.only(bottom=4),
+                            )
+                        )
+            except Exception as e:
+                print(f"Error loading categories: {e}")
+                # Fallback to default
+                defaults = ["📦 Raw Material", "🔩 Hardware", "🔧 Tools", "📁 Other"]
+                for cat in defaults:
+                    items_container.controls.append(
+                        ft.Container(
+                            content=ft.Text(cat, size=13),
+                            padding=8,
+                            bgcolor="#2C2C2C",
+                            border_radius=6,
+                        )
+                    )
+            
+            page.update()
         
+        def add_category(e):
+            name = name_input.value.strip()
+            if not name:
+                status_text.value = "❌ Enter name"
+                status_text.color = "red"
+                page.update()
+                return
+            
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                
+                # Check if exists
+                cursor.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
+                if cursor.fetchone():
+                    status_text.value = "❌ Already exists!"
+                    status_text.color = "red"
+                    page.update()
+                    conn.close()
+                    return
+                
+                # Insert new category
+                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                cursor.execute(
+                    "INSERT INTO categories (name, icon, user_id, created_at) VALUES (?, ?, ?, ?)",
+                    (name, "📁", current_user_id, current_time)
+                )
+                conn.commit()
+                conn.close()
+                
+                status_text.value = f"✓ Added: {name}"
+                status_text.color = "green"
+                name_input.value = ""
+                page.update()
+                
+                # Reload categories
+                load_categories()
+                
+            except Exception as e:
+                status_text.value = f"Error: {str(e)}"
+                status_text.color = "red"
+                page.update()
+        
+        def close_dlg():
+            page.dialog.open = False
+            page.update()
+        
+        # Load initial categories
+        load_categories()
+        
+        # Create dialog
         content = ft.Column([
-            ft.Text("Categories", size=20, weight=ft.FontWeight.BOLD),
-            ft.TextField(hint_text="New category", width=250),
-            ft.ElevatedButton("Add"),
-            ft.Text("Your Categories:", weight=ft.FontWeight.BOLD),
-            ft.Container(content=items, height=200),
-        ], spacing=10)
+            ft.Row([
+                ft.Text("Categories", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
+            ]),
+            ft.Divider(),
+            ft.Text("Add New Category", size=14, weight=ft.FontWeight.BOLD),
+            name_input,
+            ft.ElevatedButton("➕ Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            status_text,
+            ft.Divider(),
+            ft.Text("Categories List", size=14, weight=ft.FontWeight.BOLD),
+            categories_list,
+        ], spacing=10, scroll=ft.ScrollMode.AUTO)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=content, width=320, height=450, padding=15),
-            actions=[ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False))],
+            content=ft.Container(content=content, width=350, height=550, padding=15),
+            actions=[ft.TextButton("Close", on_click=lambda e: close_dlg())],
         )
+        
         page.dialog = dialog
         dialog.open = True
         page.update()
