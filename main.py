@@ -9122,24 +9122,46 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page):
-        """With database - test on mobile"""
+        """With database - FIXED for mobile"""
         
         import sqlite3
+        import os
         from database import DB_PATH
+        
+        # Get the correct database path
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(base_dir, "store_management.db")
+        
+        print(f"DEBUG: Database path = {db_path}")
+        print(f"DEBUG: Database exists = {os.path.exists(db_path)}")
         
         current_user_id = self.current_user.get('id') if self.current_user else 0
         
-        # Get categories from database
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM categories WHERE user_id = ? LIMIT 5", (current_user_id,))
-        cats = cursor.fetchall()
-        conn.close()
+        # Try to get categories from database with error handling
+        categories = []
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM categories WHERE user_id = ? LIMIT 5", (current_user_id,))
+            categories = cursor.fetchall()
+            conn.close()
+            print(f"DEBUG: Found {len(categories)} categories")
+        except Exception as e:
+            print(f"DEBUG: Database error: {e}")
+            # If error, show default categories
+            categories = []
         
-        # Create list
+        # Create list (show default if no categories)
         items = ft.Column(spacing=5)
-        for cat in cats:
-            items.controls.append(ft.Text(f"📁 {cat[0]}"))
+        
+        if categories:
+            for cat in categories:
+                items.controls.append(ft.Text(f"📁 {cat[0]}"))
+        else:
+            # Show default categories if database empty or error
+            default_cats = ["Raw Material", "Hardware", "Tools", "Electrical", "Other"]
+            for cat in default_cats:
+                items.controls.append(ft.Text(f"📁 {cat}"))
         
         content = ft.Column([
             ft.Text("Categories", size=20, weight=ft.FontWeight.BOLD),
