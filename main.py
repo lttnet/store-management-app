@@ -9122,19 +9122,31 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page):
-        """With scroll - test on mobile"""
+        """With database - test on mobile"""
         
-        # Create a scrollable list
+        import sqlite3
+        from database import DB_PATH
+        
+        current_user_id = self.current_user.get('id') if self.current_user else 0
+        
+        # Get categories from database
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM categories WHERE user_id = ? LIMIT 5", (current_user_id,))
+        cats = cursor.fetchall()
+        conn.close()
+        
+        # Create list
         items = ft.Column(spacing=5)
-        for i in range(20):
-            items.controls.append(ft.Text(f"Item {i}"))
+        for cat in cats:
+            items.controls.append(ft.Text(f"📁 {cat[0]}"))
         
         content = ft.Column([
             ft.Text("Categories", size=20, weight=ft.FontWeight.BOLD),
             ft.TextField(hint_text="New category", width=250),
             ft.ElevatedButton("Add"),
-            ft.Text("Categories List:", weight=ft.FontWeight.BOLD),
-            ft.Container(content=items, height=200),  # Fixed height container
+            ft.Text("Your Categories:", weight=ft.FontWeight.BOLD),
+            ft.Container(content=items, height=200),
         ], spacing=10)
         
         dialog = ft.AlertDialog(
@@ -9145,7 +9157,7 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
-
+        
     def close_dialog(self, page: ft.Page):
         """Close the current dialog"""
         if page.dialog:
