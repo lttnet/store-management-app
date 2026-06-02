@@ -9122,7 +9122,7 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page):
-        """Working version - adapts to your table structure"""
+        """Working version with proper refresh"""
         
         import sqlite3
         import os
@@ -9134,7 +9134,7 @@ class StoreApp:
         
         current_user_id = self.current_user.get('id') if self.current_user else 0
         
-        # First, check what columns exist
+        # Check what columns exist
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute("PRAGMA table_info(categories)")
@@ -9142,9 +9142,6 @@ class StoreApp:
         has_user_id = 'user_id' in columns
         has_created_at = 'created_at' in columns
         conn.close()
-        
-        print(f"Table has user_id: {has_user_id}")
-        print(f"Table has created_at: {has_created_at}")
         
         # UI Components
         name_input = ft.TextField(hint_text="New category", width=250, bgcolor="#2C2C2C")
@@ -9156,12 +9153,13 @@ class StoreApp:
         )
         status_text = ft.Text("", size=12)
         
-        # Container for categories list
+        # Container for categories list - make it accessible
         items_container = ft.Column(spacing=5)
         categories_list = ft.Container(content=items_container, height=250)
         
         def load_categories():
-            """Load categories from database"""
+            """Load categories from database and refresh the list"""
+            # Clear existing items
             items_container.controls.clear()
             
             try:
@@ -9169,7 +9167,7 @@ class StoreApp:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
-                # Query without user_id if column doesn't exist
+                # Get categories
                 if has_user_id:
                     cursor.execute("SELECT name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
                 else:
@@ -9205,7 +9203,6 @@ class StoreApp:
                         )
             except Exception as e:
                 print(f"Error loading categories: {e}")
-                # Fallback to default
                 defaults = ["📦 Raw Material", "🔩 Hardware", "🔧 Tools", "📁 Other"]
                 for cat in defaults:
                     items_container.controls.append(
@@ -9217,6 +9214,7 @@ class StoreApp:
                         )
                     )
             
+            # Force update
             page.update()
         
         def add_category(e):
@@ -9271,12 +9269,12 @@ class StoreApp:
                 conn.commit()
                 conn.close()
                 
+                # Clear form and show success
+                name_input.value = ""
                 status_text.value = f"✓ Added: {name}"
                 status_text.color = "green"
-                name_input.value = ""
-                page.update()
                 
-                # Reload categories
+                # IMPORTANT: Reload the categories list
                 load_categories()
                 
             except Exception as e:
