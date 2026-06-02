@@ -9122,7 +9122,7 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page):
-        """Working version with proper refresh"""
+        """Complete working version - updates list correctly"""
         
         import sqlite3
         import os
@@ -9144,30 +9144,36 @@ class StoreApp:
         conn.close()
         
         # UI Components
-        name_input = ft.TextField(hint_text="New category", width=250, bgcolor="#2C2C2C")
-        icon_select = ft.Dropdown(
-            label="Icon", width=80,
-            options=[ft.dropdown.Option("📦"), ft.dropdown.Option("🔩"), ft.dropdown.Option("🔧"), 
-                    ft.dropdown.Option("⚡"), ft.dropdown.Option("📁")],
-            value="📁", bgcolor="#2C2C2C",
+        name_input = ft.TextField(
+            hint_text="New category name", 
+            width=250, 
+            bgcolor="#2C2C2C",
+            on_submit=lambda e: add_category(None),  # Enter key submits
         )
+        
+        icon_select = ft.Dropdown(
+            label="Icon", 
+            width=80,
+            options=[
+                ft.dropdown.Option("📦"), ft.dropdown.Option("🔩"), ft.dropdown.Option("🔧"), 
+                ft.dropdown.Option("⚡"), ft.dropdown.Option("💧"), ft.dropdown.Option("📁")
+            ],
+            value="📁", 
+            bgcolor="#2C2C2C",
+        )
+        
         status_text = ft.Text("", size=12)
         
-        # Container for categories list - make it accessible
-        items_container = ft.Column(spacing=5)
-        categories_list = ft.Container(content=items_container, height=250)
-        
-        def load_categories():
-            """Load categories from database and refresh the list"""
-            # Clear existing items
-            items_container.controls.clear()
+        # Create a refreshable list using a function that returns new list
+        def get_categories_list():
+            """Create fresh categories list"""
+            list_container = ft.Column(spacing=5)
             
             try:
                 conn = sqlite3.connect(db_path)
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
-                # Get categories
                 if has_user_id:
                     cursor.execute("SELECT name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
                 else:
@@ -9179,10 +9185,13 @@ class StoreApp:
                 if cats:
                     for cat in cats:
                         icon = cat['icon'] if cat['icon'] else "📁"
-                        items_container.controls.append(
+                        list_container.controls.append(
                             ft.Container(
-                                content=ft.Text(f"{icon} {cat['name']}", size=13),
-                                padding=8,
+                                content=ft.Row([
+                                    ft.Text(f"{icon}", size=18),
+                                    ft.Text(cat['name'], size=13, expand=True),
+                                ]),
+                                padding=ft.padding.symmetric(vertical=8, horizontal=10),
                                 bgcolor="#2C2C2C",
                                 border_radius=6,
                                 margin=ft.margin.only(bottom=4),
@@ -9190,12 +9199,19 @@ class StoreApp:
                         )
                 else:
                     # Show default categories
-                    defaults = ["📦 Raw Material", "🔩 Hardware", "🔧 Tools", "⚡ Electrical", "📁 Other"]
-                    for cat in defaults:
-                        items_container.controls.append(
+                    defaults = [
+                        ("📦", "Raw Material"), ("🔩", "Hardware"), ("🔧", "Tools"),
+                        ("⚡", "Electrical"), ("💧", "Plumbing"), ("📁", "Other")
+                    ]
+                    for icon, name in defaults:
+                        list_container.controls.append(
                             ft.Container(
-                                content=ft.Text(cat, size=13),
-                                padding=8,
+                                content=ft.Row([
+                                    ft.Text(icon, size=18),
+                                    ft.Text(name, size=13, expand=True),
+                                    ft.Text("System", size=10, color="#888888"),
+                                ]),
+                                padding=ft.padding.symmetric(vertical=8, horizontal=10),
                                 bgcolor="#2C2C2C",
                                 border_radius=6,
                                 margin=ft.margin.only(bottom=4),
@@ -9203,18 +9219,15 @@ class StoreApp:
                         )
             except Exception as e:
                 print(f"Error loading categories: {e}")
-                defaults = ["📦 Raw Material", "🔩 Hardware", "🔧 Tools", "📁 Other"]
-                for cat in defaults:
-                    items_container.controls.append(
-                        ft.Container(
-                            content=ft.Text(cat, size=13),
-                            padding=8,
-                            bgcolor="#2C2C2C",
-                            border_radius=6,
-                        )
-                    )
             
-            # Force update
+            return list_container
+        
+        # Create a container that will hold the list (will be replaced on update)
+        list_container = ft.Container(content=get_categories_list(), height=250)
+        
+        def refresh_list():
+            """Refresh the categories list"""
+            list_container.content = get_categories_list()
             page.update()
         
         def add_category(e):
@@ -9274,8 +9287,8 @@ class StoreApp:
                 status_text.value = f"✓ Added: {name}"
                 status_text.color = "green"
                 
-                # IMPORTANT: Reload the categories list
-                load_categories()
+                # Refresh the list
+                refresh_list()
                 
             except Exception as e:
                 status_text.value = f"Error: {str(e)}"
@@ -9287,10 +9300,7 @@ class StoreApp:
             page.dialog.open = False
             page.update()
         
-        # Load initial categories
-        load_categories()
-        
-        # Create dialog
+        # Create dialog content
         content = ft.Column([
             ft.Row([
                 ft.Text("Categories", size=18, weight=ft.FontWeight.BOLD, expand=True),
@@ -9304,12 +9314,12 @@ class StoreApp:
             status_text,
             ft.Divider(),
             ft.Text("Categories List", size=14, weight=ft.FontWeight.BOLD),
-            categories_list,
+            list_container,
         ], spacing=10, scroll=ft.ScrollMode.AUTO)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=content, width=350, height=550, padding=15),
+            content=ft.Container(content=content, width=380, height=580, padding=15),
             actions=[ft.TextButton("Close", on_click=lambda e: close_dlg())],
         )
         
