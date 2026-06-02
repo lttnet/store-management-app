@@ -9122,20 +9122,38 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page):
-        """Complete working version for mobile"""
+        """Working version - adapts to your table structure"""
         
         import sqlite3
         import os
         from datetime import datetime
         
-        # Get correct database path for mobile
+        # Get correct database path
         base_dir = os.path.dirname(os.path.abspath(__file__))
         db_path = os.path.join(base_dir, "store_management.db")
         
         current_user_id = self.current_user.get('id') if self.current_user else 0
         
+        # First, check what columns exist
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(categories)")
+        columns = [col[1] for col in cursor.fetchall()]
+        has_user_id = 'user_id' in columns
+        has_created_at = 'created_at' in columns
+        conn.close()
+        
+        print(f"Table has user_id: {has_user_id}")
+        print(f"Table has created_at: {has_created_at}")
+        
         # UI Components
         name_input = ft.TextField(hint_text="New category", width=250, bgcolor="#2C2C2C")
+        icon_select = ft.Dropdown(
+            label="Icon", width=80,
+            options=[ft.dropdown.Option("📦"), ft.dropdown.Option("🔩"), ft.dropdown.Option("🔧"), 
+                    ft.dropdown.Option("⚡"), ft.dropdown.Option("📁")],
+            value="📁", bgcolor="#2C2C2C",
+        )
         status_text = ft.Text("", size=12)
         
         # Container for categories list
@@ -9148,17 +9166,24 @@ class StoreApp:
             
             try:
                 conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute("SELECT name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
+                
+                # Query without user_id if column doesn't exist
+                if has_user_id:
+                    cursor.execute("SELECT name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
+                else:
+                    cursor.execute("SELECT name, icon FROM categories ORDER BY name")
+                
                 cats = cursor.fetchall()
                 conn.close()
                 
                 if cats:
                     for cat in cats:
-                        icon = cat[1] if cat[1] else "📁"
+                        icon = cat['icon'] if cat['icon'] else "📁"
                         items_container.controls.append(
                             ft.Container(
-                                content=ft.Text(f"{icon} {cat[0]}", size=13),
+                                content=ft.Text(f"{icon} {cat['name']}", size=13),
                                 padding=8,
                                 bgcolor="#2C2C2C",
                                 border_radius=6,
@@ -9207,7 +9232,11 @@ class StoreApp:
                 cursor = conn.cursor()
                 
                 # Check if exists
-                cursor.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
+                if has_user_id:
+                    cursor.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
+                else:
+                    cursor.execute("SELECT id FROM categories WHERE name = ?", (name,))
+                
                 if cursor.fetchone():
                     status_text.value = "❌ Already exists!"
                     status_text.color = "red"
@@ -9217,10 +9246,28 @@ class StoreApp:
                 
                 # Insert new category
                 current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                cursor.execute(
-                    "INSERT INTO categories (name, icon, user_id, created_at) VALUES (?, ?, ?, ?)",
-                    (name, "📁", current_user_id, current_time)
-                )
+                
+                if has_user_id and has_created_at:
+                    cursor.execute(
+                        "INSERT INTO categories (name, icon, user_id, created_at) VALUES (?, ?, ?, ?)",
+                        (name, icon_select.value, current_user_id, current_time)
+                    )
+                elif has_user_id:
+                    cursor.execute(
+                        "INSERT INTO categories (name, icon, user_id) VALUES (?, ?, ?)",
+                        (name, icon_select.value, current_user_id)
+                    )
+                elif has_created_at:
+                    cursor.execute(
+                        "INSERT INTO categories (name, icon, created_at) VALUES (?, ?, ?)",
+                        (name, icon_select.value, current_time)
+                    )
+                else:
+                    cursor.execute(
+                        "INSERT INTO categories (name, icon) VALUES (?, ?)",
+                        (name, icon_select.value)
+                    )
+                
                 conn.commit()
                 conn.close()
                 
@@ -9236,6 +9283,7 @@ class StoreApp:
                 status_text.value = f"Error: {str(e)}"
                 status_text.color = "red"
                 page.update()
+                print(f"Error: {e}")
         
         def close_dlg():
             page.dialog.open = False
@@ -9253,6 +9301,7 @@ class StoreApp:
             ft.Divider(),
             ft.Text("Add New Category", size=14, weight=ft.FontWeight.BOLD),
             name_input,
+            ft.Row([icon_select], alignment=ft.MainAxisAlignment.START),
             ft.ElevatedButton("➕ Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
             status_text,
             ft.Divider(),
