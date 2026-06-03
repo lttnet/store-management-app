@@ -9122,7 +9122,7 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page):
-        """Fixed version - will display categories correctly"""
+        """Categories dialog - Complete working version"""
         
         import sqlite3
         import os
@@ -9146,8 +9146,12 @@ class StoreApp:
             label="Icon", 
             width=80,
             options=[
-                ft.dropdown.Option("📦"), ft.dropdown.Option("🔩"), ft.dropdown.Option("🔧"), 
-                ft.dropdown.Option("⚡"), ft.dropdown.Option("💧"), ft.dropdown.Option("📁")
+                ft.dropdown.Option("📦"),
+                ft.dropdown.Option("🔩"),
+                ft.dropdown.Option("🔧"),
+                ft.dropdown.Option("⚡"),
+                ft.dropdown.Option("💧"),
+                ft.dropdown.Option("📁")
             ],
             value="📁", 
             bgcolor="#2C2C2C",
@@ -9155,7 +9159,7 @@ class StoreApp:
         
         status_text = ft.Text("", size=12)
         
-        # Categories list - WILL SHOW NOW
+        # Categories list container
         categories_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=250)
         
         def load_categories():
@@ -9167,7 +9171,6 @@ class StoreApp:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
-                # Get categories for current user
                 cursor.execute("""
                     SELECT id, name, icon, created_at 
                     FROM categories 
@@ -9178,27 +9181,22 @@ class StoreApp:
                 cats = cursor.fetchall()
                 conn.close()
                 
-                print(f"DEBUG: Loading {len(cats)} categories for display")
-                
                 if cats and len(cats) > 0:
                     for cat in cats:
                         icon = cat['icon'] if cat['icon'] else "📁"
                         
-                        # Create each category row
                         category_row = ft.Container(
                             content=ft.Row([
                                 ft.Text(icon, size=20),
-                                ft.Text(cat['name'], size=14, expand=True, weight=ft.FontWeight.BOLD),
+                                ft.Text(cat['name'], size=14, expand=True),
                             ]),
-                            padding=ft.padding.symmetric(vertical=10, horizontal=12),
+                            padding=10,
                             bgcolor="#2C2C2C",
                             border_radius=8,
                             margin=ft.margin.only(bottom=5),
                         )
                         categories_list.controls.append(category_row)
-                        print(f"DEBUG: Added category: {cat['name']}")
                 else:
-                    # Show message when no categories
                     categories_list.controls.append(
                         ft.Container(
                             content=ft.Text("No categories yet. Add one above!", size=13, color="#888888"),
@@ -9207,9 +9205,7 @@ class StoreApp:
                         )
                     )
                 
-                # Force update
                 page.update()
-                print(f"DEBUG: List has {len(categories_list.controls)} items")
                         
             except Exception as e:
                 print(f"Error loading categories: {e}")
@@ -9233,20 +9229,18 @@ class StoreApp:
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
                 
-                # Check if category already exists for this user
                 cursor.execute(
                     "SELECT id FROM categories WHERE name = ? AND user_id = ?", 
                     (name, current_user_id)
                 )
                 
                 if cursor.fetchone():
-                    status_text.value = "❌ Category already exists!"
+                    status_text.value = "❌ Already exists!"
                     status_text.color = "red"
                     page.update()
                     conn.close()
                     return
                 
-                # Insert new category with user_id
                 current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 cursor.execute("""
                     INSERT INTO categories (name, icon, user_id, created_at) 
@@ -9254,22 +9248,19 @@ class StoreApp:
                 """, (name, icon_select.value, current_user_id, current_time))
                 
                 conn.commit()
-                print(f"DEBUG: Added category '{name}' for user {current_user_id}")
                 conn.close()
                 
-                # Clear form and show success
                 name_input.value = ""
                 status_text.value = f"✓ Added: {name}"
                 status_text.color = "green"
                 
-                # Reload categories
                 load_categories()
                 
             except Exception as e:
                 status_text.value = f"Error: {str(e)}"
                 status_text.color = "red"
                 page.update()
-                print(f"Error adding category: {e}")
+                print(f"Error: {e}")
         
         def close_dlg():
             page.dialog.open = False
@@ -9288,7 +9279,7 @@ class StoreApp:
             ft.Text("Add New Category", size=14, weight=ft.FontWeight.BOLD),
             name_input,
             icon_select,
-            ft.ElevatedButton("➕ Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ft.ElevatedButton("➕ Add", on_click=add_category),
             status_text,
             ft.Divider(),
             ft.Text("My Categories", size=14, weight=ft.FontWeight.BOLD),
@@ -9297,8 +9288,15 @@ class StoreApp:
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=content, width=380, height=550, padding=15),
-            actions=[ft.TextButton("Close", on_click=lambda e: close_dlg())],
+            content=ft.Container(
+                content=content,
+                width=380,
+                height=550,
+                padding=15,
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: close_dlg()),
+            ],
         )
         
         page.dialog = dialog
