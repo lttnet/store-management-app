@@ -982,6 +982,104 @@ class StoreApp:
             self.show_accessories(page)
         page.update()
     
+    def check_table_structure(self, page: ft.Page):
+        """Check what columns your categories table has"""
+        import sqlite3
+        import os
+        
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(base_dir, "store_management.db")
+        
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Get table info
+        cursor.execute("PRAGMA table_info(categories)")
+        columns = cursor.fetchall()
+        
+        # Build message
+        message = "Categories table columns:\n"
+        for col in columns:
+            message += f"  - {col[1]} ({col[2]})\n"
+        
+        # Also count rows
+        cursor.execute("SELECT COUNT(*) FROM categories")
+        count = cursor.fetchone()[0]
+        message += f"\nTotal rows: {count}"
+        
+        conn.close()
+        
+        # Show in dialog
+        dialog = ft.AlertDialog(
+            title=ft.Text("Table Structure"),
+            content=ft.Container(
+                content=ft.Text(message, size=12),
+                width=300,
+                padding=20,
+            ),
+            actions=[ft.TextButton("OK", on_click=lambda e: setattr(page.dialog, 'open', False))],
+        )
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+    
+    def add_user_id_column(self, page: ft.Page):
+        """Add user_id column to categories table"""
+        import sqlite3
+        import os
+        
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(base_dir, "store_management.db")
+        
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # Check if user_id exists
+            cursor.execute("PRAGMA table_info(categories)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            if 'user_id' not in columns:
+                print("Adding user_id column...")
+                cursor.execute("ALTER TABLE categories ADD COLUMN user_id INTEGER DEFAULT 1")
+                conn.commit()
+                print("✓ user_id column added")
+            else:
+                print("user_id column already exists")
+            
+            if 'created_at' not in columns:
+                print("Adding created_at column...")
+                cursor.execute("ALTER TABLE categories ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+                conn.commit()
+                print("✓ created_at column added")
+            
+            # Update existing rows to have user_id = 1 (admin)
+            cursor.execute("UPDATE categories SET user_id = 1 WHERE user_id IS NULL")
+            conn.commit()
+            
+            result = "✅ Database updated successfully!\n\nuser_id column added.\ncreated_at column added.\nExisting categories assigned to user 1."
+            
+        except Exception as e:
+            result = f"❌ Error: {str(e)}"
+        
+        finally:
+            conn.close()
+        
+        # Show result
+        dialog = ft.AlertDialog(
+            title=ft.Text("Database Update"),
+            content=ft.Container(
+                content=ft.Text(result, size=12),
+                width=350,
+                padding=20,
+            ),
+            actions=[ft.TextButton("OK", on_click=lambda e: setattr(page.dialog, 'open', False))],
+        )
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+    
+
     def main(self, page: ft.Page):
         # Initialize scale helper
         self.scale_helper = ScaleHelper(page)
@@ -9120,9 +9218,9 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
-
+        
     def show_categories_dialog(self, page: ft.Page):
-        """Fixed version - guaranteed to work on mobile"""
+        """Fixed version - will display categories correctly"""
         
         import sqlite3
         import os
@@ -9132,7 +9230,8 @@ class StoreApp:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         db_path = os.path.join(base_dir, "store_management.db")
         
-        current_user_id = self.current_user.get('id') if self.current_user else 0
+        # Get current user ID
+        current_user_id = self.current_user.get('id') if self.current_user else 1
         
         # UI Components
         name_input = ft.TextField(
@@ -9154,12 +9253,11 @@ class StoreApp:
         
         status_text = ft.Text("", size=12)
         
-        # Simple list container - NOT wrapped in another container
+        # Categories list - WILL SHOW NOW
         categories_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=250)
         
         def load_categories():
-            """Load categories directly into the list"""
-            # Clear existing items
+            """Load and display categories"""
             categories_list.controls.clear()
             
             try:
@@ -9167,65 +9265,59 @@ class StoreApp:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
-                # Try to get categories
-                cursor.execute("SELECT name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
+                # Get categories for current user
+                cursor.execute("""
+                    SELECT id, name, icon, created_at 
+                    FROM categories 
+                    WHERE user_id = ? 
+                    ORDER BY name
+                """, (current_user_id,))
+                
                 cats = cursor.fetchall()
                 conn.close()
+                
+                print(f"DEBUG: Loading {len(cats)} categories for display")
                 
                 if cats and len(cats) > 0:
                     for cat in cats:
                         icon = cat['icon'] if cat['icon'] else "📁"
-                        categories_list.controls.append(
-                            ft.Container(
-                                content=ft.Row([
-                                    ft.Text(icon, size=18),
-                                    ft.Text(cat['name'], size=13, expand=True),
-                                ]),
-                                padding=8,
-                                bgcolor="#2C2C2C",
-                                border_radius=6,
-                                margin=ft.margin.only(bottom=4),
-                            )
+                        
+                        # Create each category row
+                        category_row = ft.Container(
+                            content=ft.Row([
+                                ft.Text(icon, size=20),
+                                ft.Text(cat['name'], size=14, expand=True, weight=ft.FontWeight.BOLD),
+                            ]),
+                            padding=ft.padding.symmetric(vertical=10, horizontal=12),
+                            bgcolor="#2C2C2C",
+                            border_radius=8,
+                            margin=ft.margin.only(bottom=5),
                         )
+                        categories_list.controls.append(category_row)
+                        print(f"DEBUG: Added category: {cat['name']}")
                 else:
-                    # Show default categories
-                    defaults = [
-                        ("📦", "Raw Material"), ("🔩", "Hardware"), ("🔧", "Tools"),
-                        ("⚡", "Electrical"), ("💧", "Plumbing"), ("📁", "Other")
-                    ]
-                    for icon, name in defaults:
-                        categories_list.controls.append(
-                            ft.Container(
-                                content=ft.Row([
-                                    ft.Text(icon, size=18),
-                                    ft.Text(name, size=13, expand=True),
-                                    ft.Text("System", size=10, color="#888888"),
-                                ]),
-                                padding=8,
-                                bgcolor="#2C2C2C",
-                                border_radius=6,
-                                margin=ft.margin.only(bottom=4),
-                            )
+                    # Show message when no categories
+                    categories_list.controls.append(
+                        ft.Container(
+                            content=ft.Text("No categories yet. Add one above!", size=13, color="#888888"),
+                            padding=30,
+                            alignment=ft.alignment.center,
                         )
+                    )
+                
+                # Force update
+                page.update()
+                print(f"DEBUG: List has {len(categories_list.controls)} items")
                         
             except Exception as e:
                 print(f"Error loading categories: {e}")
-                # Fallback to default
-                defaults = [("📦", "Raw Material"), ("🔩", "Hardware"), ("📁", "Other")]
-                for icon, name in defaults:
-                    categories_list.controls.append(
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Text(icon, size=18),
-                                ft.Text(name, size=13, expand=True),
-                            ]),
-                            padding=8,
-                            bgcolor="#2C2C2C",
-                            border_radius=6,
-                        )
+                categories_list.controls.append(
+                    ft.Container(
+                        content=ft.Text(f"Error: {str(e)}", size=12, color="red"),
+                        padding=20,
                     )
-            
-            page.update()
+                )
+                page.update()
         
         def add_category(e):
             name = name_input.value.strip()
@@ -9239,25 +9331,31 @@ class StoreApp:
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
                 
-                # Check if exists
-                cursor.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
+                # Check if category already exists for this user
+                cursor.execute(
+                    "SELECT id FROM categories WHERE name = ? AND user_id = ?", 
+                    (name, current_user_id)
+                )
+                
                 if cursor.fetchone():
-                    status_text.value = "❌ Already exists!"
+                    status_text.value = "❌ Category already exists!"
                     status_text.color = "red"
                     page.update()
                     conn.close()
                     return
                 
-                # Insert new category
+                # Insert new category with user_id
                 current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                cursor.execute(
-                    "INSERT INTO categories (name, icon, user_id, created_at) VALUES (?, ?, ?, ?)",
-                    (name, icon_select.value, current_user_id, current_time)
-                )
+                cursor.execute("""
+                    INSERT INTO categories (name, icon, user_id, created_at) 
+                    VALUES (?, ?, ?, ?)
+                """, (name, icon_select.value, current_user_id, current_time))
+                
                 conn.commit()
+                print(f"DEBUG: Added category '{name}' for user {current_user_id}")
                 conn.close()
                 
-                # Clear form
+                # Clear form and show success
                 name_input.value = ""
                 status_text.value = f"✓ Added: {name}"
                 status_text.color = "green"
@@ -9269,7 +9367,7 @@ class StoreApp:
                 status_text.value = f"Error: {str(e)}"
                 status_text.color = "red"
                 page.update()
-                print(f"Error: {e}")
+                print(f"Error adding category: {e}")
         
         def close_dlg():
             page.dialog.open = False
@@ -9291,8 +9389,8 @@ class StoreApp:
             ft.ElevatedButton("➕ Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
             status_text,
             ft.Divider(),
-            ft.Text("Categories List", size=14, weight=ft.FontWeight.BOLD),
-            categories_list,  # Direct reference, no extra container
+            ft.Text("My Categories", size=14, weight=ft.FontWeight.BOLD),
+            categories_list,
         ], spacing=10, scroll=ft.ScrollMode.AUTO)
         
         dialog = ft.AlertDialog(
