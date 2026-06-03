@@ -2972,7 +2972,6 @@ class StoreApp:
         self.show_categories_page(page)
 
         
-
     def show_materials_screen(self, page: ft.Page):
         """Materials screen with Overlay category dialog"""
         page.controls.clear()
@@ -3216,7 +3215,7 @@ class StoreApp:
             icon_size=24,
             icon_color=self.success_color,
             tooltip="Manage Categories",
-            on_click=lambda e: self.show_categories_dialog(page),
+            on_click=lambda e: self.show_categories_dialog(page, lambda: self.show_materials_screen(page)),
         )
         # Filters row
         filters_row = ft.Row([
@@ -3771,7 +3770,7 @@ class StoreApp:
             icon_size=24,
             icon_color=self.success_color,
             tooltip="Manage Categories",
-            on_click=lambda e: self.show_categories_page(page),  # Direct call to categories page
+            on_click=lambda e: self.show_categories_dialog(page, lambda: self.show_accessories(page)),
         )
 
         # Filters row
@@ -9121,8 +9120,8 @@ class StoreApp:
         dialog.open = True
         page.update()
 
-    def show_categories_dialog(self, page: ft.Page):
-        """Safer version - works with or without user_id column"""
+    def show_categories_dialog(self, page: ft.Page, refresh_callback=None):
+        """Categories dialog with refresh callback"""
         
         import sqlite3
         import os
@@ -9171,7 +9170,6 @@ class StoreApp:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
-                # Safe query - works with or without user_id
                 if has_user_id:
                     cursor.execute("SELECT name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
                 else:
@@ -9220,7 +9218,6 @@ class StoreApp:
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
                 
-                # Safe insert - works with or without user_id
                 if has_user_id:
                     cursor.execute(
                         "SELECT id FROM categories WHERE name = ? AND user_id = ?",
@@ -9236,7 +9233,6 @@ class StoreApp:
                     conn.close()
                     return
                 
-                # Insert
                 current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 if has_user_id:
                     cursor.execute(
@@ -9257,6 +9253,10 @@ class StoreApp:
                 status_text.color = "green"
                 load_categories()
                 
+                # IMPORTANT: Refresh the parent screen (Materials or Accessories)
+                if refresh_callback:
+                    refresh_callback()
+                
             except Exception as e:
                 status_text.value = f"Error: {str(e)}"
                 status_text.color = "red"
@@ -9265,6 +9265,9 @@ class StoreApp:
         def close_dlg():
             page.dialog.open = False
             page.update()
+            # Refresh parent screen when closing too
+            if refresh_callback:
+                refresh_callback()
         
         load_categories()
         
