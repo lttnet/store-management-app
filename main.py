@@ -7513,8 +7513,9 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
+
     def restore_database_saf(self, page: ft.Page):
-        """Restore database from backup"""
+        """Restore database from backup - NO PERMISSION ERRORS"""
         import os
         import shutil
         
@@ -7522,24 +7523,19 @@ class StoreApp:
         backup_dir = os.path.join(app_dir, "backups")
         db_path = os.path.join(app_dir, "store_management.db")
         
-        # Check if backups folder exists
+        # Create backups folder if it doesn't exist
         if not os.path.exists(backup_dir):
-            page.snack_bar = ft.SnackBar(
-                ft.Text("No backups found. Create a backup first."),
-                bgcolor=self.warning_color,
-                duration=3000
-            )
-            page.snack_bar.open = True
-            page.update()
-            return
+            os.makedirs(backup_dir, exist_ok=True)
         
         # Get list of backup files
-        backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
-        backups.sort(reverse=True)
+        backups = []
+        if os.path.exists(backup_dir):
+            backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
+            backups.sort(reverse=True)
         
         if not backups:
             page.snack_bar = ft.SnackBar(
-                ft.Text("No backup files found."),
+                ft.Text("No backups found. Create a backup first in Settings."),
                 bgcolor=self.warning_color,
                 duration=3000
             )
@@ -7556,18 +7552,30 @@ class StoreApp:
             size_kb = size_bytes / 1024
             size_str = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{size_kb / 1024:.1f} MB"
             
+            # Try to get date from filename
+            date_str = "Unknown"
+            try:
+                if '_' in backup:
+                    parts = backup.replace('.db', '').split('_')
+                    if len(parts) >= 2:
+                        date_str = parts[1]
+                        if len(date_str) == 8:
+                            date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+            except:
+                pass
+            
             backup_items.controls.append(
                 ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.icons.STORAGE, size=20, color=self.accent_color),  # Fixed: changed DATABASE to STORAGE
+                        ft.Icon(ft.icons.STORAGE, size=20, color=self.accent_color),
                         ft.Column([
                             ft.Text(backup, size=12, weight=ft.FontWeight.BOLD),
-                            ft.Text(f"Size: {size_str}", size=10, color="#888888"),
+                            ft.Text(f"Date: {date_str} | Size: {size_str}", size=10, color="#888888"),
                         ], spacing=2, expand=True),
                         ft.ElevatedButton(
                             "Restore",
                             on_click=lambda e, b=backup: confirm_restore(b),
-                            style=ft.ButtonStyle(bgcolor=self.success_color),
+                            style=ft.ButtonStyle(bgcolor=self.success_color, color="white"),
                         ),
                     ]),
                     padding=8,
@@ -7578,32 +7586,45 @@ class StoreApp:
             )
         
         def confirm_restore(backup_file):
+            """Show confirmation dialog before restore"""
+            
             def do_restore(e):
                 try:
                     backup_path = os.path.join(backup_dir, backup_file)
+                    
+                    # Close confirmation dialog
+                    confirm_dialog.open = False
+                    
+                    # Restore the database
                     shutil.copy2(backup_path, db_path)
                     
+                    # Close the backup list dialog
                     page.dialog.open = False
+                    
+                    # Show success message
                     page.snack_bar = ft.SnackBar(
-                        ft.Text(f"✓ Database restored from {backup_file}!"),
+                        ft.Text(f"✓ Database restored successfully from {backup_file}!"),
                         bgcolor=self.success_color,
                         duration=3000
                     )
                     page.snack_bar.open = True
                     
-                    # Refresh current view
+                    # Refresh current view to show restored data
                     if self.current_view == "materials":
                         self.show_materials_screen(page)
                     elif self.current_view == "accessories":
                         self.show_accessories(page)
                     elif self.current_view == "dashboard":
                         self.show_dashboard(page)
+                    elif self.current_view == "inventory":
+                        self.show_inventory(page)
                     else:
                         self.show_dashboard(page)
                     
                     page.update()
                     
                 except Exception as e:
+                    confirm_dialog.open = False
                     page.snack_bar = ft.SnackBar(
                         ft.Text(f"Restore failed: {str(e)}"),
                         bgcolor=self.danger_color,
@@ -7613,36 +7634,51 @@ class StoreApp:
                     page.update()
             
             def cancel_restore(e):
-                page.dialog.open = False
+                confirm_dialog.open = False
                 page.update()
             
             confirm_dialog = ft.AlertDialog(
-                title=ft.Text("Confirm Restore", color=self.danger_color),
-                content=ft.Text(f"Restore '{backup_file}'?\nThis will overwrite current data!"),
+                title=ft.Text("Confirm Restore", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text(f"Restore from backup:", size=14),
+                        ft.Text(f"'{backup_file}'?", size=13, weight=ft.FontWeight.BOLD),
+                        ft.Container(height=10),
+                        ft.Text("⚠️ This will OVERWRITE your current data!", size=12, color=self.danger_color),
+                        ft.Text("⚠️ This action cannot be undone!", size=12, color=self.danger_color),
+                    ], spacing=8),
+                    width=320,
+                    padding=20,
+                ),
                 actions=[
                     ft.TextButton("Cancel", on_click=cancel_restore),
                     ft.ElevatedButton("Restore", on_click=do_restore, style=ft.ButtonStyle(bgcolor=self.danger_color)),
                 ],
             )
+            
             page.dialog = confirm_dialog
             confirm_dialog.open = True
             page.update()
         
+        def close_dlg():
+            page.dialog.open = False
+            page.update()
+        
         dialog = ft.AlertDialog(
-            title=ft.Text("Restore Database", size=18, weight=ft.FontWeight.BOLD),
+            title=ft.Row([
+                ft.Text("Restore Database", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
+            ]),
             content=ft.Container(
                 content=ft.Column([
-                    ft.Text("Select a backup to restore:", size=14),
+                    ft.Text(f"Select a backup to restore ({len(backups)} available):", size=13),
                     ft.Container(height=5),
                     backup_items,
                 ], spacing=10),
-                width=400,
-                height=400,
+                width=450,
+                height=450,
                 padding=15,
             ),
-            actions=[
-                ft.TextButton("Cancel", on_click=lambda e: setattr(page.dialog, 'open', False)),
-            ],
         )
         
         page.dialog = dialog
@@ -8571,7 +8607,7 @@ class StoreApp:
 
 
     def show_backup_list(self, page: ft.Page):
-        """Show list of available backups - Silent"""
+        """Show list of available backups - NO PERMISSION ERRORS"""
         import os
         
         app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -8582,59 +8618,18 @@ class StoreApp:
             backups = [f for f in os.listdir(backup_dir) if f.endswith('.db')]
             backups.sort(reverse=True)
         
-        dialog_ref = None
-        
-        def close_dialog(e):
-            if dialog_ref:
-                dialog_ref.open = False
-                page.update()
-        
         if not backups:
-            dialog_content = ft.Column([
-                ft.Text("📁 Backups", size=18, weight=ft.FontWeight.BOLD),
-                ft.Divider(),
-                ft.Text("No backups found.", size=14),
-                ft.Text("Create a backup first.", size=12, color="#888888"),
-                ft.Container(height=20),
-                ft.Row([
-                    ft.TextButton("Close", on_click=close_dialog, expand=True),
-                ], spacing=10),
-            ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-            
-            dialog = ft.AlertDialog(
-                title=ft.Text(""),
-                content=ft.Container(content=dialog_content, width=350, height=200, padding=15),
+            page.snack_bar = ft.SnackBar(
+                ft.Text("No backups found. Create a backup first."),
+                bgcolor=self.warning_color,
+                duration=3000
             )
-            
-            dialog_ref = dialog
-            page.dialog = dialog
-            dialog.open = True
+            page.snack_bar.open = True
             page.update()
             return
         
-        def copy_to_downloads(backup_file):
-            import shutil
-            try:
-                source = os.path.join(backup_dir, backup_file)
-                dest = f"/storage/emulated/0/Download/{backup_file}"
-                shutil.copy2(source, dest)
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✓ Copied to Downloads: {backup_file}"),
-                    bgcolor=self.success_color,
-                    duration=2000
-                )
-                page.snack_bar.open = True
-                page.update()
-            except Exception:
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✓ Backup file ready: {backup_file}"),
-                    bgcolor=self.success_color,
-                    duration=2000
-                )
-                page.snack_bar.open = True
-                page.update()
-        
         def delete_backup(backup_file):
+            """Delete a backup file"""
             try:
                 os.remove(os.path.join(backup_dir, backup_file))
                 page.snack_bar = ft.SnackBar(
@@ -8643,18 +8638,16 @@ class StoreApp:
                     duration=2000
                 )
                 page.snack_bar.open = True
-                close_dialog(None)
+                page.dialog.open = False
                 self.show_backup_list(page)
-            except Exception:
+            except Exception as e:
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✓ Deleted successfully"),
-                    bgcolor=self.success_color,
+                    ft.Text(f"Failed to delete: {str(e)}"),
+                    bgcolor=self.danger_color,
                     duration=2000
                 )
                 page.snack_bar.open = True
-                close_dialog(None)
-                self.show_backup_list(page)
-            page.update()
+                page.update()
         
         backup_items = []
         for backup in backups[:20]:
@@ -8663,27 +8656,32 @@ class StoreApp:
             size_kb = size_bytes / 1024
             size_str = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{size_kb / 1024:.1f} MB"
             
+            # Try to get date from filename
+            date_str = "Unknown"
+            try:
+                if '_' in backup:
+                    parts = backup.replace('.db', '').split('_')
+                    if len(parts) >= 2:
+                        date_str = parts[1]
+                        if len(date_str) == 8:
+                            date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+            except:
+                pass
+            
             backup_items.append(
                 ft.Container(
                     content=ft.Row([
                         ft.Icon(ft.icons.FILE_PRESENT, size=20, color=self.accent_color),
                         ft.Column([
                             ft.Text(backup, size=12, weight=ft.FontWeight.BOLD),
-                            ft.Text(f"Size: {size_str}", size=10, color="#888888"),
+                            ft.Text(f"Date: {date_str} | Size: {size_str}", size=10, color="#888888"),
                         ], spacing=2, expand=True),
-                        ft.IconButton(
-                            icon=ft.icons.COPY,
-                            icon_size=20,
-                            icon_color=self.accent_color,
-                            on_click=lambda e, b=backup: copy_to_downloads(b),
-                            tooltip="Copy to Downloads",
-                        ),
                         ft.IconButton(
                             icon=ft.icons.DELETE,
                             icon_size=20,
                             icon_color=self.danger_color,
                             on_click=lambda e, b=backup: delete_backup(b),
-                            tooltip="Delete",
+                            tooltip="Delete Backup",
                         ),
                     ]),
                     padding=8,
@@ -8693,26 +8691,30 @@ class StoreApp:
                 )
             )
         
+        def close_dlg():
+            page.dialog.open = False
+            page.update()
+        
         dialog_content = ft.Column([
             ft.Row([
                 ft.Text(f"📁 Backups ({len(backups)})", size=16, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
             ]),
             ft.Divider(),
             ft.Column(backup_items, spacing=5, scroll=ft.ScrollMode.AUTO, height=400),
             ft.Container(height=10),
-            ft.Text("💡 Tap Copy to save backup to Downloads folder", size=10, color="#888888"),
+            ft.Text("💡 Backups are stored in the 'backups' folder", size=10, color="#888888"),
         ], spacing=10)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=dialog_content, width=550, height=550, padding=15),
+            content=ft.Container(content=dialog_content, width=500, height=500, padding=15),
         )
         
-        dialog_ref = dialog
         page.dialog = dialog
         dialog.open = True
         page.update()
+
     def reset_database_confirm(self, page: ft.Page):
         """Confirm and reset database"""
         
