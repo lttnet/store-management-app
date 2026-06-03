@@ -4292,116 +4292,6 @@ class StoreApp:
         delete_status = ft.Text("", size=11)
         delete_list = ft.Column(spacing=4, scroll=ft.ScrollMode.AUTO, height=150)
         
-        def load_categories():
-            """Load user's custom categories"""
-            delete_list.controls.clear()
-            conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
-            cur.execute("SELECT id, name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
-            cats = cur.fetchall()
-            conn.close()
-            
-            print(f"Found {len(cats)} custom categories for user {current_user_id}")
-            
-            for cat_id, cat_name, cat_icon in cats:
-                row = ft.Container(
-                    content=ft.Row([
-                        ft.Text(cat_icon, size=18),
-                        ft.Text(cat_name, size=13, expand=True),
-                        ft.IconButton(
-                            icon=ft.icons.DELETE,
-                            icon_size=18,
-                            icon_color=self.danger_color,
-                            on_click=lambda e, cid=cat_id, cname=cat_name: delete_category(cid, cname),
-                            tooltip="Delete",
-                        ),
-                    ], spacing=10),
-                    padding=8,
-                    bgcolor="#2C2C2C",
-                    border_radius=5,
-                )
-                delete_list.controls.append(row)
-            
-            if not delete_list.controls:
-                delete_list.controls.append(ft.Text("No custom categories yet", size=12, color="#888888", padding=10))
-            page.update()
-        
-        def add_category(e):
-            name = name_input.value.strip()
-            if not name:
-                add_status.value = "❌ Enter name"
-                page.update()
-                return
-            
-            conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
-            try:
-                cur.execute(
-                    "INSERT INTO categories (name, icon, user_id) VALUES (?, ?, ?)",
-                    (name, icon_select.value, current_user_id)
-                )
-                conn.commit()
-                name_input.value = ""
-                add_status.value = "✓ Added!"
-                load_categories()
-                if refresh_callback:
-                    refresh_callback()
-                page.update()
-            except Exception as ex:
-                print(f"Error: {ex}")
-                add_status.value = "❌ Already exists"
-                page.update()
-            finally:
-                conn.close()
-        
-        def delete_category(cat_id, cat_name):
-            """Delete category immediately"""
-            print(f"Deleting category: {cat_id} - {cat_name}")
-            
-            conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
-            cur.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat_id, current_user_id))
-            conn.commit()
-            conn.close()
-            
-            load_categories()
-            if refresh_callback:
-                refresh_callback()
-            page.update()
-        
-        def close_dialog():
-            dialog.open = False
-            page.update()
-            if refresh_callback:
-                refresh_callback()
-        
-        # Build dialog - USE = NOT :
-        dialog.content = ft.Container(
-            content=ft.Column([
-                ft.Text("Add New Category:", size=14, weight=ft.FontWeight.BOLD),
-                name_input,
-                ft.Row([icon_select], alignment=ft.MainAxisAlignment.START),
-                add_status,
-                ft.Row([
-                    ft.TextButton("Cancel", on_click=lambda e: close_dialog()),
-                    ft.FilledButton("Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
-                ], spacing=8),
-                ft.Divider(),
-                ft.Text("Your Custom Categories:", size=14, weight=ft.FontWeight.BOLD),
-                ft.Text("Tap the delete icon to remove", size=10, color="#888888"),
-                delete_list,
-            ], spacing=8),
-            width=340,
-            height=450,
-            padding=15,
-        )
-        
-        # Load initial categories
-        load_categories()
-        
-        page.dialog = dialog
-        dialog.open = True
-        page.update()
     def open_add_accessory_modal(self, page: ft.Page):
         """Add accessory - With image upload (mobile friendly)"""
         import random
@@ -9121,7 +9011,7 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page, refresh_callback=None):
-        """Categories dialog with refresh callback"""
+        """Categories dialog with delete functionality - Fixed order"""
         
         import sqlite3
         import os
@@ -9141,7 +9031,7 @@ class StoreApp:
         has_user_id = 'user_id' in columns
         conn.close()
         
-        # UI Components
+        # ===== STEP 1: Create UI Components FIRST =====
         name_input = ft.TextField(
             hint_text="New category name", 
             width=250, 
@@ -9150,19 +9040,86 @@ class StoreApp:
         
         icon_select = ft.Dropdown(
             label="Icon", 
-            width=80,
+            width=120,
             options=[
-                ft.dropdown.Option("📦"), ft.dropdown.Option("🔩"), ft.dropdown.Option("🔧"),
-                ft.dropdown.Option("⚡"), ft.dropdown.Option("💧"), ft.dropdown.Option("📁")
+                ft.dropdown.Option("📦", "📦 Raw Material"),
+                ft.dropdown.Option("🔩", "🔩 Hardware"),
+                ft.dropdown.Option("🔧", "🔧 Tools"),
+                ft.dropdown.Option("⚡", "⚡ Electrical"),
+                ft.dropdown.Option("💧", "💧 Plumbing"),
+                ft.dropdown.Option("🪵", "🪵 Wood"),
+                ft.dropdown.Option("⚙️", "⚙️ Metal"),
+                ft.dropdown.Option("🔨", "🔨 Construction"),
+                ft.dropdown.Option("📁", "📁 Other"),
             ],
             value="📁", 
             bgcolor="#2C2C2C",
         )
         
         status_text = ft.Text("", size=12)
+        
+        # ===== STEP 2: Create categories_list BEFORE any function uses it =====
         categories_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=250)
         
+        # ===== STEP 3: Define functions that use categories_list =====
+        def confirm_delete_category(category_id, category_name):
+            """Show confirmation dialog before deleting"""
+            
+            def do_delete(e):
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    
+                    cursor.execute("UPDATE materials SET category_id = NULL WHERE category_id = ?", (category_id,))
+                    cursor.execute("UPDATE accessories SET category_id = NULL WHERE category_id = ?", (category_id,))
+                    cursor.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+                    
+                    conn.commit()
+                    conn.close()
+                    
+                    confirm_dialog.open = False
+                    status_text.value = f"✓ Deleted: {category_name}"
+                    status_text.color = "green"
+                    load_categories()
+                    
+                    if refresh_callback:
+                        refresh_callback()
+                    
+                    page.update()
+                    
+                except Exception as e:
+                    status_text.value = f"Error: {str(e)}"
+                    status_text.color = "red"
+                    page.update()
+            
+            def cancel_delete(e):
+                confirm_dialog.open = False
+                page.update()
+            
+            confirm_dialog = ft.AlertDialog(
+                title=ft.Text("Delete Category", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text(f"Delete '{category_name}'?", size=14),
+                        ft.Text("Items using this category will become uncategorized.", size=11, color="#888888"),
+                        ft.Text("This cannot be undone!", size=11, color=self.danger_color),
+                    ], spacing=8),
+                    width=300,
+                    padding=20,
+                ),
+                actions=[
+                    ft.TextButton("Cancel", on_click=cancel_delete),
+                    ft.ElevatedButton("Delete", on_click=do_delete, style=ft.ButtonStyle(bgcolor=self.danger_color)),
+                ],
+            )
+            
+            page.dialog = confirm_dialog
+            confirm_dialog.open = True
+            page.update()
+        
         def load_categories():
+            """Load categories with delete buttons"""
+            # Now categories_list is defined, so this works
             categories_list.controls.clear()
             
             try:
@@ -9171,9 +9128,9 @@ class StoreApp:
                 cursor = conn.cursor()
                 
                 if has_user_id:
-                    cursor.execute("SELECT name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
+                    cursor.execute("SELECT id, name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
                 else:
-                    cursor.execute("SELECT name, icon FROM categories ORDER BY name")
+                    cursor.execute("SELECT id, name, icon FROM categories ORDER BY name")
                 
                 cats = cursor.fetchall()
                 conn.close()
@@ -9181,11 +9138,19 @@ class StoreApp:
                 if cats:
                     for cat in cats:
                         icon = cat['icon'] if cat['icon'] else "📁"
+                        
                         categories_list.controls.append(
                             ft.Container(
                                 content=ft.Row([
-                                    ft.Text(icon, size=20),
+                                    ft.Text(icon, size=22),
                                     ft.Text(cat['name'], size=14, expand=True),
+                                    ft.IconButton(
+                                        icon=ft.icons.DELETE_OUTLINE,
+                                        icon_size=18,
+                                        icon_color=self.danger_color,
+                                        tooltip="Delete Category",
+                                        on_click=lambda e, cid=cat['id'], cname=cat['name']: confirm_delete_category(cid, cname),
+                                    ),
                                 ]),
                                 padding=10,
                                 bgcolor="#2C2C2C",
@@ -9194,13 +9159,26 @@ class StoreApp:
                             )
                         )
                 else:
-                    categories_list.controls.append(
-                        ft.Container(
-                            content=ft.Text("No categories yet. Add one above!", size=13, color="#888888"),
-                            padding=30,
-                            alignment=ft.alignment.center,
+                    # Default categories (no delete button)
+                    default_cats = [
+                        ("📦", "Raw Material"), ("🔩", "Hardware"), ("🔧", "Tools"),
+                        ("⚡", "Electrical"), ("💧", "Plumbing"), ("🪵", "Wood"),
+                        ("⚙️", "Metal"), ("📁", "Other"),
+                    ]
+                    for icon, name in default_cats:
+                        categories_list.controls.append(
+                            ft.Container(
+                                content=ft.Row([
+                                    ft.Text(icon, size=22),
+                                    ft.Text(name, size=14, expand=True),
+                                    ft.Text("System", size=10, color="#888888"),
+                                ]),
+                                padding=10,
+                                bgcolor="#2C2C2C",
+                                border_radius=8,
+                                margin=ft.margin.only(bottom=5),
+                            )
                         )
-                    )
                 page.update()
             except Exception as e:
                 print(f"Error: {e}")
@@ -9219,10 +9197,7 @@ class StoreApp:
                 cursor = conn.cursor()
                 
                 if has_user_id:
-                    cursor.execute(
-                        "SELECT id FROM categories WHERE name = ? AND user_id = ?",
-                        (name, current_user_id)
-                    )
+                    cursor.execute("SELECT id FROM categories WHERE name = ? AND user_id = ?", (name, current_user_id))
                 else:
                     cursor.execute("SELECT id FROM categories WHERE name = ?", (name,))
                 
@@ -9253,7 +9228,6 @@ class StoreApp:
                 status_text.color = "green"
                 load_categories()
                 
-                # IMPORTANT: Refresh the parent screen (Materials or Accessories)
                 if refresh_callback:
                     refresh_callback()
                 
@@ -9265,12 +9239,13 @@ class StoreApp:
         def close_dlg():
             page.dialog.open = False
             page.update()
-            # Refresh parent screen when closing too
             if refresh_callback:
                 refresh_callback()
         
+        # ===== STEP 4: Load categories =====
         load_categories()
         
+        # ===== STEP 5: Create dialog content =====
         content = ft.Column([
             ft.Row([
                 ft.Text("Categories", size=18, weight=ft.FontWeight.BOLD, expand=True),
@@ -9280,7 +9255,7 @@ class StoreApp:
             ft.Text("Add New Category", size=14, weight=ft.FontWeight.BOLD),
             name_input,
             icon_select,
-            ft.ElevatedButton("➕ Add", on_click=add_category),
+            ft.ElevatedButton("➕ Add", on_click=add_category, style=ft.ButtonStyle(bgcolor=self.success_color)),
             status_text,
             ft.Divider(),
             ft.Text("My Categories", size=14, weight=ft.FontWeight.BOLD),
@@ -9289,7 +9264,7 @@ class StoreApp:
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(content=content, width=380, height=550, padding=15),
+            content=ft.Container(content=content, width=400, height=600, padding=15),
             actions=[ft.TextButton("Close", on_click=lambda e: close_dlg())],
         )
         
