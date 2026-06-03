@@ -130,8 +130,7 @@ class StoreApp:
         # Predefined default categories
         default_categories = [
             "📦 Raw Material", "🔩 Hardware", "🔧 Tools", 
-            "⚡ Electrical", "💧 Plumbing", "🪵 Wood", 
-            "⚙️ Metal", "📁 Other"
+            "⚡ Electrical", "💧 Plumbing", "⚙️ Metal", "📁 Other"
         ]
         
         # Create a simple column with scroll
@@ -3024,8 +3023,6 @@ class StoreApp:
         
         # Icon mapping for common categories
         icon_map = {
-            "Wood": "🪵",
-            "wood": "🪵",
             "Metal": "⚙️",
             "metal": "⚙️",
             "Tools": "🔧",
@@ -3054,7 +3051,16 @@ class StoreApp:
         category_filter = ft.Dropdown(
             label="Category",
             width=160 if not is_mobile else 140,
-            options=cat_options,
+            options=[
+                ft.dropdown.Option("All", "All Categories"),
+                ft.dropdown.Option("Raw Material", "📦 Raw Material"),
+                ft.dropdown.Option("Hardware", "🔩 Hardware"),
+                ft.dropdown.Option("Tools", "🔧 Tools"),
+                ft.dropdown.Option("Electrical", "⚡ Electrical"),
+                ft.dropdown.Option("Plumbing", "💧 Plumbing"),
+                ft.dropdown.Option("Metal", "⚙️ Metal"),
+                ft.dropdown.Option("Other", "📁 Other"),
+            ],
             value="All",
             bgcolor=self.card_color,
             dense=True,
@@ -3117,10 +3123,6 @@ class StoreApp:
                 filtered_count += 1
                 cat_name = m["category_name"] if m["category_name"] else "Other"
                 cat_icon = m["category_icon"] if m["category_icon"] else "📁"
-                
-                # Fix wood icon in cards
-                if cat_name == "Wood":
-                    cat_icon = "🪵"
                 
                 qty = m["quantity"]
                 quality = m["quality"]
@@ -3419,7 +3421,6 @@ class StoreApp:
             "Tools": "🔧",
             "Electrical": "⚡",
             "Plumbing": "💧",
-            "Wood": "🪵",
             "Metal": "⚙️",
             "Plastic": "🧴",
             "Glass": "🔮",
@@ -3566,8 +3567,6 @@ class StoreApp:
         
         # Icon mapping for common categories
         icon_map = {
-            "Wood": "🪵",
-            "wood": "🪵",
             "Metal": "⚙️",
             "metal": "⚙️",
             "Tools": "🔧",
@@ -3596,7 +3595,16 @@ class StoreApp:
         category_filter = ft.Dropdown(
             label="Category",
             width=160 if not is_mobile else 140,
-            options=cat_options,
+            options=[
+                ft.dropdown.Option("All", "All Categories"),
+                ft.dropdown.Option("Raw Material", "📦 Raw Material"),
+                ft.dropdown.Option("Hardware", "🔩 Hardware"),
+                ft.dropdown.Option("Tools", "🔧 Tools"),
+                ft.dropdown.Option("Electrical", "⚡ Electrical"),
+                ft.dropdown.Option("Plumbing", "💧 Plumbing"),
+                ft.dropdown.Option("Metal", "⚙️ Metal"),
+                ft.dropdown.Option("Other", "📁 Other"),
+            ],
             value="All",
             bgcolor=self.card_color,
             dense=True,
