@@ -9122,18 +9122,25 @@ class StoreApp:
         page.update()
 
     def show_categories_dialog(self, page: ft.Page):
-        """Categories dialog - Complete working version"""
+        """Safer version - works with or without user_id column"""
         
         import sqlite3
         import os
         from datetime import datetime
         
-        # Get correct database path
+        # Get database path
         base_dir = os.path.dirname(os.path.abspath(__file__))
         db_path = os.path.join(base_dir, "store_management.db")
         
-        # Get current user ID
         current_user_id = self.current_user.get('id') if self.current_user else 1
+        
+        # Check if user_id column exists
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(categories)")
+        columns = [col[1] for col in cursor.fetchall()]
+        has_user_id = 'user_id' in columns
+        conn.close()
         
         # UI Components
         name_input = ft.TextField(
@@ -9146,24 +9153,17 @@ class StoreApp:
             label="Icon", 
             width=80,
             options=[
-                ft.dropdown.Option("📦"),
-                ft.dropdown.Option("🔩"),
-                ft.dropdown.Option("🔧"),
-                ft.dropdown.Option("⚡"),
-                ft.dropdown.Option("💧"),
-                ft.dropdown.Option("📁")
+                ft.dropdown.Option("📦"), ft.dropdown.Option("🔩"), ft.dropdown.Option("🔧"),
+                ft.dropdown.Option("⚡"), ft.dropdown.Option("💧"), ft.dropdown.Option("📁")
             ],
             value="📁", 
             bgcolor="#2C2C2C",
         )
         
         status_text = ft.Text("", size=12)
-        
-        # Categories list container
         categories_list = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=250)
         
         def load_categories():
-            """Load and display categories"""
             categories_list.controls.clear()
             
             try:
@@ -9171,31 +9171,30 @@ class StoreApp:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
-                cursor.execute("""
-                    SELECT id, name, icon, created_at 
-                    FROM categories 
-                    WHERE user_id = ? 
-                    ORDER BY name
-                """, (current_user_id,))
+                # Safe query - works with or without user_id
+                if has_user_id:
+                    cursor.execute("SELECT name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
+                else:
+                    cursor.execute("SELECT name, icon FROM categories ORDER BY name")
                 
                 cats = cursor.fetchall()
                 conn.close()
                 
-                if cats and len(cats) > 0:
+                if cats:
                     for cat in cats:
                         icon = cat['icon'] if cat['icon'] else "📁"
-                        
-                        category_row = ft.Container(
-                            content=ft.Row([
-                                ft.Text(icon, size=20),
-                                ft.Text(cat['name'], size=14, expand=True),
-                            ]),
-                            padding=10,
-                            bgcolor="#2C2C2C",
-                            border_radius=8,
-                            margin=ft.margin.only(bottom=5),
+                        categories_list.controls.append(
+                            ft.Container(
+                                content=ft.Row([
+                                    ft.Text(icon, size=20),
+                                    ft.Text(cat['name'], size=14, expand=True),
+                                ]),
+                                padding=10,
+                                bgcolor="#2C2C2C",
+                                border_radius=8,
+                                margin=ft.margin.only(bottom=5),
+                            )
                         )
-                        categories_list.controls.append(category_row)
                 else:
                     categories_list.controls.append(
                         ft.Container(
@@ -9204,17 +9203,9 @@ class StoreApp:
                             alignment=ft.alignment.center,
                         )
                     )
-                
                 page.update()
-                        
             except Exception as e:
-                print(f"Error loading categories: {e}")
-                categories_list.controls.append(
-                    ft.Container(
-                        content=ft.Text(f"Error: {str(e)}", size=12, color="red"),
-                        padding=20,
-                    )
-                )
+                print(f"Error: {e}")
                 page.update()
         
         def add_category(e):
@@ -9229,10 +9220,14 @@ class StoreApp:
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
                 
-                cursor.execute(
-                    "SELECT id FROM categories WHERE name = ? AND user_id = ?", 
-                    (name, current_user_id)
-                )
+                # Safe insert - works with or without user_id
+                if has_user_id:
+                    cursor.execute(
+                        "SELECT id FROM categories WHERE name = ? AND user_id = ?",
+                        (name, current_user_id)
+                    )
+                else:
+                    cursor.execute("SELECT id FROM categories WHERE name = ?", (name,))
                 
                 if cursor.fetchone():
                     status_text.value = "❌ Already exists!"
@@ -9241,11 +9236,18 @@ class StoreApp:
                     conn.close()
                     return
                 
+                # Insert
                 current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                cursor.execute("""
-                    INSERT INTO categories (name, icon, user_id, created_at) 
-                    VALUES (?, ?, ?, ?)
-                """, (name, icon_select.value, current_user_id, current_time))
+                if has_user_id:
+                    cursor.execute(
+                        "INSERT INTO categories (name, icon, user_id, created_at) VALUES (?, ?, ?, ?)",
+                        (name, icon_select.value, current_user_id, current_time)
+                    )
+                else:
+                    cursor.execute(
+                        "INSERT INTO categories (name, icon, created_at) VALUES (?, ?, ?)",
+                        (name, icon_select.value, current_time)
+                    )
                 
                 conn.commit()
                 conn.close()
@@ -9253,23 +9255,19 @@ class StoreApp:
                 name_input.value = ""
                 status_text.value = f"✓ Added: {name}"
                 status_text.color = "green"
-                
                 load_categories()
                 
             except Exception as e:
                 status_text.value = f"Error: {str(e)}"
                 status_text.color = "red"
                 page.update()
-                print(f"Error: {e}")
         
         def close_dlg():
             page.dialog.open = False
             page.update()
         
-        # Load initial categories
         load_categories()
         
-        # Create dialog content
         content = ft.Column([
             ft.Row([
                 ft.Text("Categories", size=18, weight=ft.FontWeight.BOLD, expand=True),
@@ -9288,15 +9286,8 @@ class StoreApp:
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
-            content=ft.Container(
-                content=content,
-                width=380,
-                height=550,
-                padding=15,
-            ),
-            actions=[
-                ft.TextButton("Close", on_click=lambda e: close_dlg()),
-            ],
+            content=ft.Container(content=content, width=380, height=550, padding=15),
+            actions=[ft.TextButton("Close", on_click=lambda e: close_dlg())],
         )
         
         page.dialog = dialog
