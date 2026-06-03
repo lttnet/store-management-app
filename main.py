@@ -2970,9 +2970,8 @@ class StoreApp:
     def open_category_dialog(self, page: ft.Page, refresh_callback=None):
         self.show_categories_page(page)
 
-            
     def show_materials_screen(self, page: ft.Page):
-        """Materials screen with button-based quality filter"""
+        """Materials screen with safe quality filter (no special characters)"""
         page.controls.clear()
         
         import sqlite3
@@ -3017,69 +3016,43 @@ class StoreApp:
         main_column.controls.append(search_field)
         main_column.controls.append(ft.Container(height=5))
         
-        # Category filter dropdown
-        cat_options = [ft.dropdown.Option("All", "All Categories")]
+        # Category filter dropdown (with icons)
+        cat_options = [ft.dropdown.Option("All", "📁 All Categories")]
         for c in categories:
             icon = c['icon'] if c['icon'] else "📁"
             cat_options.append(ft.dropdown.Option(str(c["id"]), f"{icon} {c['name']}"))
         
         category_filter = ft.Dropdown(
             label="Category",
-            width=160 if not is_mobile else 140,
+            width=170 if not is_mobile else 150,
             options=cat_options,
             value="All",
             bgcolor=self.card_color,
             dense=True,
         )
         
-        # ========== QUALITY FILTER AS BUTTONS (SIMPLE & WORKS) ==========
-        quality_container = ft.Column(spacing=8)
-        selected_quality = "All"
+        # ========== QUALITY FILTER - MOST SAFE OPTION ==========
+        # Using simple letters in brackets - 100% guaranteed to work on all devices
+        quality_filter = ft.Dropdown(
+            label="Quality",
+            width=150 if not is_mobile else 130,
+            value="All",
+            bgcolor=self.card_color,
+            dense=True,
+            options=[
+                ft.dropdown.Option("All", "[A] All Qualities"),
+                ft.dropdown.Option("New", "[N] New"),
+                ft.dropdown.Option("Used", "[U] Used"),
+                ft.dropdown.Option("Damaged", "[D] Damaged"),
+                ft.dropdown.Option("Repaired", "[R] Repaired"),
+            ],
+        )
         
-        # Quality options with colors
-        qualities = [
-            ("All", "All", "#FF5252"),      # Red
-            ("New", "New", "#4CAF50"),       # Green
-            ("Used", "Used", "#FF9800"),     # Orange
-            ("Damaged", "Damaged", "#F44336"), # Red
-            ("Repaired", "Repaired", "#2196F3"), # Blue
-        ]
-        
-        def set_quality(quality):
-            nonlocal selected_quality
-            selected_quality = quality
+        def on_quality_change(e):
+            self.current_material_filter = quality_filter.value
             update_cards()
-            # Update button styles
-            for row in quality_container.controls:
-                for btn in row.controls:
-                    if btn.data == quality:
-                        btn.bgcolor = self.accent_color
-                    else:
-                        btn.bgcolor = self.card_color
-            page.update()
         
-        # Create buttons in rows (2 rows for mobile)
-        row1 = ft.Row(spacing=8, wrap=True)
-        row2 = ft.Row(spacing=8, wrap=True)
-        
-        for i, (val, label, color) in enumerate(qualities):
-            btn = ft.Container(
-                content=ft.Text(label, size=13, color="white"),
-                data=val,
-                padding=ft.padding.symmetric(horizontal=15, vertical=8),
-                bgcolor=self.accent_color if val == "All" else self.card_color,
-                border_radius=20,
-                ink=True,
-                on_click=lambda e, v=val: set_quality(v),
-            )
-            
-            if i < 3:  # First 3 buttons in row1
-                row1.controls.append(btn)
-            else:      # Remaining buttons in row2
-                row2.controls.append(btn)
-        
-        quality_container.controls.append(row1)
-        quality_container.controls.append(row2)
+        quality_filter.on_change = on_quality_change
         
         # Add Category Button
         add_category_btn = ft.IconButton(
@@ -3090,15 +3063,14 @@ class StoreApp:
             on_click=lambda e: self.show_categories_dialog(page, lambda: self.show_materials_screen(page)),
         )
         
-        # Filters row - Category dropdown and Add button
-        top_filters = ft.Row([
+        # Filters row
+        filters_row = ft.Row([
             category_filter,
+            quality_filter,
             add_category_btn,
         ], spacing=8, alignment=ft.MainAxisAlignment.START, wrap=True)
         
-        main_column.controls.append(top_filters)
-        main_column.controls.append(ft.Text("Quality:", size=12, color="#888888"))
-        main_column.controls.append(quality_container)
+        main_column.controls.append(filters_row)
         main_column.controls.append(ft.Container(height=5))
         
         # Cards container
@@ -3109,6 +3081,7 @@ class StoreApp:
             cards_container.controls.clear()
             search_query = search_field.value.lower() if search_field.value else ""
             selected_cat_id = category_filter.value
+            selected_quality = quality_filter.value
             
             filtered_count = 0
             for m in materials:
@@ -3137,6 +3110,14 @@ class StoreApp:
                 }
                 quality_color = quality_colors.get(quality, "#888888")
                 
+                # Quality display text with bracket
+                quality_display = {
+                    "New": "[N] New",
+                    "Used": "[U] Used",
+                    "Damaged": "[D] Damaged",
+                    "Repaired": "[R] Repaired"
+                }.get(quality, quality)
+                
                 card = ft.Card(
                     content=ft.Container(
                         content=ft.Column([
@@ -3148,7 +3129,7 @@ class StoreApp:
                             ft.Row([
                                 ft.Text(f"{cat_icon} {cat_name}", size=11, color=self.accent_color, expand=True),
                                 ft.Container(
-                                    content=ft.Text(quality, size=9, color="white"),
+                                    content=ft.Text(quality_display, size=9, color="white"),
                                     bgcolor=quality_color,
                                     border_radius=6,
                                     padding=ft.padding.symmetric(horizontal=6, vertical=2),
@@ -3181,6 +3162,9 @@ class StoreApp:
                 cards_container.controls.insert(0, count_text)
             
             page.update()
+        
+        # Initialize filter
+        self.current_material_filter = "All"
         
         # Event handlers
         search_field.on_change = lambda e: update_cards()
@@ -3615,20 +3599,20 @@ class StoreApp:
             dense=True,
         )
         
-        # Quality filter dropdown with emoji icons
+        # In show_accessories screen, use the same quality filter:
         quality_filter = ft.Dropdown(
             label="Quality",
-            width=130 if not is_mobile else 110,
-            options=[
-                ft.dropdown.Option("All", "All"),
-                ft.dropdown.Option("New", "🟢 New"),
-                ft.dropdown.Option("Used", "🟠 Used"),
-                ft.dropdown.Option("Damaged", "🔴 Damaged"),
-                ft.dropdown.Option("Repaired", "🔵 Repaired"),
-            ],
+            width=150 if not is_mobile else 130,
             value="All",
             bgcolor=self.card_color,
             dense=True,
+            options=[
+                ft.dropdown.Option("All", "[A] All Qualities"),
+                ft.dropdown.Option("New", "[N] New"),
+                ft.dropdown.Option("Used", "[U] Used"),
+                ft.dropdown.Option("Damaged", "[D] Damaged"),
+                ft.dropdown.Option("Repaired", "[R] Repaired"),
+            ],
         )
         
         # Add Category Button
