@@ -980,105 +980,7 @@ class StoreApp:
             self.show_materials_screen(page)
         elif self.current_view == "accessories":
             self.show_accessories(page)
-        page.update()
-    
-    def check_table_structure(self, page: ft.Page):
-        """Check what columns your categories table has"""
-        import sqlite3
-        import os
-        
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(base_dir, "store_management.db")
-        
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Get table info
-        cursor.execute("PRAGMA table_info(categories)")
-        columns = cursor.fetchall()
-        
-        # Build message
-        message = "Categories table columns:\n"
-        for col in columns:
-            message += f"  - {col[1]} ({col[2]})\n"
-        
-        # Also count rows
-        cursor.execute("SELECT COUNT(*) FROM categories")
-        count = cursor.fetchone()[0]
-        message += f"\nTotal rows: {count}"
-        
-        conn.close()
-        
-        # Show in dialog
-        dialog = ft.AlertDialog(
-            title=ft.Text("Table Structure"),
-            content=ft.Container(
-                content=ft.Text(message, size=12),
-                width=300,
-                padding=20,
-            ),
-            actions=[ft.TextButton("OK", on_click=lambda e: setattr(page.dialog, 'open', False))],
-        )
-        page.dialog = dialog
-        dialog.open = True
-        page.update()
-    
-    def add_user_id_column(self, page: ft.Page):
-        """Add user_id column to categories table"""
-        import sqlite3
-        import os
-        
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(base_dir, "store_management.db")
-        
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        try:
-            # Check if user_id exists
-            cursor.execute("PRAGMA table_info(categories)")
-            columns = [col[1] for col in cursor.fetchall()]
-            
-            if 'user_id' not in columns:
-                print("Adding user_id column...")
-                cursor.execute("ALTER TABLE categories ADD COLUMN user_id INTEGER DEFAULT 1")
-                conn.commit()
-                print("✓ user_id column added")
-            else:
-                print("user_id column already exists")
-            
-            if 'created_at' not in columns:
-                print("Adding created_at column...")
-                cursor.execute("ALTER TABLE categories ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-                conn.commit()
-                print("✓ created_at column added")
-            
-            # Update existing rows to have user_id = 1 (admin)
-            cursor.execute("UPDATE categories SET user_id = 1 WHERE user_id IS NULL")
-            conn.commit()
-            
-            result = "✅ Database updated successfully!\n\nuser_id column added.\ncreated_at column added.\nExisting categories assigned to user 1."
-            
-        except Exception as e:
-            result = f"❌ Error: {str(e)}"
-        
-        finally:
-            conn.close()
-        
-        # Show result
-        dialog = ft.AlertDialog(
-            title=ft.Text("Database Update"),
-            content=ft.Container(
-                content=ft.Text(result, size=12),
-                width=350,
-                padding=20,
-            ),
-            actions=[ft.TextButton("OK", on_click=lambda e: setattr(page.dialog, 'open', False))],
-        )
-        page.dialog = dialog
-        dialog.open = True
-        page.update()
-    
+        page.update()    
 
     def main(self, page: ft.Page):
         # Initialize scale helper
@@ -9218,7 +9120,7 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
-        
+
     def show_categories_dialog(self, page: ft.Page):
         """Fixed version - will display categories correctly"""
         
