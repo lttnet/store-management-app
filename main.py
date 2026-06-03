@@ -2973,7 +2973,7 @@ class StoreApp:
 
         
     def show_materials_screen(self, page: ft.Page):
-        """Materials screen with Overlay category dialog"""
+        """Materials screen with proper category filter icons"""
         page.controls.clear()
         
         import sqlite3
@@ -2991,11 +2991,12 @@ class StoreApp:
         """)
         materials = cursor.fetchall()
         
-        # Load categories for filter
+        # Load categories for filter with proper icon handling
         cursor.execute("SELECT id, name, icon FROM categories ORDER BY name")
         categories = cursor.fetchall()
         conn.close()
         
+        # Navigation
         nav = self.create_bottom_nav(page)
         is_mobile = page.width < 800 if page.width else False
         
@@ -3018,11 +3019,37 @@ class StoreApp:
         main_column.controls.append(search_field)
         main_column.controls.append(ft.Container(height=5))
         
-        # Category filter dropdown
+        # Category filter dropdown with proper icons
         cat_options = [ft.dropdown.Option("All", "All Categories")]
+        
+        # Icon mapping for common categories
+        icon_map = {
+            "Wood": "🪵",
+            "wood": "🪵",
+            "Metal": "⚙️",
+            "metal": "⚙️",
+            "Tools": "🔧",
+            "tools": "🔧",
+            "Hardware": "🔩",
+            "hardware": "🔩",
+            "Electrical": "⚡",
+            "electrical": "⚡",
+            "Plumbing": "💧",
+            "plumbing": "💧",
+            "Raw Material": "📦",
+            "raw material": "📦",
+        }
+        
         for c in categories:
-            icon = c['icon'] if c['icon'] else "📁"
-            cat_options.append(ft.dropdown.Option(str(c["id"]), f"{icon} {c['name']}"))
+            cat_id = c["id"]
+            cat_name = c["name"]
+            cat_icon = c["icon"] if c["icon"] else "📁"
+            
+            # Override with correct icon if needed
+            if cat_name in icon_map:
+                cat_icon = icon_map[cat_name]
+            
+            cat_options.append(ft.dropdown.Option(str(cat_id), f"{cat_icon} {cat_name}"))
         
         category_filter = ft.Dropdown(
             label="Category",
@@ -3033,7 +3060,7 @@ class StoreApp:
             dense=True,
         )
         
-        # Quality filter dropdown
+        # Quality filter dropdown with emoji icons
         quality_filter = ft.Dropdown(
             label="Quality",
             width=130 if not is_mobile else 110,
@@ -3050,166 +3077,6 @@ class StoreApp:
         )
         
         # Add Category Button
-        def show_category_overlay(e):
-            """Show category dialog as an overlay"""
-            
-            current_user_id = self.current_user.get('id') if self.current_user else 0
-            
-            # Create overlay container
-            overlay = ft.Container(
-                expand=True,
-                bgcolor="#80000000",
-                visible=True,
-            )
-            
-            # Form fields
-            name_input = ft.TextField(label="New Category", width=260, bgcolor=self.card_color)
-            icon_select = ft.Dropdown(
-                label="Icon",
-                width=70,
-                options=[
-                    ft.dropdown.Option("📦", "📦"),
-                    ft.dropdown.Option("🔩", "🔩"),
-                    ft.dropdown.Option("🔧", "🔧"),
-                    ft.dropdown.Option("⚡", "⚡"),
-                    ft.dropdown.Option("💧", "💧"),
-                    ft.dropdown.Option("🪵", "🪵"),
-                    ft.dropdown.Option("⚙️", "⚙️"),
-                    ft.dropdown.Option("📁", "📁"),
-                ],
-                value="📁",
-                bgcolor=self.card_color,
-            )
-            status_text = ft.Text("", size=11)
-            
-            # Categories list
-            cats_container = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=180)
-            
-            def refresh_cats():
-                cats_container.controls.clear()
-                conn = sqlite3.connect(DB_PATH)
-                cur = conn.cursor()
-                cur.execute("SELECT id, name, icon FROM categories WHERE user_id = ? ORDER BY name", (current_user_id,))
-                cats = cur.fetchall()
-                conn.close()
-                
-                for cid, cname, cicon in cats:
-                    row = ft.Container(
-                        content=ft.Row([
-                            ft.Text(cicon, size=16),
-                            ft.Text(cname, size=12, expand=True),
-                            ft.IconButton(
-                                icon=ft.icons.DELETE,
-                                icon_size=16,
-                                icon_color="#FF5252",
-                                on_click=lambda e, id=cid: delete_cat(id),
-                            ),
-                        ], spacing=8),
-                        padding=8,
-                        bgcolor="#2C2C2C",
-                        border_radius=5,
-                    )
-                    cats_container.controls.append(row)
-                
-                if not cats_container.controls:
-                    cats_container.controls.append(ft.Text("No custom categories", size=11, color="#888888"))
-                page.update()
-            
-            def delete_cat(cat_id):
-                conn = sqlite3.connect(DB_PATH)
-                cur = conn.cursor()
-                cur.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (cat_id, current_user_id))
-                conn.commit()
-                conn.close()
-                refresh_cats()
-                refresh_screen()
-                page.update()
-            
-            def add_cat(e):
-                name = name_input.value.strip()
-                if not name:
-                    status_text.value = "❌ Enter name"
-                    page.update()
-                    return
-                
-                conn = sqlite3.connect(DB_PATH)
-                cur = conn.cursor()
-                try:
-                    cur.execute(
-                        "INSERT INTO categories (name, icon, user_id) VALUES (?, ?, ?)",
-                        (name, icon_select.value, current_user_id)
-                    )
-                    conn.commit()
-                    name_input.value = ""
-                    status_text.value = "✓ Added!"
-                    refresh_cats()
-                    refresh_screen()
-                    page.update()
-                except:
-                    status_text.value = "❌ Already exists"
-                    page.update()
-                finally:
-                    conn.close()
-            
-            def refresh_screen():
-                # Reload categories for filter
-                conn = sqlite3.connect(DB_PATH)
-                cur = conn.cursor()
-                cur.execute("SELECT id, name, icon FROM categories ORDER BY name")
-                new_cats = cur.fetchall()
-                conn.close()
-                
-                new_options = [ft.dropdown.Option("All", "All Categories")]
-                for c in new_cats:
-                    icon = c['icon'] if c['icon'] else "📁"
-                    new_options.append(ft.dropdown.Option(str(c["id"]), f"{icon} {c['name']}"))
-                category_filter.options = new_options
-                category_filter.update()
-                update_cards()
-            
-            def close_overlay():
-                overlay.visible = False
-                page.overlay.remove(overlay)
-                page.update()
-            
-            # Create dialog card
-            dialog_card = ft.Card(
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Row([
-                            ft.Text("Categories", size=18, weight=ft.FontWeight.BOLD, expand=True),
-                            ft.IconButton(icon=ft.icons.CLOSE, icon_size=18, on_click=lambda e: close_overlay()),
-                        ]),
-                        ft.Divider(),
-                        name_input,
-                        icon_select,
-                        status_text,
-                        ft.Row([
-                            ft.TextButton("Cancel", on_click=lambda e: close_overlay()),
-                            ft.FilledButton("Add", on_click=add_cat, style=ft.ButtonStyle(bgcolor="#4CAF50")),
-                        ], spacing=8),
-                        ft.Divider(),
-                        ft.Text("Your Categories:", size=13, weight=ft.FontWeight.BOLD),
-                        cats_container,
-                    ], spacing=8),
-                    width=340,
-                    height=480,
-                    padding=15,
-                ),
-                elevation=5,
-            )
-            
-            # Center the card
-            overlay.content = ft.Row(
-                [dialog_card],
-                alignment=ft.MainAxisAlignment.CENTER,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            )
-            
-            refresh_cats()
-            page.overlay.append(overlay)
-            page.update()
-        
         add_category_btn = ft.IconButton(
             icon=ft.icons.ADD_CIRCLE_OUTLINE,
             icon_size=24,
@@ -3217,6 +3084,7 @@ class StoreApp:
             tooltip="Manage Categories",
             on_click=lambda e: self.show_categories_dialog(page, lambda: self.show_materials_screen(page)),
         )
+        
         # Filters row
         filters_row = ft.Row([
             category_filter,
@@ -3249,6 +3117,11 @@ class StoreApp:
                 filtered_count += 1
                 cat_name = m["category_name"] if m["category_name"] else "Other"
                 cat_icon = m["category_icon"] if m["category_icon"] else "📁"
+                
+                # Fix wood icon in cards
+                if cat_name == "Wood":
+                    cat_icon = "🪵"
+                
                 qty = m["quantity"]
                 quality = m["quality"]
                 
@@ -3303,6 +3176,7 @@ class StoreApp:
             
             page.update()
         
+        # Event handlers
         search_field.on_change = lambda e: update_cards()
         category_filter.on_change = lambda e: update_cards()
         quality_filter.on_change = lambda e: update_cards()
@@ -3640,9 +3514,9 @@ class StoreApp:
             self.material_detail_panel.content = self.create_detail_panel(material, self.page_ref)
             self.page_ref.update()
 
-                        # ============ ACCESSORIES SCREEN ============
+                            # ============ ACCESSORIES SCREEN ============
     def show_accessories(self, page: ft.Page):
-        """Accessories screen with icon buttons and filters"""
+        """Accessories screen with proper category filter icons"""
         page.controls.clear()
         
         import sqlite3
@@ -3660,7 +3534,7 @@ class StoreApp:
         """)
         accessories = cursor.fetchall()
         
-        # Load categories for filter
+        # Load categories for filter with proper icon handling
         cursor.execute("SELECT id, name, icon FROM categories ORDER BY name")
         categories = cursor.fetchall()
         conn.close()
@@ -3687,12 +3561,38 @@ class StoreApp:
         main_column.controls.append(search_field)
         main_column.controls.append(ft.Container(height=5))
         
-        # Category filter dropdown with icons
-        cat_options = [ft.dropdown.Option("All", "All")]
+        # Category filter dropdown with proper icons
+        cat_options = [ft.dropdown.Option("All", "All Categories")]
+        
+        # Icon mapping for common categories
+        icon_map = {
+            "Wood": "🪵",
+            "wood": "🪵",
+            "Metal": "⚙️",
+            "metal": "⚙️",
+            "Tools": "🔧",
+            "tools": "🔧",
+            "Hardware": "🔩",
+            "hardware": "🔩",
+            "Electrical": "⚡",
+            "electrical": "⚡",
+            "Plumbing": "💧",
+            "plumbing": "💧",
+            "Raw Material": "📦",
+            "raw material": "📦",
+        }
+        
         for c in categories:
-            icon = c['icon'] if c['icon'] else "📁"
-            cat_options.append(ft.dropdown.Option(str(c["id"]), f"{icon} {c['name']}"))
-
+            cat_id = c["id"]
+            cat_name = c["name"]
+            cat_icon = c["icon"] if c["icon"] else "📁"
+            
+            # Override with correct icon if needed
+            if cat_name in icon_map:
+                cat_icon = icon_map[cat_name]
+            
+            cat_options.append(ft.dropdown.Option(str(cat_id), f"{cat_icon} {cat_name}"))
+        
         category_filter = ft.Dropdown(
             label="Category",
             width=160 if not is_mobile else 140,
@@ -3718,53 +3618,7 @@ class StoreApp:
             dense=True,
         )
         
-        # Add Category Icon Button
-        def show_add_category(e):
-            def add_new_category():
-                new_name = new_cat_field.value.strip()
-                if new_name:
-                    conn2 = sqlite3.connect(DB_PATH)
-                    cur = conn2.cursor()
-                    try:
-                        cur.execute("INSERT INTO categories (name, icon) VALUES (?, ?)", 
-                                (new_name, icon_dropdown.value))
-                        conn2.commit()
-                        add_dialog.open = False
-                        page.snack_bar = ft.SnackBar(ft.Text(f"✓ Category '{new_name}' added"), bgcolor=self.success_color)
-                        page.snack_bar.open = True
-                        self.show_accessories(page)
-                    except:
-                        page.snack_bar = ft.SnackBar(ft.Text("Category already exists!"), bgcolor=self.danger_color)
-                        page.snack_bar.open = True
-                    finally:
-                        conn2.close()
-            
-            icon_options = ["📦", "🔩", "🔧", "⚡", "💧", "🪵", "⚙️", "📁"]
-            new_cat_field = ft.TextField(label="Category Name", width=250)
-            icon_dropdown = ft.Dropdown(
-                label="Icon", 
-                width=100, 
-                options=[ft.dropdown.Option(icon, icon) for icon in icon_options],
-                value="📁"
-            )
-            
-            add_dialog = ft.AlertDialog(
-                title=ft.Text("Add New Category"),
-                content=ft.Container(
-                    content=ft.Column([new_cat_field, icon_dropdown], spacing=10),
-                    width=350, 
-                    padding=20
-                ),
-                actions=[
-                    ft.TextButton("Cancel", on_click=lambda e: setattr(add_dialog, 'open', False)),
-                    ft.FilledButton("Add", on_click=lambda e: add_new_category(), 
-                                style=ft.ButtonStyle(bgcolor=self.success_color))
-                ],
-            )
-            page.dialog = add_dialog
-            add_dialog.open = True
-            page.update()
-        
+        # Add Category Button
         add_category_btn = ft.IconButton(
             icon=ft.icons.ADD_CIRCLE_OUTLINE,
             icon_size=24,
@@ -3772,7 +3626,7 @@ class StoreApp:
             tooltip="Manage Categories",
             on_click=lambda e: self.show_categories_dialog(page, lambda: self.show_accessories(page)),
         )
-
+        
         # Filters row
         filters_row = ft.Row([
             category_filter,
@@ -3805,12 +3659,16 @@ class StoreApp:
                 filtered_count += 1
                 cat_name = a["category_name"] if a["category_name"] else "Other"
                 cat_icon = a["category_icon"] if a["category_icon"] else "📁"
+                
+                # Fix wood icon in cards
+                if cat_name == "Wood":
+                    cat_icon = "🪵"
+                
                 qty = a["quantity"]
                 quality = a["quality"]
                 price = a["price"] if a["price"] else 0
                 price_text = f"${price:.2f}" if price > 0 else ""
                 
-                # Quality icon mapping
                 quality_icon = "🟢" if quality == "New" else "🟠" if quality == "Used" else "🔴" if quality == "Damaged" else "🔵"
                 quality_color = "#2E7D32" if quality == "New" else "#F57C00" if quality == "Used" else "#FF5252" if quality == "Damaged" else "#1976D2"
                 
