@@ -1238,9 +1238,488 @@ class StoreApp:
             height=65,
             bgcolor=self.sidebar_color,
         )
-                # ============ DASHBOARD ============
+    
+    def export_csv_to_downloads(self, page: ft.Page):
+        """Export CSV directly to Downloads folder on mobile"""
+        import csv
+        import os
+        from datetime import datetime
+        
+        try:
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Try to save to Downloads folder first (for mobile)
+            if os.path.exists("/storage/emulated/0/Download"):
+                downloads_path = "/storage/emulated/0/Download"
+            elif os.path.exists(os.path.expanduser("~/Downloads")):
+                downloads_path = os.path.expanduser("~/Downloads")
+            else:
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                downloads_path = os.path.join(base_dir, "exports")
+                os.makedirs(downloads_path, exist_ok=True)
+            
+            files_created = []
+            
+            # Export materials
+            if materials:
+                materials_file = os.path.join(downloads_path, f"materials_{timestamp}.csv")
+                with open(materials_file, 'w', newline='', encoding='utf-8-sig') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['Name', 'Category', 'Quantity', 'Quality', 'Location', 'Size', 'Length', 'Colors', 'Notes', 'Barcode'])
+                    for m in materials:
+                        writer.writerow([
+                            m.get('name', ''),
+                            m.get('category_name', 'Other'),
+                            m.get('quantity', 0),
+                            m.get('quality', 'New'),
+                            m.get('location_ids', ''),
+                            m.get('size', ''),
+                            m.get('length', ''),
+                            m.get('colors', ''),
+                            m.get('notes', ''),
+                            m.get('barcode_value', '')
+                        ])
+                files_created.append(f"materials_{timestamp}.csv")
+            
+            # Export accessories
+            if accessories:
+                accessories_file = os.path.join(downloads_path, f"accessories_{timestamp}.csv")
+                with open(accessories_file, 'w', newline='', encoding='utf-8-sig') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['Name', 'Category', 'Quantity', 'Price', 'Quality', 'Location', 'Notes', 'Barcode'])
+                    for a in accessories:
+                        writer.writerow([
+                            a.get('name', ''),
+                            a.get('category_name', 'Other'),
+                            a.get('quantity', 0),
+                            a.get('price', 0),
+                            a.get('quality', 'New'),
+                            a.get('location', ''),
+                            a.get('notes', ''),
+                            a.get('barcode_value', '')
+                        ])
+                files_created.append(f"accessories_{timestamp}.csv")
+            
+            if files_created:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ CSV saved to Downloads folder"),
+                    bgcolor=self.success_color,
+                    duration=4000
+                )
+            else:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("No data to export"),
+                    bgcolor=self.warning_color,
+                    duration=3000
+                )
+            
+            page.snack_bar.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Export failed: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+
+    def generate_inventory_html(self, materials, accessories, total_items, total_stock, low_stock_count, total_materials, total_accessories, timestamp):
+        """Generate HTML content for inventory report"""
+        from datetime import datetime
+        
+        html_content = f"""<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+        <title>Inventory Report</title>
+        <style>
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+            }}
+            .container {{
+                max-width: 1200px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 16px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                overflow: hidden;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #1976D2 0%, #2196F3 100%);
+                color: white;
+                padding: 30px;
+                text-align: center;
+            }}
+            .header h1 {{
+                font-size: 24px;
+                margin-bottom: 10px;
+            }}
+            .header p {{
+                font-size: 14px;
+                opacity: 0.9;
+            }}
+            .stats {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 15px;
+                padding: 25px;
+                background: #f8f9fa;
+            }}
+            .stat-card {{
+                background: white;
+                padding: 15px;
+                border-radius: 12px;
+                text-align: center;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            }}
+            .stat-card .value {{
+                font-size: 28px;
+                font-weight: bold;
+                color: #1976D2;
+            }}
+            .stat-card .label {{
+                font-size: 12px;
+                color: #666;
+                margin-top: 5px;
+            }}
+            .section {{
+                padding: 20px 25px;
+            }}
+            .section h2 {{
+                font-size: 18px;
+                margin-bottom: 15px;
+                color: #333;
+                border-left: 4px solid #1976D2;
+                padding-left: 12px;
+            }}
+            .table-wrapper {{
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 13px;
+            }}
+            th, td {{
+                border: 1px solid #ddd;
+                padding: 10px 8px;
+                text-align: left;
+            }}
+            th {{
+                background-color: #1976D2;
+                color: white;
+                font-weight: 600;
+            }}
+            tr:nth-child(even) {{
+                background-color: #f9f9f9;
+            }}
+            .badge {{
+                display: inline-block;
+                padding: 3px 10px;
+                border-radius: 20px;
+                font-size: 11px;
+                font-weight: 600;
+                color: white;
+            }}
+            .badge-new {{ background-color: #4CAF50; }}
+            .badge-used {{ background-color: #FF9800; }}
+            .badge-damaged {{ background-color: #F44336; }}
+            .badge-repaired {{ background-color: #2196F3; }}
+            .low-stock {{ color: #F44336; font-weight: bold; }}
+            .footer {{
+                text-align: center;
+                padding: 20px;
+                background: #f8f9fa;
+                color: #888;
+                font-size: 11px;
+            }}
+            @media (max-width: 600px) {{
+                body {{ padding: 10px; }}
+                .stats {{ gap: 8px; padding: 15px; }}
+                .stat-card .value {{ font-size: 22px; }}
+                .section {{ padding: 15px; }}
+                th, td {{ padding: 6px 4px; font-size: 11px; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>📊 Store Management System</h1>
+                <p>Inventory Report - {datetime.now().strftime('%B %d, %Y at %I:%M %p')}</p>
+            </div>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="value">{total_items}</div>
+                    <div class="label">Total Items</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">{total_stock}</div>
+                    <div class="label">Total Stock</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">{low_stock_count}</div>
+                    <div class="label">Low Stock</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">{total_materials}</div>
+                    <div class="label">Materials</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">{total_accessories}</div>
+                    <div class="label">Accessories</div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>📦 Materials ({total_materials})</h2>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Quantity</th>
+                                <th>Quality</th>
+                                <th>Location</th>
+                            </tr>
+                        </thead>
+                        <tbody>"""
+        
+        # Add materials
+        for m in materials[:100]:
+            qty = m.get('quantity', 0)
+            qty_class = 'low-stock' if qty < 10 else ''
+            quality = m.get('quality', 'Used')
+            html_content += f"""
+                            <tr>
+                                <td>{m.get('name', 'N/A')}</td>
+                                <td class='{qty_class}'>{qty}</td>
+                                <td><span class='badge badge-{quality.lower()}'>{quality}</span></td>
+                                <td>{m.get('location_ids', 'N/A')}</td>
+                            </tr>"""
+        
+        html_content += f"""
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>🔧 Accessories ({total_accessories})</h2>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Quantity</th>
+                                <th>Price</th>
+                                <th>Quality</th>
+                                <th>Location</th>
+                            </tr>
+                        </thead>
+                        <tbody>"""
+        
+        # Add accessories
+        for a in accessories[:100]:
+            qty = a.get('quantity', 0)
+            qty_class = 'low-stock' if qty < 10 else ''
+            quality = a.get('quality', 'Used')
+            price = a.get('price', 0)
+            price_text = f"${price:.2f}" if price else "-"
+            html_content += f"""
+                            <tr>
+                                <td>{a.get('name', 'N/A')}</td>
+                                <td class='{qty_class}'>{qty}</td>
+                                <td>{price_text}</td>
+                                <td><span class='badge badge-{quality.lower()}'>{quality}</span></td>
+                                <td>{a.get('location', 'N/A')}</td>
+                            </tr>"""
+        
+        html_content += f"""
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="footer">
+                <p>Generated by Store Management System</p>
+                <p>Report ID: {timestamp}</p>
+            </div>
+        </div>
+    </body>
+    </html>"""
+        
+        return html_content
+    
+    def generate_low_stock_html_content(self, low_stock_items):
+        """Generate HTML content for low stock report"""
+        from datetime import datetime
+        
+        html_content = f"""<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Low Stock Report</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 20px;
+                background: #f5f5f5;
+            }}
+            .container {{
+                max-width: 1000px;
+                margin: 0 auto;
+                background: white;
+                border-radius: 12px;
+                padding: 20px;
+            }}
+            h1 {{ color: #F44336; }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }}
+            th, td {{
+                border: 1px solid #ddd;
+                padding: 10px;
+                text-align: left;
+            }}
+            th {{
+                background-color: #F44336;
+                color: white;
+            }}
+            .critical {{ background-color: #FFEBEE; }}
+            .footer {{
+                text-align: center;
+                margin-top: 20px;
+                color: #888;
+                font-size: 12px;
+            }}
+            @media (max-width: 600px) {{
+                th, td {{ padding: 6px; font-size: 12px; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>⚠️ Low Stock Report</h1>
+            <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p>Total low stock items: {len(low_stock_items)}</p>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Name</th>
+                            <th>Current Stock</th>
+                            <th>Quality</th>
+                            <th>Location</th>
+                        </tr>
+                    </thead>
+                    <tbody>"""
+        
+        for item in low_stock_items:
+            critical_class = 'critical' if item['quantity'] < 5 else ''
+            html_content += f"""
+                        <tr class='{critical_class}'>
+                            <td>{item['type']}</td>
+                            <td><strong>{item['name']}</strong></td>
+                            <td style='color:#F44336;font-weight:bold'>{item['quantity']}</td>
+                            <td>{item['quality']}</td>
+                            <td>{item['location']}</td>
+                        </tr>"""
+        
+        html_content += f"""
+                    </tbody>
+                </table>
+            </div>
+            <div class="footer">
+                <p>Generated by Store Management System</p>
+            </div>
+        </div>
+    </body>
+    </html>"""
+        
+        return html_content
+    
+    def export_html_and_open(self, page: ft.Page):
+        """Export HTML and auto-open using launch_url (works on mobile)"""
+        import os
+        from datetime import datetime
+        
+        try:
+            # Get export directory
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            export_dir = os.path.join(base_dir, "exports")
+            
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir, exist_ok=True)
+            
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            # Calculate stats
+            total_materials = len(materials)
+            total_accessories = len(accessories)
+            total_items = total_materials + total_accessories
+            total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
+            low_stock_count = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
+            
+            # Create filename
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"inventory_report_{timestamp}.html"
+            file_path = os.path.join(export_dir, filename)
+            
+            # Generate HTML content
+            html_content = self.generate_inventory_html(materials, accessories, total_items, total_stock, low_stock_count, total_materials, total_accessories, timestamp)
+            
+            # Save file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            # Show success message
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ HTML saved: {filename}"),
+                bgcolor=self.success_color,
+                duration=2000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            # Auto-open in browser using launch_url (works on mobile)
+            file_url = f"file://{os.path.abspath(file_path)}"
+            page.launch_url(file_url)
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Export failed: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+               # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Dashboard with proper quality icons"""
+        """Dashboard with working export CSV to Downloads and HTML auto-open"""
         page.controls.clear()
         
         # Check if mobile
@@ -1299,16 +1778,15 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # ========== SECTION 3: QUALITY DISTRIBUTION (WITH EMOJI ICONS) ==========
+        # ========== SECTION 3: QUALITY DISTRIBUTION ==========
         main_column.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
         
-        # First row - New and Used
         quality_row1 = ft.Row([
             ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#4CAF50"),
-                    ft.Text(f"New: {quality_counts.get('New', 0)}", size=14, color=self.text_color),
-                ], spacing=8),
+                                    ft.Icon(ft.icons.CIRCLE, size=16, color="#4CAF50"),
+                                    ft.Text(f"New: {quality_counts.get('New', 0)}", size=14, color=self.text_color),
+                                ], spacing=8),
                 padding=ft.padding.symmetric(horizontal=12, vertical=8),
                 bgcolor=self.card_color,
                 border_radius=8,
@@ -1316,9 +1794,9 @@ class StoreApp:
             ),
             ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#FF9800"),
-                    ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=14, color=self.text_color),
-                ], spacing=8),
+                                    ft.Icon(ft.icons.CIRCLE, size=16, color="#FF9800"),
+                                    ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=14, color=self.text_color),
+                                ], spacing=8),
                 padding=ft.padding.symmetric(horizontal=12, vertical=8),
                 bgcolor=self.card_color,
                 border_radius=8,
@@ -1327,13 +1805,12 @@ class StoreApp:
         ], spacing=8)
         main_column.controls.append(quality_row1)
         
-        # Second row - Damaged and Repaired
         quality_row2 = ft.Row([
             ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#F44336"),
-                    ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=14, color=self.text_color),
-                ], spacing=8),
+                                    ft.Icon(ft.icons.CIRCLE, size=16, color="#F44336"),
+                                    ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=14, color=self.text_color),
+                                ], spacing=8),
                 padding=ft.padding.symmetric(horizontal=12, vertical=8),
                 bgcolor=self.card_color,
                 border_radius=8,
@@ -1341,9 +1818,9 @@ class StoreApp:
             ),
             ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#2196F3"),
-                    ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=14, color=self.text_color),
-                ], spacing=8),
+                                    ft.Icon(ft.icons.CIRCLE, size=16, color="#2196F3"),
+                                    ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=14, color=self.text_color),
+                                ], spacing=8),
                 padding=ft.padding.symmetric(horizontal=12, vertical=8),
                 bgcolor=self.card_color,
                 border_radius=8,
@@ -1437,7 +1914,7 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # ========== SECTION 8: IMPORT / EXPORT ==========
+        # ========== SECTION 8: IMPORT / EXPORT (UPDATED FOR MOBILE) ==========
         main_column.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
         
         main_column.controls.append(
@@ -1448,14 +1925,22 @@ class StoreApp:
         )
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_all_data_simple(page), expand=True),
-                ft.ElevatedButton("Export HTML", on_click=lambda e: self.export_inventory_html(page), expand=True),
+                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_csv_to_downloads(page), expand=True),
+                ft.ElevatedButton("Export HTML", on_click=lambda e: self.export_html_and_open(page), expand=True),
             ], spacing=8)
         )
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton("Low Stock Report", on_click=lambda e: self.export_low_stock_html(page), expand=True,
                                 style=ft.ButtonStyle(bgcolor=self.danger_color)),
+            ], spacing=8)
+        )
+        
+        # ========== SECTION 9: VIEW EXPORTS BUTTON ==========
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton("📁 View Exported Files", on_click=lambda e: self.show_exported_files(page), expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.accent_color)),
             ], spacing=8)
         )
         
@@ -1480,6 +1965,161 @@ class StoreApp:
         
         self.current_view = "dashboard"
         page.update()
+    def show_exported_files(self, page: ft.Page):
+        """Show list of exported files - Works on mobile"""
+        import os
+        
+        # Get exports folder path
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        export_dir = os.path.join(base_dir, "exports")
+        
+        # Create exports folder if not exists
+        if not os.path.exists(export_dir):
+            os.makedirs(export_dir, exist_ok=True)
+        
+        # Get all files in exports folder
+        files = []
+        if os.path.exists(export_dir):
+            files = [f for f in os.listdir(export_dir) if os.path.isfile(os.path.join(export_dir, f))]
+            files.sort(reverse=True)
+        
+        if not files:
+            # Show message if no files
+            dialog = ft.AlertDialog(
+                title=ft.Text("📁 Exported Files", size=18, weight=ft.FontWeight.BOLD),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.icons.FOLDER_OPEN, size=50, color="#888888"),
+                        ft.Text("No exported files found", size=14),
+                        ft.Text("Export some data first from Dashboard or Inventory", size=11, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                    width=300,
+                    padding=30,
+                ),
+                actions=[ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False))],
+            )
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
+            return
+        
+        # Create file list with copy buttons
+        file_items = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=350)
+        
+        for file in files:
+            file_path = os.path.join(export_dir, file)
+            size_bytes = os.path.getsize(file_path)
+            
+            # Format file size
+            if size_bytes < 1024:
+                size_str = f"{size_bytes} B"
+            elif size_bytes < 1024 * 1024:
+                size_str = f"{size_bytes / 1024:.1f} KB"
+            else:
+                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+            
+            # Choose icon based on file type
+            if file.endswith('.csv'):
+                icon_name = "📊"
+                icon_color = "#4CAF50"
+            elif file.endswith('.html'):
+                icon_name = "🌐"
+                icon_color = "#2196F3"
+            else:
+                icon_name = "📄"
+                icon_color = "#888888"
+            
+            # Create row for each file
+            file_items.controls.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Text(icon_name, size=20),
+                        ft.Column([
+                            ft.Text(file, size=12, weight=ft.FontWeight.BOLD),
+                            ft.Text(f"Size: {size_str}", size=10, color="#888888"),
+                        ], spacing=2, expand=True),
+                        ft.IconButton(
+                            icon=ft.icons.COPY,
+                            icon_size=20,
+                            icon_color=self.accent_color,
+                            on_click=lambda e, f=file: self.copy_file_to_downloads(page, f),
+                            tooltip="Copy to Downloads",
+                        ),
+                    ]),
+                    padding=8,
+                    bgcolor="#2C2C2C",
+                    border_radius=8,
+                    margin=ft.margin.only(bottom=5),
+                )
+            )
+        
+        def close_dlg():
+            page.dialog.open = False
+            page.update()
+        
+        # Create dialog
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text("📁 Exported Files", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
+            ]),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text(f"Found {len(files)} exported file(s):", size=13),
+                    ft.Container(height=5),
+                    file_items,
+                    ft.Container(height=10),
+                    ft.Text("💡 Tap the copy icon to save file to Downloads folder", size=10, color="#888888"),
+                ], spacing=10),
+                width=400,
+                height=500,
+                padding=15,
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: close_dlg()),
+            ],
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def copy_file_to_downloads(self, page: ft.Page, filename):
+        """Copy file to Downloads folder"""
+        import os
+        import shutil
+        
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            source = os.path.join(base_dir, "exports", filename)
+            
+            # Check for Android Downloads folder
+            if os.path.exists("/storage/emulated/0/Download"):
+                dest = f"/storage/emulated/0/Download/{filename}"
+            elif os.path.exists(os.path.expanduser("~/Downloads")):
+                dest = os.path.join(os.path.expanduser("~/Downloads"), filename)
+            else:
+                # Fallback to app folder
+                dest = os.path.join(base_dir, "exports", f"copy_{filename}")
+            
+            shutil.copy2(source, dest)
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Copied: {filename}"),
+                bgcolor=self.success_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Copy failed: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
     def _create_stat_card(self, icon, value, label):
         """Create a statistics card"""
         return ft.Container(
