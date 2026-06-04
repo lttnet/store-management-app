@@ -1239,6 +1239,145 @@ class StoreApp:
             bgcolor=self.sidebar_color,
         )
     
+    def export_csv_simple(self, page: ft.Page):
+        """Simple CSV export - saves to app storage, shows location"""
+        import csv
+        import os
+        from datetime import datetime
+        
+        try:
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"store_export_{timestamp}.csv"
+            
+            # Save to app's private storage (ALWAYS works, no permission needed)
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            export_dir = os.path.join(base_dir, "exports")
+            
+            # Create folder if not exists
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir)
+            
+            file_path = os.path.join(export_dir, filename)
+            
+            # Write CSV file
+            with open(file_path, 'w', encoding='utf-8-sig') as f:
+                writer = csv.writer(f)
+                
+                writer.writerow(['STORE MANAGEMENT SYSTEM - EXPORT'])
+                writer.writerow([f'Export Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'])
+                writer.writerow([])
+                
+                # Materials
+                writer.writerow(['MATERIALS'])
+                writer.writerow(['Name', 'Category', 'Quantity', 'Quality', 'Location', 'Size', 'Length', 'Colors', 'Notes'])
+                for m in materials:
+                    writer.writerow([
+                        m.get('name', ''),
+                        m.get('category_name', 'Other'),
+                        m.get('quantity', 0),
+                        m.get('quality', 'New'),
+                        m.get('location_ids', ''),
+                        m.get('size', ''),
+                        m.get('length', ''),
+                        m.get('colors', ''),
+                        m.get('notes', '')
+                    ])
+                
+                writer.writerow([])
+                
+                # Accessories
+                writer.writerow(['ACCESSORIES'])
+                writer.writerow(['Name', 'Category', 'Quantity', 'Price', 'Quality', 'Location', 'Notes'])
+                for a in accessories:
+                    writer.writerow([
+                        a.get('name', ''),
+                        a.get('category_name', 'Other'),
+                        a.get('quantity', 0),
+                        a.get('price', 0),
+                        a.get('quality', 'New'),
+                        a.get('location', ''),
+                        a.get('notes', '')
+                    ])
+            
+            # Get file size
+            file_size = os.path.getsize(file_path)
+            if file_size < 1024:
+                size_str = f"{file_size} bytes"
+            elif file_size < 1024 * 1024:
+                size_str = f"{file_size / 1024:.1f} KB"
+            else:
+                size_str = f"{file_size / (1024 * 1024):.1f} MB"
+            
+            # Show success dialog with file location
+            def copy_path():
+                page.set_clipboard(file_path)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("✓ File path copied to clipboard!"),
+                    bgcolor=self.success_color,
+                    duration=2000
+                )
+                page.snack_bar.open = True
+                page.update()
+            
+            def close_dlg():
+                page.dialog.open = False
+                page.update()
+            
+            dialog = ft.AlertDialog(
+                title=ft.Row([
+                    ft.Text("✅ Export Successful", size=18, weight=ft.FontWeight.BOLD, color=self.success_color, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
+                ]),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text(f"📄 {filename}", size=14, weight=ft.FontWeight.BOLD),
+                        ft.Text(f"Size: {size_str}", size=12, color="#888888"),
+                        ft.Divider(),
+                        ft.Text("📍 File Location:", size=13, weight=ft.FontWeight.BOLD),
+                        ft.Container(
+                            content=ft.Text(file_path, size=9, color="#888888", selectable=True),
+                            padding=8,
+                            bgcolor="#2C2C2C",
+                            border_radius=6,
+                        ),
+                        ft.Row([
+                            ft.ElevatedButton("📋 Copy Path", on_click=lambda e: copy_path(), expand=True),
+                        ], spacing=8),
+                        ft.Divider(),
+                        ft.Text("📱 How to access this file:", size=13, weight=ft.FontWeight.BOLD),
+                        ft.Text("1️⃣ Tap 'Copy Path' above", size=11),
+                        ft.Text("2️⃣ Open a file manager app (like CX File Explorer)", size=11),
+                        ft.Text("3️⃣ Paste the path in the file manager", size=11),
+                        ft.Text("4️⃣ Tap the file to open/share it", size=11),
+                        ft.Container(height=5),
+                        ft.Text("💡 You can also view this file in 'View Exports'", size=10, color="#888888"),
+                    ], spacing=8),
+                    width=400,
+                    height=450,
+                    padding=15,
+                ),
+                actions=[
+                    ft.TextButton("Close", on_click=lambda e: close_dlg()),
+                    ft.ElevatedButton("📁 View All Exports", on_click=lambda e: self.show_exported_files(page)),
+                ],
+            )
+            
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
     def export_csv_to_downloads(self, page: ft.Page):
         """Export CSV directly to Downloads folder on mobile"""
         import csv
@@ -1998,7 +2137,7 @@ class StoreApp:
         )
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_csv_with_picker(page), expand=True),
+                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_csv_simple(page), expand=True),
                 ft.ElevatedButton("Export HTML", on_click=lambda e: self.export_html_and_open(page), expand=True),
             ], spacing=8)
         )
@@ -2047,8 +2186,9 @@ class StoreApp:
         page.update()
 
     def show_exported_files(self, page: ft.Page):
-        """Show list of exported files"""
+        """Show list of exported files with copy to downloads option"""
         import os
+        import shutil
         
         base_dir = os.path.dirname(os.path.abspath(__file__))
         export_dir = os.path.join(base_dir, "exports")
@@ -2063,17 +2203,9 @@ class StoreApp:
         
         if not files:
             dialog = ft.AlertDialog(
-                title=ft.Text("📁 Exported Files", size=18, weight=ft.FontWeight.BOLD),
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Icon(ft.icons.FOLDER_OPEN, size=50, color="#888888"),
-                        ft.Text("No exported files found", size=14),
-                        ft.Text("Export some data first from Dashboard", size=11, color="#888888"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
-                    width=300,
-                    padding=30,
-                ),
-                actions=[ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False))],
+                title=ft.Text("📁 Exported Files"),
+                content=ft.Text("No exported files found.\n\nExport data first from Dashboard."),
+                actions=[ft.TextButton("OK", on_click=lambda e: setattr(page.dialog, 'open', False))],
             )
             page.dialog = dialog
             dialog.open = True
@@ -2104,12 +2236,15 @@ class StoreApp:
                                 ft.Text(file, size=14, weight=ft.FontWeight.BOLD),
                                 ft.Text(size_str, size=11, color="#888888"),
                             ], spacing=3, expand=True),
-                            ft.ElevatedButton(
-                                "Open",
-                                on_click=lambda e, f=file: self.open_exported_file(page, f),
-                                style=ft.ButtonStyle(bgcolor=self.accent_color),
-                                icon=ft.icons.OPEN_IN_NEW,
-                            ),
+                            ft.Row([
+                                ft.IconButton(
+                                    icon=ft.icons.COPY,
+                                    icon_size=20,
+                                    icon_color=self.accent_color,
+                                    on_click=lambda e, f=file: self.copy_file_to_clipboard(page, f),
+                                    tooltip="Copy Path",
+                                ),
+                            ]),
                         ], spacing=12),
                         padding=15,
                     ),
@@ -2126,11 +2261,42 @@ class StoreApp:
                 ft.Text("📁 Exported Files", size=18, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
             ]),
-            content=ft.Container(content=file_items, width=450, height=500, padding=15),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text(f"Found {len(files)} exported file(s):", size=13),
+                    ft.Text("Tap the copy icon to copy file path", size=11, color="#888888"),
+                    ft.Container(height=5),
+                    file_items,
+                    ft.Container(height=10),
+                    ft.Text("💡 Use a file manager (like CX File Explorer) to access these files", size=10, color="#888888"),
+                    ft.Text("💡 The files are stored in the app's private storage", size=10, color="#888888"),
+                ], spacing=10),
+                width=450,
+                height=550,
+                padding=15,
+            ),
         )
         
         page.dialog = dialog
         dialog.open = True
+        page.update()
+
+    def copy_file_to_clipboard(self, page: ft.Page, filename):
+        """Copy file path to clipboard"""
+        import os
+        
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(base_dir, "exports", filename)
+        abs_path = os.path.abspath(file_path)
+        
+        page.set_clipboard(abs_path)
+        
+        page.snack_bar = ft.SnackBar(
+            ft.Text(f"✓ Path copied: {abs_path}"),
+            bgcolor=self.success_color,
+            duration=4000
+        )
+        page.snack_bar.open = True
         page.update()
 
     def open_exported_file(self, page: ft.Page, filename):
