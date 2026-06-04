@@ -1239,6 +1239,159 @@ class StoreApp:
             bgcolor=self.sidebar_color,
         )
     
+    def export_csv_visible(self, page: ft.Page):
+        """Export CSV to a visible folder on mobile"""
+        import csv
+        import os
+        from datetime import datetime
+        
+        try:
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"store_export_{timestamp}.csv"
+            
+            # Try multiple visible locations (in order of preference)
+            possible_paths = [
+                "/storage/emulated/0/Download",      # Downloads folder
+                "/storage/emulated/0/Documents",     # Documents folder
+                "/storage/emulated/0/Movies",        # Movies folder
+                "/storage/emulated/0/Pictures",      # Pictures folder
+                "/storage/emulated/0/DCIM",          # DCIM folder
+            ]
+            
+            selected_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    selected_path = path
+                    break
+            
+            # If no folder exists, create Downloads path (should always exist)
+            if not selected_path:
+                selected_path = "/storage/emulated/0/Download"
+                os.makedirs(selected_path, exist_ok=True)
+            
+            # Full file path
+            file_path = os.path.join(selected_path, filename)
+            
+            # Write CSV file
+            with open(file_path, 'w', encoding='utf-8-sig') as f:
+                writer = csv.writer(f)
+                
+                writer.writerow(['STORE MANAGEMENT SYSTEM - EXPORT'])
+                writer.writerow([f'Export Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'])
+                writer.writerow([])
+                
+                # Materials
+                writer.writerow(['MATERIALS'])
+                writer.writerow(['Name', 'Category', 'Quantity', 'Quality', 'Location', 'Size', 'Length', 'Colors', 'Notes'])
+                for m in materials:
+                    writer.writerow([
+                        m.get('name', ''),
+                        m.get('category_name', 'Other'),
+                        m.get('quantity', 0),
+                        m.get('quality', 'New'),
+                        m.get('location_ids', ''),
+                        m.get('size', ''),
+                        m.get('length', ''),
+                        m.get('colors', ''),
+                        m.get('notes', '')
+                    ])
+                
+                writer.writerow([])
+                
+                # Accessories
+                writer.writerow(['ACCESSORIES'])
+                writer.writerow(['Name', 'Category', 'Quantity', 'Price', 'Quality', 'Location', 'Notes'])
+                for a in accessories:
+                    writer.writerow([
+                        a.get('name', ''),
+                        a.get('category_name', 'Other'),
+                        a.get('quantity', 0),
+                        a.get('price', 0),
+                        a.get('quality', 'New'),
+                        a.get('location', ''),
+                        a.get('notes', '')
+                    ])
+            
+            # Get file size
+            file_size = os.path.getsize(file_path)
+            if file_size < 1024:
+                size_str = f"{file_size} bytes"
+            elif file_size < 1024 * 1024:
+                size_str = f"{file_size / 1024:.1f} KB"
+            else:
+                size_str = f"{file_size / (1024 * 1024):.1f} MB"
+            
+            def close_dlg():
+                page.dialog.open = False
+                page.update()
+            
+            def open_folder():
+                close_dlg()
+                # Try to open the folder
+                page.launch_url(f"file://{selected_path}")
+            
+            dialog = ft.AlertDialog(
+                title=ft.Row([
+                    ft.Text("✅ Export Successful", size=18, weight=ft.FontWeight.BOLD, color=self.success_color, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
+                ]),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text(f"📄 {filename}", size=14, weight=ft.FontWeight.BOLD),
+                        ft.Text(f"Size: {size_str}", size=12, color="#888888"),
+                        ft.Divider(),
+                        ft.Text("📍 File saved to:", size=13, weight=ft.FontWeight.BOLD),
+                        ft.Container(
+                            content=ft.Text(f"{selected_path}/{filename}", size=10, color="#888888", selectable=True),
+                            padding=8,
+                            bgcolor="#2C2C2C",
+                            border_radius=6,
+                        ),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "📂 Open Folder", 
+                                on_click=lambda e: open_folder(),
+                                expand=True,
+                                icon=ft.icons.FOLDER_OPEN,
+                            ),
+                        ], spacing=8),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "📋 Copy Path", 
+                                on_click=lambda e: page.set_clipboard(f"{selected_path}/{filename}"),
+                                expand=True,
+                                icon=ft.icons.CONTENT_COPY,
+                            ),
+                        ], spacing=8),
+                        ft.Container(height=10),
+                        ft.Text("💡 You can find this file in your Downloads folder", size=10, color="#888888"),
+                        ft.Text("💡 Use any file manager app to open the CSV file", size=10, color="#888888"),
+                    ], spacing=8),
+                    width=400,
+                    height=420,
+                    padding=15,
+                ),
+                actions=[
+                    ft.TextButton("Close", on_click=lambda e: close_dlg()),
+                ],
+            )
+            
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Export failed: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
     def export_csv_simple(self, page: ft.Page):
         """Simple CSV export - saves to app storage, shows location"""
         import csv
@@ -2137,7 +2290,7 @@ class StoreApp:
         )
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_csv_simple(page), expand=True),
+                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_csv_visible(page), expand=True),
                 ft.ElevatedButton("Export HTML", on_click=lambda e: self.export_html_and_open(page), expand=True),
             ], spacing=8)
         )
