@@ -1976,14 +1976,24 @@ class StoreApp:
         if not os.path.exists(export_dir):
             os.makedirs(export_dir, exist_ok=True)
         
-        files = [f for f in os.listdir(export_dir) if os.path.isfile(os.path.join(export_dir, f))]
-        files.sort(reverse=True)
+        files = []
+        if os.path.exists(export_dir):
+            files = [f for f in os.listdir(export_dir) if os.path.isfile(os.path.join(export_dir, f))]
+            files.sort(reverse=True)
         
         if not files:
             dialog = ft.AlertDialog(
-                title=ft.Text("📁 Exported Files"),
-                content=ft.Text("No exported files found. Export some data first."),
-                actions=[ft.TextButton("OK", on_click=lambda e: setattr(page.dialog, 'open', False))],
+                title=ft.Text("📁 Exported Files", size=18, weight=ft.FontWeight.BOLD),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.icons.FOLDER_OPEN, size=50, color="#888888"),
+                        ft.Text("No exported files found", size=14),
+                        ft.Text("Export some data first from Dashboard", size=11, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                    width=300,
+                    padding=30,
+                ),
+                actions=[ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False))],
             )
             page.dialog = dialog
             dialog.open = True
@@ -2009,26 +2019,34 @@ class StoreApp:
                 ft.Card(
                     content=ft.Container(
                         content=ft.Row([
-                            ft.Text(icon, size=24),
+                            ft.Text(icon, size=28),
                             ft.Column([
-                                ft.Text(file, size=13, weight=ft.FontWeight.BOLD),
-                                ft.Text(size_str, size=10, color="#888888"),
-                            ], spacing=2, expand=True),
+                                ft.Text(file, size=14, weight=ft.FontWeight.BOLD),
+                                ft.Text(size_str, size=11, color="#888888"),
+                            ], spacing=3, expand=True),
                             ft.ElevatedButton(
                                 "Open",
                                 on_click=lambda e, f=file: self.open_exported_file(page, f),
                                 style=ft.ButtonStyle(bgcolor=self.accent_color),
+                                icon=ft.icons.OPEN_IN_NEW,
                             ),
-                        ], spacing=10),
-                        padding=12,
+                        ], spacing=12),
+                        padding=15,
                     ),
+                    elevation=1,
                 )
             )
         
+        def close_dlg():
+            page.dialog.open = False
+            page.update()
+        
         dialog = ft.AlertDialog(
-            title=ft.Text("📁 Exported Files", size=18, weight=ft.FontWeight.BOLD),
-            content=ft.Container(content=file_items, width=400, height=450, padding=15),
-            actions=[ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False))],
+            title=ft.Row([
+                ft.Text("📁 Exported Files", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
+            ]),
+            content=ft.Container(content=file_items, width=450, height=500, padding=15),
         )
         
         page.dialog = dialog
@@ -2036,55 +2054,102 @@ class StoreApp:
         page.update()
 
     def open_exported_file(self, page: ft.Page, filename):
-        """Open file with confirmation dialog"""
+        """Open file using launch_url - shows Android app picker"""
         import os
-        import webbrowser
         
         base_dir = os.path.dirname(os.path.abspath(__file__))
         file_path = os.path.join(base_dir, "exports", filename)
         abs_path = os.path.abspath(file_path)
+        file_size = os.path.getsize(file_path)
         
-        def do_open(e):
-            page.dialog.open = False
-            webbrowser.open(f"file://{abs_path}")
+        if file_size < 1024:
+            size_str = f"{file_size} B"
+        elif file_size < 1024 * 1024:
+            size_str = f"{file_size / 1024:.1f} KB"
+        else:
+            size_str = f"{file_size / (1024 * 1024):.1f} MB"
+        
+        def close_dlg():
+            if page.dialog:
+                page.dialog.open = False
+            page.update()
+        
+        def open_file():
+            """Open with system app picker"""
+            close_dlg()
+            # This triggers Android's "Open with" dialog
+            file_url = f"file://{abs_path}"
+            page.launch_url(file_url)
             
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ Opening {filename}"),
+                ft.Text(f"📂 Choose an app to open {filename}"),
+                bgcolor=self.accent_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
+        def copy_path():
+            """Copy path to clipboard"""
+            page.set_clipboard(abs_path)
+            close_dlg()
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Path copied to clipboard"),
                 bgcolor=self.success_color,
                 duration=3000
             )
             page.snack_bar.open = True
             page.update()
         
-        def cancel_open(e):
-            page.dialog.open = False
-            page.update()
-        
-        # File icon
+        # File icon based on type
         if filename.endswith('.csv'):
-            icon = "📊"
+            file_icon = "📊"
             file_type = "CSV File"
-            message = "This file will open with your default app for CSV files (Excel, Google Sheets, etc.)"
+            instructions = "1. Tap 'Open File'\n2. Select Google Sheets, Excel, or any CSV viewer\n3. Choose 'Just once' or 'Always'"
         else:
-            icon = "🌐"
+            file_icon = "🌐"
             file_type = "HTML File"
-            message = "This file will open in your default web browser."
+            instructions = "1. Tap 'Open File'\n2. Select Chrome, Firefox, or any browser\n3. The report will open in your browser"
+        
+        dialog_content = ft.Column([
+            ft.Row([
+                ft.Text(f"{file_icon} {file_type}", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
+            ]),
+            ft.Divider(),
+            ft.Text(filename, size=14, weight=ft.FontWeight.BOLD),
+            ft.Text(f"Size: {size_str}", size=12, color="#888888"),
+            ft.Container(height=15),
+            ft.Text("📱 How to open:", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text(instructions, size=12, color="#CCCCCC"),
+            ft.Container(height=15),
+            ft.Row([
+                ft.ElevatedButton(
+                    "📂 Open File",
+                    on_click=lambda e: open_file(),
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor=self.accent_color),
+                    icon=ft.icons.OPEN_IN_NEW,
+                ),
+            ], spacing=8),
+            ft.Row([
+                ft.ElevatedButton(
+                    "📋 Copy Path",
+                    on_click=lambda e: copy_path(),
+                    expand=True,
+                    icon=ft.icons.CONTENT_COPY,
+                ),
+            ], spacing=8),
+            ft.Container(height=10),
+            ft.Text("💡 After tapping 'Open File', Android will show a list of compatible apps", size=10, color="#888888"),
+            ft.Text("💡 If no app appears, install Google Sheets or a browser from Play Store", size=10, color="#888888"),
+        ], spacing=8)
         
         dialog = ft.AlertDialog(
-            title=ft.Text(f"{icon} Open {file_type}", size=18, weight=ft.FontWeight.BOLD),
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Text(filename, size=14, weight=ft.FontWeight.BOLD),
-                    ft.Text(message, size=12, color="#888888"),
-                    ft.Container(height=10),
-                    ft.Text(f"Path: {abs_path}", size=9, color="#888888", selectable=True),
-                ], spacing=8),
-                width=380,
-                padding=20,
-            ),
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=400, height=480, padding=15),
             actions=[
-                ft.TextButton("Cancel", on_click=cancel_open),
-                ft.ElevatedButton("Open File", on_click=do_open, icon=ft.icons.OPEN_IN_NEW),
+                ft.TextButton("Cancel", on_click=lambda e: close_dlg()),
             ],
         )
         
@@ -2093,7 +2158,7 @@ class StoreApp:
         page.update()
 
     def view_csv_content(self, page: ft.Page, file_path, filename):
-        """View CSV content inside the app"""
+        """Preview CSV content inside the app"""
         import csv
         
         try:
@@ -2103,10 +2168,10 @@ class StoreApp:
                 headers = next(reader) if reader else []
                 rows = list(reader)[:50]  # Show first 50 rows
             
-            # Create table to display CSV
-            table_rows = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, height=350)
+            # Create scrollable table
+            content = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=400)
             
-            # Add headers
+            # Add header
             header_row = ft.Container(
                 content=ft.Row(
                     [ft.Text(h, size=11, weight=ft.FontWeight.BOLD, color=self.accent_color, expand=True) for h in headers],
@@ -2116,13 +2181,13 @@ class StoreApp:
                 bgcolor="#1E1E1E",
                 border_radius=4,
             )
-            table_rows.controls.append(header_row)
+            content.controls.append(header_row)
             
             # Add data rows
             for row in rows[:30]:
                 data_row = ft.Container(
                     content=ft.Row(
-                        [ft.Text(cell, size=10, color="#CCCCCC", expand=True) for cell in row[:len(headers)]],
+                        [ft.Text(cell[:20], size=10, color="#CCCCCC", expand=True) for cell in row[:len(headers)]],
                         spacing=5,
                     ),
                     padding=8,
@@ -2130,48 +2195,40 @@ class StoreApp:
                     border_radius=4,
                     margin=ft.margin.only(bottom=2),
                 )
-                table_rows.controls.append(data_row)
+                content.controls.append(data_row)
             
             # Show row count
-            row_count_text = ft.Text(f"Showing {min(30, len(rows))} of {len(rows)} rows", size=10, color="#888888")
+            row_count = ft.Text(f"Showing {min(30, len(rows))} of {len(rows)} rows", size=10, color="#888888")
             
-            def close_view():
+            def close_preview():
                 page.dialog.open = False
                 page.update()
             
             def open_with_app(e):
-                close_view()
+                close_preview()
                 page.launch_url(f"file://{file_path}")
             
-            dialog_content = ft.Column([
-                ft.Row([
-                    ft.Text(f"📊 {filename}", size=16, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_view()),
-                ]),
-                ft.Divider(),
-                row_count_text,
-                ft.Container(height=5),
-                table_rows,
-                ft.Divider(),
-                ft.Row([
-                    ft.ElevatedButton(
-                        "📂 Open with App",
-                        on_click=open_with_app,
-                        expand=True,
-                        icon=ft.icons.OPEN_IN_NEW,
-                    ),
-                    ft.ElevatedButton(
-                        "📤 Share",
-                        on_click=lambda e: page.launch_url(f"file://{file_path}"),
-                        expand=True,
-                        icon=ft.icons.SHARE,
-                    ),
-                ], spacing=8),
-            ], spacing=8)
-            
             dialog = ft.AlertDialog(
-                title=ft.Text(""),
-                content=ft.Container(content=dialog_content, width=500, height=550, padding=15),
+                title=ft.Row([
+                    ft.Text(f"📊 {filename}", size=16, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_preview()),
+                ]),
+                content=ft.Container(
+                    content=ft.Column([
+                        row_count,
+                        ft.Divider(),
+                        content,
+                        ft.Divider(),
+                        ft.ElevatedButton(
+                            "📂 Open with App",
+                            on_click=open_with_app,
+                            icon=ft.icons.OPEN_IN_NEW,
+                        ),
+                    ], spacing=8),
+                    width=500,
+                    height=550,
+                    padding=15,
+                ),
             )
             
             page.dialog = dialog
@@ -2180,7 +2237,7 @@ class StoreApp:
             
         except Exception as e:
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"Error reading CSV: {str(e)[:50]}"),
+                ft.Text(f"Error: {str(e)[:50]}"),
                 bgcolor=self.danger_color,
                 duration=3000
             )
