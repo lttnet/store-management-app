@@ -1717,6 +1717,79 @@ class StoreApp:
             )
             page.snack_bar.open = True
             page.update()
+         
+    def export_csv_with_picker(self, page: ft.Page):
+        """Export CSV with FilePicker - user chooses save location"""
+        import csv
+        from datetime import datetime
+        
+        try:
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Create CSV content as string
+            csv_lines = []
+            
+            # Materials section
+            csv_lines.append("=== MATERIALS ===")
+            csv_lines.append("Name,Category,Quantity,Quality,Location,Size,Length,Colors,Notes,Barcode")
+            for m in materials:
+                csv_lines.append(f"\"{m.get('name', '')}\",\"{m.get('category_name', 'Other')}\",{m.get('quantity', 0)},\"{m.get('quality', 'New')}\",\"{m.get('location_ids', '')}\",\"{m.get('size', '')}\",\"{m.get('length', '')}\",\"{m.get('colors', '')}\",\"{m.get('notes', '')}\",\"{m.get('barcode_value', '')}\"")
+            
+            # Accessories section
+            csv_lines.append("")
+            csv_lines.append("=== ACCESSORIES ===")
+            csv_lines.append("Name,Category,Quantity,Price,Quality,Location,Notes,Barcode")
+            for a in accessories:
+                csv_lines.append(f"\"{a.get('name', '')}\",\"{a.get('category_name', 'Other')}\",{a.get('quantity', 0)},{a.get('price', 0)},\"{a.get('quality', 'New')}\",\"{a.get('location', '')}\",\"{a.get('notes', '')}\",\"{a.get('barcode_value', '')}\"")
+            
+            csv_content = "\n".join(csv_lines)
+            
+            # FilePicker result handler
+            def on_save_result(e: ft.FilePickerResultEvent):
+                if e.path:
+                    # Save the file
+                    with open(e.path, 'w', encoding='utf-8-sig') as f:
+                        f.write(csv_content)
+                    
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✓ CSV saved to: {os.path.basename(e.path)}"),
+                        bgcolor=self.success_color,
+                        duration=4000
+                    )
+                else:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("Save cancelled"),
+                        bgcolor=self.warning_color,
+                        duration=2000
+                    )
+                page.snack_bar.open = True
+                page.update()
+            
+            # Create and show file picker
+            file_picker = ft.FilePicker(on_result=on_save_result)
+            page.overlay.append(file_picker)
+            page.update()
+            
+            # Open save dialog - user chooses where to save
+            file_picker.save_file(
+                file_name=f"store_export_{timestamp}.csv",
+                dialog_title="Save CSV File",
+                initial_directory="/storage/emulated/0/Download"
+            )
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Export failed: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+
                # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
         """Dashboard with working export CSV to Downloads and HTML auto-open"""
@@ -1925,7 +1998,7 @@ class StoreApp:
         )
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_csv_to_downloads(page), expand=True),
+                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_csv_with_picker(page), expand=True),
                 ft.ElevatedButton("Export HTML", on_click=lambda e: self.export_html_and_open(page), expand=True),
             ], spacing=8)
         )
@@ -1944,6 +2017,13 @@ class StoreApp:
             ], spacing=8)
         )
         
+        # Add this button to your dashboard for testing
+        test_save_btn = ft.ElevatedButton(
+            "🧪 Test Save File",
+            on_click=lambda e: self.test_save_file(page),
+            expand=True,
+            style=ft.ButtonStyle(bgcolor="#FF9800"),
+        )
         # Wrap in a Container with Scroll
         main_container = ft.Container(
             content=main_column,
@@ -10634,33 +10714,44 @@ class StoreApp:
         dialog.open = True
         page.update()
 
-    def test_category_dialog(self, page: ft.Page):
-        """Simple test dialog to verify button click works"""
-        print("DEBUG: test_category_dialog called!")
+    def test_save_file(self, page: ft.Page):
+        """Simple test: Save a text file using FilePicker"""
         
-        # Create a simple dialog
-        dialog = ft.AlertDialog(
-            title=ft.Text("Categories Test", size=18, weight=ft.FontWeight.BOLD),
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Text("✅ Button click works on mobile!", size=14, color="green"),
-                    ft.Text("Now we can add the full categories feature", size=12, color="#888888"),
-                    ft.Container(height=10),
-                    ft.Text("This is a test dialog", size=12),
-                ], spacing=10),
-                width=300,
-                padding=20,
-            ),
-            actions=[
-                ft.TextButton("Close", on_click=lambda e: self.close_dialog(page)),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
+        # Create a simple test content
+        test_content = "This is a test file from Store Management App!\nCreated at: " + str(datetime.now())
         
-        page.dialog = dialog
-        dialog.open = True
+        # Create FilePicker
+        def on_save_result(e: ft.FilePickerResultEvent):
+            if e.path:
+                # Save the file to user-selected location
+                with open(e.path, 'w', encoding='utf-8') as f:
+                    f.write(test_content)
+                
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ File saved to: {e.path}"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+            else:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("Save cancelled"),
+                    bgcolor=self.warning_color,
+                    duration=2000
+                )
+            page.snack_bar.open = True
+            page.update()
+        
+        # Create and show file picker
+        file_picker = ft.FilePicker(on_result=on_save_result)
+        page.overlay.append(file_picker)
         page.update()
-
+        
+        # Open save dialog
+        file_picker.save_file(
+            file_name="test_file.txt",
+            dialog_title="Save Test File",
+            initial_directory="/storage/emulated/0/Download"
+        )
     def close_dialog(self, page: ft.Page):
         """Close the current dialog"""
         if page.dialog:
