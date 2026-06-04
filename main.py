@@ -1965,33 +1965,30 @@ class StoreApp:
         
         self.current_view = "dashboard"
         page.update()
+
     def show_exported_files(self, page: ft.Page):
-        """Show list of exported files - Works on mobile"""
+        """Show list of exported files - works without storage permission"""
         import os
         
-        # Get exports folder path
         base_dir = os.path.dirname(os.path.abspath(__file__))
         export_dir = os.path.join(base_dir, "exports")
         
-        # Create exports folder if not exists
         if not os.path.exists(export_dir):
             os.makedirs(export_dir, exist_ok=True)
         
-        # Get all files in exports folder
         files = []
         if os.path.exists(export_dir):
             files = [f for f in os.listdir(export_dir) if os.path.isfile(os.path.join(export_dir, f))]
             files.sort(reverse=True)
         
         if not files:
-            # Show message if no files
             dialog = ft.AlertDialog(
                 title=ft.Text("📁 Exported Files", size=18, weight=ft.FontWeight.BOLD),
                 content=ft.Container(
                     content=ft.Column([
                         ft.Icon(ft.icons.FOLDER_OPEN, size=50, color="#888888"),
                         ft.Text("No exported files found", size=14),
-                        ft.Text("Export some data first from Dashboard or Inventory", size=11, color="#888888"),
+                        ft.Text("Export some data first from Dashboard", size=11, color="#888888"),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
                     width=300,
                     padding=30,
@@ -2003,14 +2000,12 @@ class StoreApp:
             page.update()
             return
         
-        # Create file list with copy buttons
         file_items = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO, height=350)
         
         for file in files:
             file_path = os.path.join(export_dir, file)
             size_bytes = os.path.getsize(file_path)
             
-            # Format file size
             if size_bytes < 1024:
                 size_str = f"{size_bytes} B"
             elif size_bytes < 1024 * 1024:
@@ -2018,18 +2013,13 @@ class StoreApp:
             else:
                 size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
             
-            # Choose icon based on file type
             if file.endswith('.csv'):
                 icon_name = "📊"
-                icon_color = "#4CAF50"
             elif file.endswith('.html'):
                 icon_name = "🌐"
-                icon_color = "#2196F3"
             else:
                 icon_name = "📄"
-                icon_color = "#888888"
             
-            # Create row for each file
             file_items.controls.append(
                 ft.Container(
                     content=ft.Row([
@@ -2039,11 +2029,11 @@ class StoreApp:
                             ft.Text(f"Size: {size_str}", size=10, color="#888888"),
                         ], spacing=2, expand=True),
                         ft.IconButton(
-                            icon=ft.icons.COPY,
+                            icon=ft.icons.OPEN_IN_BROWSER,
                             icon_size=20,
                             icon_color=self.accent_color,
-                            on_click=lambda e, f=file: self.copy_file_to_downloads(page, f),
-                            tooltip="Copy to Downloads",
+                            on_click=lambda e, f=file: self.open_exported_file(page, f),
+                            tooltip="Open File",
                         ),
                     ]),
                     padding=8,
@@ -2057,7 +2047,6 @@ class StoreApp:
             page.dialog.open = False
             page.update()
         
-        # Create dialog
         dialog = ft.AlertDialog(
             title=ft.Row([
                 ft.Text("📁 Exported Files", size=18, weight=ft.FontWeight.BOLD, expand=True),
@@ -2069,7 +2058,8 @@ class StoreApp:
                     ft.Container(height=5),
                     file_items,
                     ft.Container(height=10),
-                    ft.Text("💡 Tap the copy icon to save file to Downloads folder", size=10, color="#888888"),
+                    ft.Text("💡 Tap the browser icon to open the file", size=10, color="#888888"),
+                    ft.Text("💡 From there you can save/share the file", size=10, color="#888888"),
                 ], spacing=10),
                 width=400,
                 height=500,
@@ -2084,28 +2074,24 @@ class StoreApp:
         dialog.open = True
         page.update()
 
-    def copy_file_to_downloads(self, page: ft.Page, filename):
-        """Copy file to Downloads folder"""
+    def open_exported_file(self, page: ft.Page, filename):
+        """Open exported file using webbrowser (works on Android)"""
         import os
-        import shutil
+        import webbrowser
         
         try:
             base_dir = os.path.dirname(os.path.abspath(__file__))
-            source = os.path.join(base_dir, "exports", filename)
+            file_path = os.path.join(base_dir, "exports", filename)
+            abs_path = os.path.abspath(file_path)
             
-            # Check for Android Downloads folder
-            if os.path.exists("/storage/emulated/0/Download"):
-                dest = f"/storage/emulated/0/Download/{filename}"
-            elif os.path.exists(os.path.expanduser("~/Downloads")):
-                dest = os.path.join(os.path.expanduser("~/Downloads"), filename)
-            else:
-                # Fallback to app folder
-                dest = os.path.join(base_dir, "exports", f"copy_{filename}")
+            # Convert to file URL
+            file_url = f"file://{abs_path}"
             
-            shutil.copy2(source, dest)
+            # Open with webbrowser
+            webbrowser.open(file_url)
             
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"✓ Copied: {filename}"),
+                ft.Text(f"📄 Opening: {filename}"),
                 bgcolor=self.success_color,
                 duration=3000
             )
@@ -2114,12 +2100,58 @@ class StoreApp:
             
         except Exception as e:
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"Copy failed: {str(e)[:50]}"),
+                ft.Text(f"Error: {str(e)[:50]}"),
                 bgcolor=self.danger_color,
                 duration=3000
             )
             page.snack_bar.open = True
             page.update()
+
+    def copy_file_to_downloads(self, page: ft.Page, filename):
+        """Show file info and let user copy manually"""
+        import os
+        
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(base_dir, "exports", filename)
+        abs_path = os.path.abspath(file_path)
+        
+        def close_dlg():
+            page.dialog.open = False
+            page.update()
+        
+        def open_file(e):
+            page.launch_url(f"file://{abs_path}")
+            close_dlg()
+        
+        dialog_content = ft.Column([
+            ft.Row([
+                ft.Text("📄 File Ready", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
+            ]),
+            ft.Divider(),
+            ft.Text(f"File: {filename}", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text(f"Size: {os.path.getsize(file_path)} bytes", size=12, color="#888888"),
+            ft.Container(height=10),
+            ft.Text("How to save to Downloads:", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text("1️⃣ Tap 'Open File' below", size=12),
+            ft.Text("2️⃣ Tap the menu (⋮) in the top right", size=12),
+            ft.Text("3️⃣ Select 'Save' or 'Download'", size=12),
+            ft.Container(height=15),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=lambda e: close_dlg(), expand=True),
+                ft.ElevatedButton("📂 Open File", on_click=open_file, expand=True),
+            ], spacing=10),
+        ], spacing=10)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=350, height=380, padding=15),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
     def _create_stat_card(self, icon, value, label):
         """Create a statistics card"""
         return ft.Container(
