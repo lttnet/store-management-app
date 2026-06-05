@@ -2447,6 +2447,129 @@ class StoreApp:
         </body>
         </html>
         """
+    def export_csv_samsung(self, page: ft.Page):
+        """Export CSV directly to Samsung Internal Storage/Download"""
+        import csv
+        import os
+        from datetime import datetime
+        
+        try:
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"store_export_{timestamp}.csv"
+            
+            # Samsung Internal Storage path
+            internal_storage = "/storage/emulated/0/"
+            
+            # Try to save to Downloads folder (most accessible)
+            save_folder = os.path.join(internal_storage, "Download")
+            
+            # Create full file path
+            file_path = os.path.join(save_folder, filename)
+            
+            # Create CSV content
+            csv_lines = []
+            csv_lines.append("Name,Category,Quantity,Quality,Location")
+            
+            for m in materials[:50]:
+                csv_lines.append(f"\"{m.get('name', '')}\",\"{m.get('category_name', 'Other')}\",{m.get('quantity', 0)},\"{m.get('quality', 'New')}\",\"{m.get('location_ids', '')}\"")
+            
+            csv_content = "\n".join(csv_lines)
+            
+            # Save file
+            with open(file_path, 'w', encoding='utf-8-sig') as f:
+                f.write(csv_content)
+            
+            def close_dialog():
+                page.dialog.open = False
+                page.update()
+            
+            def copy_path():
+                page.set_clipboard(file_path)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("✓ Path copied to clipboard"),
+                    bgcolor=self.success_color,
+                    duration=2000
+                )
+                page.snack_bar.open = True
+                page.update()
+            
+            def open_folder():
+                page.launch_url(f"file://{save_folder}")
+                close_dialog()
+            
+            def share_file():
+                page.launch_url(f"file://{file_path}")
+                close_dialog()
+            
+            dialog = ft.AlertDialog(
+                title=ft.Row([
+                    ft.Text("✅ Export Complete", size=18, weight=ft.FontWeight.BOLD, color=self.success_color, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
+                ]),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text(f"📄 {filename}", size=14, weight=ft.FontWeight.BOLD),
+                        ft.Text("Saved to: Internal Storage → Download", size=12, color="#888888"),
+                        ft.Container(
+                            content=ft.Text(file_path, size=9, color="#888888", selectable=True),
+                            padding=6,
+                            bgcolor="#2C2C2C",
+                            border_radius=4,
+                        ),
+                        ft.Divider(),
+                        ft.Text("What would you like to do?", size=14, weight=ft.FontWeight.BOLD),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "📋 Copy Path",
+                                on_click=lambda e: copy_path(),
+                                expand=True,
+                                icon=ft.icons.CONTENT_COPY,
+                            ),
+                            ft.ElevatedButton(
+                                "📂 Open Folder",
+                                on_click=lambda e: open_folder(),
+                                expand=True,
+                                icon=ft.icons.FOLDER_OPEN,
+                            ),
+                        ], spacing=8),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "📤 Share",
+                                on_click=lambda e: share_file(),
+                                expand=True,
+                                icon=ft.icons.SHARE,
+                            ),
+                        ], spacing=8),
+                        ft.Container(height=10),
+                        ft.Text("💡 To find this file:", size=11, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                        ft.Text("1. Open 'My Files' app", size=10),
+                        ft.Text("2. Tap 'Internal Storage'", size=10),
+                        ft.Text("3. Tap 'Download' folder", size=10),
+                        ft.Text(f"4. Look for {filename}", size=10),
+                    ], spacing=8),
+                    width=420,
+                    height=480,
+                    padding=15,
+                ),
+            )
+            
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Error: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+
     def export_and_view_csv(self, page: ft.Page):
         """Export CSV with options to Save and Share - Works with Flet 0.21.2"""
         import csv
@@ -3093,7 +3216,7 @@ class StoreApp:
             ft.Row([
                 ft.ElevatedButton(
                     "📊 Export CSV",
-                    on_click=lambda e: self.export_and_view_csv(page),
+                    on_click=lambda e: self.export_csv_samsung(page),
                     expand=True,
                     style=ft.ButtonStyle(bgcolor="#4CAF50"),
                     icon=ft.icons.SHARE,
