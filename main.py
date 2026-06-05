@@ -2393,7 +2393,494 @@ class StoreApp:
             )
             page.snack_bar.open = True
             page.update()
+            
+    def create_html_viewer(filename, csv_content, material_count, accessory_count):
+        """Create HTML content for viewer"""
+        from datetime import datetime
+        
+        # Escape special characters
+        csv_content_escaped = csv_content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>{filename}</title>
+            <style>
+                body {{
+                    font-family: monospace;
+                    padding: 20px;
+                    background: #1e1e1e;
+                    color: #d4d4d4;
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
+                }}
+                .header {{
+                    background: #0078d4;
+                    padding: 10px;
+                    margin: -20px -20px 20px -20px;
+                    color: white;
+                }}
+                .info {{
+                    background: #2d2d2d;
+                    padding: 10px;
+                    margin-bottom: 20px;
+                    border-radius: 5px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h2>📊 {filename}</h2>
+            </div>
+            <div class="info">
+                📦 Materials: {material_count} | 🔧 Accessories: {accessory_count}
+                <br>📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            </div>
+            <pre>{csv_content_escaped}</pre>
+            <script>
+                // Auto-scroll to top
+                window.scrollTo(0, 0);
+            </script>
+        </body>
+        </html>
+        """
+    def export_and_view_csv(self, page: ft.Page):
+        """Export CSV with options to Save and Share - Works with Flet 0.21.2"""
+        import csv
+        import os
+        from datetime import datetime
+        import io
+        
+        try:
+            # Get data safely
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            if not materials:
+                materials = []
+            if not accessories:
+                accessories = []
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"store_export_{timestamp}.csv"
+            
+            # Create CSV in memory
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(['STORE MANAGEMENT SYSTEM - EXPORT'])
+            writer.writerow([f'Export Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'])
+            writer.writerow([])
+            writer.writerow(['MATERIALS'])
+            writer.writerow(['Name', 'Category', 'Quantity', 'Quality', 'Location'])
+            
+            for m in materials[:100]:
+                writer.writerow([
+                    str(m.get('name', '')) if m else '',
+                    str(m.get('category_name', 'Other')) if m else 'Other',
+                    str(m.get('quantity', 0)) if m else '0',
+                    str(m.get('quality', 'New')) if m else 'New',
+                    str(m.get('location_ids', '')) if m else ''
+                ])
+            
+            writer.writerow([])
+            writer.writerow(['ACCESSORIES'])
+            writer.writerow(['Name', 'Category', 'Quantity', 'Price', 'Quality', 'Location'])
+            
+            for a in accessories[:100]:
+                writer.writerow([
+                    str(a.get('name', '')) if a else '',
+                    str(a.get('category_name', 'Other')) if a else 'Other',
+                    str(a.get('quantity', 0)) if a else '0',
+                    str(a.get('price', 0)) if a else '0',
+                    str(a.get('quality', 'New')) if a else 'New',
+                    str(a.get('location', '')) if a else ''
+                ])
+            
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Save to app storage
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            exports_dir = os.path.join(base_dir, "exports")
+            os.makedirs(exports_dir, exist_ok=True)
+            saved_file_path = os.path.join(exports_dir, filename)
+            
+            with open(saved_file_path, 'w', encoding='utf-8-sig') as f:
+                f.write(csv_content)
+            
+            def close_dialog():
+                page.dialog.open = False
+                page.update()
+            
+            def save_file():
+                close_dialog()
+                self.save_csv_to_downloads(page, saved_file_path, filename)
+            
+            def share_file():
+                close_dialog()
+                page.launch_url(f"file://{saved_file_path}")
+            
+            # Create scrollable content
+            csv_lines = csv_content.split('\n')
+            content_display = ft.Column(
+                [ft.Text(line, size=11, font_family="monospace", color="#CCCCCC", selectable=True) for line in csv_lines[:200]],
+                spacing=2,
+                scroll=ft.ScrollMode.AUTO,
+                height=400
+            )
+            
+            dialog = ft.AlertDialog(
+                title=ft.Row([
+                    ft.Text(f"📊 {filename}", size=16, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
+                ]),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Text(f"Materials: {len(materials)}", size=12, color="#888888"),
+                            ft.Text(f"Accessories: {len(accessories)}", size=12, color="#888888"),
+                        ], spacing=10),
+                        ft.Divider(),
+                        content_display,
+                        ft.Divider(),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "💾 Save to Device",
+                                on_click=lambda e: save_file(),
+                                expand=True,
+                                style=ft.ButtonStyle(bgcolor="#4CAF50"),
+                                icon=ft.icons.SAVE,
+                            ),
+                            ft.ElevatedButton(
+                                "📤 Share",
+                                on_click=lambda e: share_file(),
+                                expand=True,
+                                style=ft.ButtonStyle(bgcolor="#9C27B0"),
+                                icon=ft.icons.SHARE,
+                            ),
+                        ], spacing=8),
+                    ], spacing=8),
+                    width=450,
+                    height=550,
+                    padding=15,
+                ),
+            )
+            
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Error: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
 
+    def save_csv_to_downloads(self, page: ft.Page, file_path, filename):
+        """Save CSV file to Downloads using FilePicker"""
+        import os
+        import shutil
+        
+        def on_save_result(e: ft.FilePickerResultEvent):
+            if e and e.path:
+                try:
+                    shutil.copy2(file_path, e.path)
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✓ Saved to: {os.path.basename(e.path)}"),
+                        bgcolor=self.success_color,
+                        duration=3000
+                    )
+                except Exception as ex:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"Save failed: {str(ex)[:30]}"),
+                        bgcolor=self.danger_color,
+                        duration=3000
+                    )
+            else:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("Save cancelled"),
+                    bgcolor=self.warning_color,
+                    duration=2000
+                )
+            page.snack_bar.open = True
+            page.update()
+        
+        file_picker = ft.FilePicker(on_result=on_save_result)
+        page.overlay.append(file_picker)
+        page.update()
+        
+        file_picker.save_file(
+            file_name=filename,
+            dialog_title="Save CSV File",
+            initial_directory="/storage/emulated/0/Download"
+        )
+
+    def generate_viewer_html(self, filename, csv_content, file_path, material_count, accessory_count):
+        """Generate HTML viewer with Save and Print options"""
+        from datetime import datetime
+        
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                * {{
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }}
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: #1E1E1E;
+                    color: #FFFFFF;
+                    padding: 16px;
+                    padding-bottom: 80px;
+                }}
+                .header {{
+                    background: linear-gradient(135deg, #1976D2 0%, #2196F3 100%);
+                    margin: -16px -16px 16px -16px;
+                    padding: 20px 16px;
+                    text-align: center;
+                }}
+                .header h1 {{
+                    font-size: 20px;
+                    margin-bottom: 8px;
+                }}
+                .header p {{
+                    font-size: 12px;
+                    opacity: 0.9;
+                }}
+                .info-bar {{
+                    background: #2C2C2C;
+                    padding: 12px;
+                    border-radius: 8px;
+                    margin-bottom: 16px;
+                    font-size: 12px;
+                    color: #888888;
+                    display: flex;
+                    justify-content: space-between;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                }}
+                .info-item {{
+                    background: #1E1E1E;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                }}
+                .toolbar {{
+                    position: fixed;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    background: #1E1E1E;
+                    padding: 12px;
+                    display: flex;
+                    gap: 12px;
+                    justify-content: center;
+                    border-top: 1px solid #3C3C3C;
+                    z-index: 1000;
+                }}
+                button {{
+                    background: #1976D2;
+                    color: white;
+                    border: none;
+                    padding: 12px 20px;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex: 1;
+                    justify-content: center;
+                }}
+                button.save-btn {{
+                    background: #4CAF50;
+                }}
+                button.print-btn {{
+                    background: #FF9800;
+                }}
+                button.share-btn {{
+                    background: #9C27B0;
+                }}
+                button.close-btn {{
+                    background: #F44336;
+                }}
+                pre {{
+                    background: #2C2C2C;
+                    padding: 16px;
+                    border-radius: 8px;
+                    overflow-x: auto;
+                    font-size: 11px;
+                    font-family: 'Courier New', monospace;
+                    color: #CCCCCC;
+                    white-space: pre-wrap;
+                    word-wrap: break-word;
+                }}
+                @media print {{
+                    .toolbar {{
+                        display: none;
+                    }}
+                    body {{
+                        background: white;
+                        color: black;
+                        padding: 0;
+                    }}
+                    .header {{
+                        background: #1976D2;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }}
+                    pre {{
+                        background: #f5f5f5;
+                        color: black;
+                    }}
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>📊 {filename}</h1>
+                <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            </div>
+            
+            <div class="info-bar">
+                <span class="info-item">📦 Materials: {material_count}</span>
+                <span class="info-item">🔧 Accessories: {accessory_count}</span>
+                <span class="info-item">📄 Format: CSV</span>
+                <span class="info-item">💾 Size: {len(csv_content)} bytes</span>
+            </div>
+            
+            <pre>{csv_content}</pre>
+            
+            <div class="toolbar">
+                <button class="save-btn" onclick="saveFile()">💾 Save to Device</button>
+                <button class="print-btn" onclick="printFile()">🖨️ Print</button>
+                <button class="share-btn" onclick="shareFile()">📤 Share</button>
+                <button class="close-btn" onclick="closeView()">✕ Close</button>
+            </div>
+            
+            <script>
+                function saveFile() {{
+                    window.parent.postMessage('save', '*');
+                }}
+                function printFile() {{
+                    window.print();
+                }}
+                function shareFile() {{
+                    window.parent.postMessage('share', '*');
+                }}
+                function closeView() {{
+                    window.parent.postMessage('close', '*');
+                }}
+            </script>
+        </body>
+        </html>
+        """
+
+    def save_csv_file(self, page: ft.Page, file_path, filename):
+        """Save CSV file using FilePicker"""
+        import os
+        import shutil
+        
+        def on_save_result(e: ft.FilePickerResultEvent):
+            if e.path:
+                shutil.copy2(file_path, e.path)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ Saved to: {os.path.basename(e.path)}"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+            else:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("Save cancelled"),
+                    bgcolor=self.warning_color,
+                    duration=2000
+                )
+            page.snack_bar.open = True
+            page.update()
+        
+        file_picker = ft.FilePicker(on_result=on_save_result)
+        page.overlay.append(file_picker)
+        page.update()
+        
+        file_picker.save_file(
+            file_name=filename,
+            dialog_title="Save CSV File",
+            initial_directory="/storage/emulated/0/Download"
+        )
+
+    def print_csv_file(self, page: ft.Page, file_path, filename):
+        """Print CSV file - shows print dialog"""
+        import os
+        
+        # Create print-friendly HTML
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        print_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>{filename}</title>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    margin: 20px;
+                }}
+                pre {{
+                    white-space: pre-wrap;
+                    font-family: 'Courier New', monospace;
+                    font-size: 10px;
+                }}
+                @media print {{
+                    body {{ margin: 0; }}
+                    pre {{ font-size: 8px; }}
+                }}
+            </style>
+        </head>
+        <body>
+            <h2>{filename}</h2>
+            <pre>{content}</pre>
+            <script>
+                window.print();
+            </script>
+        </body>
+        </html>
+        """
+        
+        # Create WebView for printing
+        webview = ft.WebView(
+            content=ft.WebViewContent(
+                source=ft.WebViewSource.HTML,
+                html=print_html,
+            ),
+            expand=True,
+        )
+        
+        overlay = ft.Container(
+            content=webview,
+            expand=True,
+            bgcolor="#000000",
+        )
+        
+        page.overlay.append(overlay)
+        page.update()
+        
+        def on_message(e):
+            if e.message == 'close' or e.message == 'print':
+                page.overlay.remove(overlay)
+                page.update()
+        
+        webview.on_javascript_message = on_message
                # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
         """Dashboard with working CSV export"""
@@ -2606,7 +3093,7 @@ class StoreApp:
             ft.Row([
                 ft.ElevatedButton(
                     "📊 Export CSV",
-                    on_click=lambda e: self.export_csv_via_share(page),
+                    on_click=lambda e: self.export_and_view_csv(page),
                     expand=True,
                     style=ft.ButtonStyle(bgcolor="#4CAF50"),
                     icon=ft.icons.SHARE,
