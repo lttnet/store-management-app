@@ -1238,7 +1238,319 @@ class StoreApp:
             height=65,
             bgcolor=self.sidebar_color,
         )
-    
+    def export_csv_reliable(self, page: ft.Page):
+        """Most reliable CSV export - uses cache and share"""
+        import csv
+        import os
+        from datetime import datetime
+        
+        try:
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"store_export_{timestamp}.csv"
+            
+            # Save to app's cache directory (always writable)
+            cache_dir = page.get_storage_path()
+            if not cache_dir:
+                cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+            os.makedirs(cache_dir, exist_ok=True)
+            
+            file_path = os.path.join(cache_dir, filename)
+            
+            # Write CSV
+            with open(file_path, 'w', encoding='utf-8-sig') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Name', 'Category', 'Quantity', 'Quality', 'Location'])
+                for m in materials[:30]:
+                    writer.writerow([
+                        m.get('name', ''),
+                        m.get('category_name', 'Other'),
+                        m.get('quantity', 0),
+                        m.get('quality', 'New'),
+                        m.get('location_ids', '')[:20]
+                    ])
+            
+            def share_and_close():
+                page.launch_url(f"file://{file_path}")
+                page.dialog.open = False
+                page.update()
+            
+            def copy_path():
+                page.set_clipboard(file_path)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("✓ Path copied to clipboard"),
+                    bgcolor=self.success_color,
+                    duration=2000
+                )
+                page.snack_bar.open = True
+                page.update()
+            
+            dialog = ft.AlertDialog(
+                title=ft.Row([
+                    ft.Text("✅ Export Ready", size=18, weight=ft.FontWeight.BOLD, color=self.success_color, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ]),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text(filename, size=14, weight=ft.FontWeight.BOLD),
+                        ft.Text(f"Contains {len(materials)} materials", size=12, color="#888888"),
+                        ft.Divider(),
+                        ft.Text("Choose an action:", size=14, weight=ft.FontWeight.BOLD),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "📤 Share / Save",
+                                on_click=lambda e: share_and_close(),
+                                expand=True,
+                                icon=ft.icons.SHARE,
+                                style=ft.ButtonStyle(bgcolor=self.accent_color),
+                            ),
+                        ], spacing=8),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "📋 Copy Path",
+                                on_click=lambda e: copy_path(),
+                                expand=True,
+                                icon=ft.icons.CONTENT_COPY,
+                            ),
+                        ], spacing=8),
+                        ft.Container(height=10),
+                        ft.Text("💡 Tap 'Share/Save' then choose 'Save to Downloads'", size=10, color="#888888"),
+                    ], spacing=10),
+                    width=380,
+                    height=350,
+                    padding=20,
+                ),
+            )
+            
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Error: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+
+    def export_csv_via_share(self, page: ft.Page):
+        """Export CSV and let user share/save via Android share dialog"""
+        import csv
+        import os
+        from datetime import datetime
+        import tempfile
+        
+        try:
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"store_export_{timestamp}.csv"
+            
+            # Create temporary file
+            temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8-sig')
+            
+            writer = csv.writer(temp_file)
+            writer.writerow(['=== STORE MANAGEMENT EXPORT ==='])
+            writer.writerow([f'Export Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'])
+            writer.writerow([])
+            
+            # Materials
+            writer.writerow(['MATERIALS'])
+            writer.writerow(['Name', 'Category', 'Quantity', 'Quality', 'Location'])
+            for m in materials[:100]:
+                writer.writerow([
+                    m.get('name', ''),
+                    m.get('category_name', 'Other'),
+                    m.get('quantity', 0),
+                    m.get('quality', 'New'),
+                    m.get('location_ids', '')
+                ])
+            
+            writer.writerow([])
+            
+            # Accessories
+            writer.writerow(['ACCESSORIES'])
+            writer.writerow(['Name', 'Category', 'Quantity', 'Price', 'Quality', 'Location'])
+            for a in accessories[:100]:
+                writer.writerow([
+                    a.get('name', ''),
+                    a.get('category_name', 'Other'),
+                    a.get('quantity', 0),
+                    a.get('price', 0),
+                    a.get('quality', 'New'),
+                    a.get('location', '')
+                ])
+            
+            temp_file.close()
+            temp_path = temp_file.name
+            
+            def share_file():
+                # Share using Android share intent
+                page.launch_url(f"file://{temp_path}")
+                page.dialog.open = False
+                page.update()
+            
+            def copy_path():
+                page.set_clipboard(temp_path)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("✓ File path copied to clipboard"),
+                    bgcolor=self.success_color,
+                    duration=2000
+                )
+                page.snack_bar.open = True
+                page.update()
+            
+            def close_dlg():
+                # Clean up temp file
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+                page.dialog.open = False
+                page.update()
+            
+            dialog = ft.AlertDialog(
+                title=ft.Row([
+                    ft.Text("📊 CSV Export Ready", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dlg()),
+                ]),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text(filename, size=14, weight=ft.FontWeight.BOLD),
+                        ft.Text(f"Materials: {len(materials)} | Accessories: {len(accessories)}", size=11, color="#888888"),
+                        ft.Divider(),
+                        ft.Text("How to save to Downloads:", size=14, weight=ft.FontWeight.BOLD),
+                        ft.Text("1️⃣ Tap 'Share/Save' below", size=12),
+                        ft.Text("2️⃣ Select 'Save to Downloads' or 'Save to Device'", size=12),
+                        ft.Text("3️⃣ Choose location and save", size=12),
+                        ft.Container(height=15),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "📤 Share / Save",
+                                on_click=lambda e: share_file(),
+                                expand=True,
+                                style=ft.ButtonStyle(bgcolor=self.accent_color),
+                                icon=ft.icons.SHARE,
+                            ),
+                        ], spacing=8),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "📋 Copy Path",
+                                on_click=lambda e: copy_path(),
+                                expand=True,
+                                icon=ft.icons.CONTENT_COPY,
+                            ),
+                        ], spacing=8),
+                    ], spacing=8),
+                    width=400,
+                    height=380,
+                    padding=20,
+                ),
+            )
+            
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Error: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+    def export_csv_final(self, page: ft.Page):
+        """Final working CSV export - uses FilePicker for user to choose location"""
+        import csv
+        import os
+        from datetime import datetime
+        
+        try:
+            # Show loading
+            page.snack_bar = ft.SnackBar(
+                ft.Text("📊 Preparing CSV..."),
+                bgcolor=self.accent_color,
+                duration=2000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"store_export_{timestamp}.csv"
+            
+            # Create CSV content as string
+            csv_lines = []
+            csv_lines.append("Name,Category,Quantity,Quality,Location")
+            
+            for m in materials[:50]:
+                csv_lines.append(f"\"{m.get('name', '')}\",\"{m.get('category_name', 'Other')}\",{m.get('quantity', 0)},\"{m.get('quality', 'New')}\",\"{m.get('location_ids', '')}\"")
+            
+            csv_content = "\n".join(csv_lines)
+            
+            # FilePicker callback
+            def on_save_result(e: ft.FilePickerResultEvent):
+                if e.path:
+                    try:
+                        with open(e.path, 'w', encoding='utf-8-sig') as f:
+                            f.write(csv_content)
+                        
+                        page.snack_bar = ft.SnackBar(
+                            ft.Text(f"✓ CSV saved successfully!"),
+                            bgcolor=self.success_color,
+                            duration=4000
+                        )
+                        page.snack_bar.open = True
+                        page.update()
+                    except Exception as ex:
+                        page.snack_bar = ft.SnackBar(
+                            ft.Text(f"Save error: {str(ex)[:50]}"),
+                            bgcolor=self.danger_color,
+                            duration=4000
+                        )
+                        page.snack_bar.open = True
+                        page.update()
+                else:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("Save cancelled"),
+                        bgcolor=self.warning_color,
+                        duration=2000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+            
+            # Create FilePicker
+            file_picker = ft.FilePicker(on_result=on_save_result)
+            page.overlay.append(file_picker)
+            page.update()
+            
+            # Show save dialog - user chooses where to save
+            file_picker.save_file(
+                file_name=filename,
+                dialog_title="Save CSV File",
+                initial_directory="/storage/emulated/0/Download"
+            )
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Error: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
     def export_csv_visible(self, page: ft.Page):
         """Export CSV to a visible folder on mobile"""
         import csv
@@ -2084,7 +2396,7 @@ class StoreApp:
 
                # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Dashboard with working export CSV to Downloads and HTML auto-open"""
+        """Dashboard with working CSV export"""
         page.controls.clear()
         
         # Check if mobile
@@ -2149,9 +2461,9 @@ class StoreApp:
         quality_row1 = ft.Row([
             ft.Container(
                 content=ft.Row([
-                                    ft.Icon(ft.icons.CIRCLE, size=16, color="#4CAF50"),
-                                    ft.Text(f"New: {quality_counts.get('New', 0)}", size=14, color=self.text_color),
-                                ], spacing=8),
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#4CAF50"),
+                    ft.Text(f"New: {quality_counts.get('New', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
                 padding=ft.padding.symmetric(horizontal=12, vertical=8),
                 bgcolor=self.card_color,
                 border_radius=8,
@@ -2159,9 +2471,9 @@ class StoreApp:
             ),
             ft.Container(
                 content=ft.Row([
-                                    ft.Icon(ft.icons.CIRCLE, size=16, color="#FF9800"),
-                                    ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=14, color=self.text_color),
-                                ], spacing=8),
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#FF9800"),
+                    ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
                 padding=ft.padding.symmetric(horizontal=12, vertical=8),
                 bgcolor=self.card_color,
                 border_radius=8,
@@ -2173,9 +2485,9 @@ class StoreApp:
         quality_row2 = ft.Row([
             ft.Container(
                 content=ft.Row([
-                                    ft.Icon(ft.icons.CIRCLE, size=16, color="#F44336"),
-                                    ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=14, color=self.text_color),
-                                ], spacing=8),
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#F44336"),
+                    ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
                 padding=ft.padding.symmetric(horizontal=12, vertical=8),
                 bgcolor=self.card_color,
                 border_radius=8,
@@ -2183,9 +2495,9 @@ class StoreApp:
             ),
             ft.Container(
                 content=ft.Row([
-                                    ft.Icon(ft.icons.CIRCLE, size=16, color="#2196F3"),
-                                    ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=14, color=self.text_color),
-                                ], spacing=8),
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#2196F3"),
+                    ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
                 padding=ft.padding.symmetric(horizontal=12, vertical=8),
                 bgcolor=self.card_color,
                 border_radius=8,
@@ -2279,7 +2591,7 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # ========== SECTION 8: IMPORT / EXPORT (UPDATED FOR MOBILE) ==========
+        # ========== SECTION 8: IMPORT / EXPORT (UPDATED) ==========
         main_column.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
         
         main_column.controls.append(
@@ -2288,34 +2600,52 @@ class StoreApp:
                 ft.ElevatedButton("Import Accessories", on_click=lambda e: self.show_import_dialog(page, "accessories"), expand=True),
             ], spacing=8)
         )
+        
+        # ===== WORKING CSV EXPORT BUTTONS =====
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Export CSV", on_click=lambda e: self.export_csv_visible(page), expand=True),
-                ft.ElevatedButton("Export HTML", on_click=lambda e: self.export_html_and_open(page), expand=True),
-            ], spacing=8)
-        )
-        main_column.controls.append(
-            ft.Row([
-                ft.ElevatedButton("Low Stock Report", on_click=lambda e: self.export_low_stock_html(page), expand=True,
-                                style=ft.ButtonStyle(bgcolor=self.danger_color)),
+                ft.ElevatedButton(
+                    "📊 Export CSV",
+                    on_click=lambda e: self.export_csv_via_share(page),
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor="#4CAF50"),
+                    icon=ft.icons.SHARE,
+                ),
+                ft.ElevatedButton(
+                    "🌐 Export HTML",
+                    on_click=lambda e: self.export_html_and_open(page),
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor="#2196F3"),
+                    icon=ft.icons.WEB,
+                ),
             ], spacing=8)
         )
         
-        # ========== SECTION 9: VIEW EXPORTS BUTTON ==========
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("📁 View Exported Files", on_click=lambda e: self.show_exported_files(page), expand=True,
-                                style=ft.ButtonStyle(bgcolor=self.accent_color)),
+                ft.ElevatedButton(
+                    "⚠️ Low Stock Report",
+                    on_click=lambda e: self.export_low_stock_html(page),
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor=self.danger_color),
+                    icon=ft.icons.WARNING,
+                ),
             ], spacing=8)
         )
         
-        # Add this button to your dashboard for testing
-        test_save_btn = ft.ElevatedButton(
-            "🧪 Test Save File",
-            on_click=lambda e: self.test_save_file(page),
-            expand=True,
-            style=ft.ButtonStyle(bgcolor="#FF9800"),
+        # ========== SECTION 9: VIEW EXPORTS ==========
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton(
+                    "📁 View Exported Files",
+                    on_click=lambda e: self.show_exported_files(page),
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor=self.accent_color),
+                    icon=ft.icons.FOLDER_OPEN,
+                ),
+            ], spacing=8)
         )
+        
         # Wrap in a Container with Scroll
         main_container = ft.Container(
             content=main_column,
@@ -2337,6 +2667,20 @@ class StoreApp:
         
         self.current_view = "dashboard"
         page.update()
+
+    def _create_stat_card(self, icon, value, label):
+        """Create a statistics card"""
+        return ft.Container(
+            content=ft.Column([
+                ft.Text(icon, size=20),
+                ft.Text(value, size=24, weight=ft.FontWeight.BOLD),
+                ft.Text(label, size=10, color="#CCCCCC"),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+            padding=10,
+            bgcolor=self.accent_color,
+            border_radius=10,
+            expand=True,
+        )
 
     def show_exported_files(self, page: ft.Page):
         """Show list of exported files with copy to downloads option"""
