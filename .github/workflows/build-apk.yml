@@ -32,15 +32,51 @@ jobs:
           flutter-version: '3.19.6'
           channel: 'stable'
       
+      - name: Create pyproject.toml with permissions
+        run: |
+          cat > pyproject.toml << 'EOF'
+[project]
+name = "store-management"
+version = "1.0.0"
+description = "Store Management System"
+dependencies = [
+    "flet>=0.21.0",
+]
+
+[tool.flet]
+app_name = "Store Management"
+app_description = "Store Management System"
+app_version = "1.0.0"
+
+[tool.flet.android]
+permissions = [
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "android.permission.MANAGE_EXTERNAL_STORAGE",
+]
+
+[tool.flet.windows]
+product_name = "Store Management"
+company_name = "YourCompany"
+file_version = "1.0.0"
+product_version = "1.0.0"
+EOF
+          echo "✅ pyproject.toml created with permissions"
+      
       - name: Install dependencies
         run: |
           pip install flet==0.21.2
           pip install requests
       
-      - name: Build APK
+      - name: Build APK with permissions
         id: build
         run: |
-          flet build apk --verbose
+          # Build with explicit permissions
+          flet build apk \
+            --android-permission "android.permission.READ_EXTERNAL_STORAGE" \
+            --android-permission "android.permission.WRITE_EXTERNAL_STORAGE" \
+            --android-permission "android.permission.MANAGE_EXTERNAL_STORAGE" \
+            --verbose
           
           # Search for APK
           echo "=== Searching for APK ==="
