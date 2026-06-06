@@ -1,0 +1,19 @@
+[project]
+name = "store-management"
+version = "1.0.0"
+description = "Store Management System"
+dependencies = [
+    "flet>=0.21.0",
+]
+
+[tool.flet]
+app_name = "Store Management"
+app_description = "Store Management System"
+app_version = "1.0.0"
+
+[tool.flet.android]
+permissions = [
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "android.permission.MANAGE_EXTERNAL_STORAGE",
+]
