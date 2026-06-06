@@ -1002,7 +1002,7 @@ class StoreApp:
         
         # Track zoom level
         self.zoom_level = 1.0
-        self.request_permissions(page)
+        #self.request_permissions(page)
         # FORCE INITIAL PAGE UPDATE to get proper width
         page.update()
         
@@ -1238,6 +1238,99 @@ class StoreApp:
             height=65,
             bgcolor=self.sidebar_color,
         )
+    
+    def test_filepicker(self, page: ft.Page):
+        """Simple test to verify FilePicker works"""
+        def on_result(e: ft.FilePickerResultEvent):
+            if e.path:
+                page.snack_bar = ft.SnackBar(ft.Text(f"Selected: {e.path}"))
+            else:
+                page.snack_bar = ft.SnackBar(ft.Text("Cancelled"))
+            page.snack_bar.open = True
+            page.update()
+        
+        picker = ft.FilePicker(on_result=on_result)
+        page.overlay.append(picker)
+        page.update()
+        
+        picker.save_file(file_name="test.txt")
+
+    def export_csv_safe(self, page: ft.Page):
+        """Safe CSV export using FilePicker - No permission requests needed"""
+        import csv
+        from datetime import datetime
+        
+        def on_file_selected(e: ft.FilePickerResultEvent):
+            if not e.path:
+                page.snack_bar = ft.SnackBar(ft.Text("Save cancelled"))
+                page.snack_bar.open = True
+                page.update()
+                return
+                
+            try:
+                # Get data
+                materials = self.dict_list(MaterialManager.get_all())
+                accessories = self.dict_list(AccessoryManager.get_all())
+                
+                # Write CSV to user-selected location
+                with open(e.path, mode='w', newline='', encoding='utf-8-sig') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(['STORE MANAGEMENT SYSTEM - EXPORT'])
+                    writer.writerow([f'Export Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'])
+                    writer.writerow([])
+                    writer.writerow(['MATERIALS'])
+                    writer.writerow(['Name', 'Category', 'Quantity', 'Quality', 'Location'])
+                    
+                    for m in materials[:500]:
+                        writer.writerow([
+                            m.get('name', ''),
+                            m.get('category_name', 'Other'),
+                            m.get('quantity', 0),
+                            m.get('quality', 'New'),
+                            m.get('location_ids', '')
+                        ])
+                    
+                    writer.writerow([])
+                    writer.writerow(['ACCESSORIES'])
+                    writer.writerow(['Name', 'Category', 'Quantity', 'Price', 'Quality', 'Location'])
+                    
+                    for a in accessories[:500]:
+                        writer.writerow([
+                            a.get('name', ''),
+                            a.get('category_name', 'Other'),
+                            a.get('quantity', 0),
+                            a.get('price', 0),
+                            a.get('quality', 'New'),
+                            a.get('location', '')
+                        ])
+                
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ CSV saved successfully!"),
+                    bgcolor=self.success_color,
+                    duration=4000
+                )
+            except Exception as ex:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"Save failed: {str(ex)}"),
+                    bgcolor=self.danger_color,
+                    duration=4000
+                )
+            
+            page.snack_bar.open = True
+            page.update()
+        
+        # Create FilePicker (no permissions needed)
+        file_picker = ft.FilePicker(on_result=on_file_selected)
+        page.overlay.append(file_picker)
+        page.update()
+        
+        # Open save dialog
+        file_picker.save_file(
+            file_name=f"store_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            allowed_extensions=["csv"],
+            dialog_title="Save CSV"
+        )
+
     def export_csv_reliable(self, page: ft.Page):
         """Most reliable CSV export - uses cache and share"""
         import csv
@@ -3350,7 +3443,7 @@ class StoreApp:
             ft.Row([
                 ft.ElevatedButton(
                     "📊 Export CSV",
-                    on_click=lambda e:  self.export_csv_with_filepicker(page),
+                    on_click=lambda e:  self.test_filepicker(page),
                     expand=True,
                     style=ft.ButtonStyle(bgcolor="#4CAF50"),
                     icon=ft.icons.SHARE,
