@@ -1002,7 +1002,7 @@ class StoreApp:
         
         # Track zoom level
         self.zoom_level = 1.0
-        
+        self.request_permissions(page)
         # FORCE INITIAL PAGE UPDATE to get proper width
         page.update()
         
@@ -1338,6 +1338,85 @@ class StoreApp:
             page.snack_bar.open = True
             page.update()
 
+    def export_csv_with_filepicker(self, page: ft.Page):
+        """Export CSV using FilePicker with permissions"""
+        import csv
+        from datetime import datetime
+        
+        def on_file_selected(e: ft.FilePickerResultEvent):
+            if not e.path:
+                page.snack_bar = ft.SnackBar(ft.Text("Save cancelled"))
+                page.snack_bar.open = True
+                page.update()
+                return
+                
+            try:
+                # Get data
+                materials = self.dict_list(MaterialManager.get_all())
+                accessories = self.dict_list(AccessoryManager.get_all())
+                
+                # Write CSV to user-selected location
+                with open(e.path, mode='w', newline='', encoding='utf-8-sig') as file:
+                    writer = csv.writer(file)
+                    
+                    # Header
+                    writer.writerow(['STORE MANAGEMENT SYSTEM - EXPORT'])
+                    writer.writerow([f'Export Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'])
+                    writer.writerow([])
+                    
+                    # Materials
+                    writer.writerow(['MATERIALS'])
+                    writer.writerow(['Name', 'Category', 'Quantity', 'Quality', 'Location'])
+                    for m in materials[:500]:
+                        writer.writerow([
+                            m.get('name', ''),
+                            m.get('category_name', 'Other'),
+                            m.get('quantity', 0),
+                            m.get('quality', 'New'),
+                            m.get('location_ids', '')
+                        ])
+                    
+                    writer.writerow([])
+                    
+                    # Accessories
+                    writer.writerow(['ACCESSORIES'])
+                    writer.writerow(['Name', 'Category', 'Quantity', 'Price', 'Quality', 'Location'])
+                    for a in accessories[:500]:
+                        writer.writerow([
+                            a.get('name', ''),
+                            a.get('category_name', 'Other'),
+                            a.get('quantity', 0),
+                            a.get('price', 0),
+                            a.get('quality', 'New'),
+                            a.get('location', '')
+                        ])
+                
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ CSV saved to: {e.path}"),
+                    bgcolor=self.success_color,
+                    duration=4000
+                )
+            except Exception as ex:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"Save failed: {str(ex)}"),
+                    bgcolor=self.danger_color,
+                    duration=4000
+                )
+            
+            page.snack_bar.open = True
+            page.update()
+        
+        # Create FilePicker
+        file_picker = ft.FilePicker(on_result=on_file_selected)
+        page.overlay.append(file_picker)
+        page.update()
+        
+        # Open save dialog
+        file_picker.save_file(
+            file_name=f"store_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            allowed_extensions=["csv"],
+            dialog_title="Save CSV to Downloads"
+        )
     def export_csv_via_share(self, page: ft.Page):
         """Export CSV and let user share/save via Android share dialog"""
         import csv
@@ -2321,7 +2400,49 @@ class StoreApp:
             )
             page.snack_bar.open = True
             page.update()
-         
+    
+    def request_permissions(self, page: ft.Page):
+        """Request storage permissions on Android"""
+        import os
+        
+        # Only for Android
+        if os.name == 'nt':
+            return
+        
+        try:
+            from android.permissions import Permission, request_permissions
+            from android.permissions import check_permission
+            
+            permissions = [
+                Permission.READ_EXTERNAL_STORAGE,
+                Permission.WRITE_EXTERNAL_STORAGE,
+                Permission.MANAGE_EXTERNAL_STORAGE,
+            ]
+            
+            # Check if permissions are granted
+            granted = all(check_permission(p) for p in permissions)
+            
+            if not granted:
+                def permission_callback(result):
+                    if result:
+                        page.snack_bar = ft.SnackBar(
+                            ft.Text("✓ Storage permissions granted! You can now export files."),
+                            bgcolor=self.success_color,
+                            duration=3000
+                        )
+                    else:
+                        page.snack_bar = ft.SnackBar(
+                            ft.Text("⚠️ Storage permissions denied. Export may not work properly."),
+                            bgcolor=self.warning_color,
+                            duration=3000
+                        )
+                    page.snack_bar.open = True
+                    page.update()
+                
+                request_permissions(permissions, permission_callback)
+        except:
+            pass
+
     def export_csv_with_picker(self, page: ft.Page):
         """Export CSV with FilePicker - user chooses save location"""
         import csv
@@ -2446,12 +2567,14 @@ class StoreApp:
             </script>
         </body>
         </html>
-        """
+    
+       """
     def export_csv_samsung(self, page: ft.Page):
-        """Export CSV directly to Samsung Internal Storage/Download"""
+        """Export CSV using Overlay - Works on all Samsung devices"""
         import csv
         import os
         from datetime import datetime
+        import tempfile
         
         try:
             # Get data
@@ -2461,109 +2584,120 @@ class StoreApp:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f"store_export_{timestamp}.csv"
             
-            # Samsung Internal Storage path
-            internal_storage = "/storage/emulated/0/"
-            
-            # Try to save to Downloads folder (most accessible)
-            save_folder = os.path.join(internal_storage, "Download")
-            
-            # Create full file path
-            file_path = os.path.join(save_folder, filename)
-            
             # Create CSV content
             csv_lines = []
             csv_lines.append("Name,Category,Quantity,Quality,Location")
             
-            for m in materials[:50]:
+            for m in materials[:100]:
                 csv_lines.append(f"\"{m.get('name', '')}\",\"{m.get('category_name', 'Other')}\",{m.get('quantity', 0)},\"{m.get('quality', 'New')}\",\"{m.get('location_ids', '')}\"")
             
             csv_content = "\n".join(csv_lines)
             
-            # Save file
-            with open(file_path, 'w', encoding='utf-8-sig') as f:
-                f.write(csv_content)
+            # Create temporary file
+            temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8-sig')
+            temp_file.write(csv_content)
+            temp_file.close()
+            temp_path = temp_file.name
             
-            def close_dialog():
-                page.dialog.open = False
+            def close_overlay():
+                page.overlay.remove(overlay_container)
                 page.update()
             
-            def copy_path():
-                page.set_clipboard(file_path)
+            def share_file():
+                file_url = f"file://{temp_path}"
+                page.launch_url(file_url)
+                close_overlay()
+                
+                # Clean up temp file
+                import threading
+                def cleanup():
+                    import time
+                    time.sleep(3)
+                    try:
+                        os.unlink(temp_path)
+                    except:
+                        pass
+                threading.Thread(target=cleanup, daemon=True).start()
+                
                 page.snack_bar = ft.SnackBar(
-                    ft.Text("✓ Path copied to clipboard"),
-                    bgcolor=self.success_color,
-                    duration=2000
+                    ft.Text("📤 Select 'Save to Drive' or 'Save to Device' to save to Downloads"),
+                    bgcolor=self.accent_color,
+                    duration=4000
                 )
                 page.snack_bar.open = True
                 page.update()
             
-            def open_folder():
-                page.launch_url(f"file://{save_folder}")
-                close_dialog()
-            
-            def share_file():
-                page.launch_url(f"file://{file_path}")
-                close_dialog()
-            
-            dialog = ft.AlertDialog(
-                title=ft.Row([
-                    ft.Text("✅ Export Complete", size=18, weight=ft.FontWeight.BOLD, color=self.success_color, expand=True),
-                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
-                ]),
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Text(f"📄 {filename}", size=14, weight=ft.FontWeight.BOLD),
-                        ft.Text("Saved to: Internal Storage → Download", size=12, color="#888888"),
-                        ft.Container(
-                            content=ft.Text(file_path, size=9, color="#888888", selectable=True),
-                            padding=6,
-                            bgcolor="#2C2C2C",
-                            border_radius=4,
-                        ),
-                        ft.Divider(),
-                        ft.Text("What would you like to do?", size=14, weight=ft.FontWeight.BOLD),
-                        ft.Row([
-                            ft.ElevatedButton(
-                                "📋 Copy Path",
-                                on_click=lambda e: copy_path(),
-                                expand=True,
-                                icon=ft.icons.CONTENT_COPY,
-                            ),
-                            ft.ElevatedButton(
-                                "📂 Open Folder",
-                                on_click=lambda e: open_folder(),
-                                expand=True,
-                                icon=ft.icons.FOLDER_OPEN,
-                            ),
-                        ], spacing=8),
-                        ft.Row([
-                            ft.ElevatedButton(
-                                "📤 Share",
-                                on_click=lambda e: share_file(),
-                                expand=True,
-                                icon=ft.icons.SHARE,
-                            ),
-                        ], spacing=8),
-                        ft.Container(height=10),
-                        ft.Text("💡 To find this file:", size=11, weight=ft.FontWeight.BOLD, color=self.accent_color),
-                        ft.Text("1. Open 'My Files' app", size=10),
-                        ft.Text("2. Tap 'Internal Storage'", size=10),
-                        ft.Text("3. Tap 'Download' folder", size=10),
-                        ft.Text(f"4. Look for {filename}", size=10),
-                    ], spacing=8),
-                    width=420,
-                    height=480,
-                    padding=15,
-                ),
+            # Create preview content
+            csv_preview = csv_content.split('\n')[:30]
+            preview_column = ft.Column(
+                [ft.Text(line[:70], size=9, font_family="monospace", color="#CCCCCC") for line in csv_preview],
+                spacing=1,
+                scroll=ft.ScrollMode.AUTO,
+                height=200
             )
             
-            page.dialog = dialog
-            dialog.open = True
+            # Create content for overlay
+            content = ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Text("📊 Export CSV", size=20, weight=ft.FontWeight.BOLD, color=self.text_color, expand=True),
+                        ft.IconButton(
+                            icon=ft.icons.CLOSE, 
+                            icon_size=24, 
+                            icon_color=self.danger_color,
+                            on_click=lambda e: close_overlay()
+                        ),
+                    ]),
+                    ft.Divider(height=1, color="#3C3C3C"),
+                    ft.Text(filename, size=14, weight=ft.FontWeight.BOLD),
+                    ft.Text(f"Materials: {len(materials)} | Accessories: {len(accessories)}", size=11, color="#888888"),
+                    ft.Divider(height=1, color="#3C3C3C"),
+                    ft.Text("📄 Preview (first 30 rows):", size=13, weight=ft.FontWeight.BOLD),
+                    preview_column,
+                    ft.Divider(height=1, color="#3C3C3C"),
+                    ft.Text("How to save to Downloads:", size=14, weight=ft.FontWeight.BOLD, color="#4CAF50"),
+                    ft.Text("1️⃣ Tap 'Share & Save' below", size=12),
+                    ft.Text("2️⃣ Select 'Save to Drive' or 'Save to Device'", size=12),
+                    ft.Text("3️⃣ Choose 'Downloads' folder", size=12),
+                    ft.Text("4️⃣ Tap 'Save'", size=12),
+                    ft.Container(height=10),
+                    ft.Row([
+                        ft.ElevatedButton(
+                            "📤 Share & Save",
+                            on_click=lambda e: share_file(),
+                            expand=True,
+                            style=ft.ButtonStyle(bgcolor="#4CAF50"),
+                            icon=ft.icons.SHARE,
+                        ),
+                    ], spacing=8),
+                    ft.Container(height=5),
+                    ft.Text("💡 Your file will open in a new window. Use the share/save option.", size=9, color="#888888"),
+                ], spacing=10),
+                width=450,
+                height=580,
+                bgcolor=self.card_color,
+                border_radius=12,
+                padding=20,
+            )
+            
+            # Create overlay container
+            overlay_container = ft.Container(
+                content=ft.Row(
+                    [content],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                expand=True,
+                bgcolor="#80000000",  # Semi-transparent black
+            )
+            
+            # Add to page overlay
+            page.overlay.append(overlay_container)
             page.update()
             
         except Exception as e:
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"Error: {str(e)}"),
+                ft.Text(f"Error: {str(e)[:50]}"),
                 bgcolor=self.danger_color,
                 duration=3000
             )
@@ -3216,7 +3350,7 @@ class StoreApp:
             ft.Row([
                 ft.ElevatedButton(
                     "📊 Export CSV",
-                    on_click=lambda e: self.export_csv_samsung(page),
+                    on_click=lambda e:  self.export_csv_with_filepicker(page),
                     expand=True,
                     style=ft.ButtonStyle(bgcolor="#4CAF50"),
                     icon=ft.icons.SHARE,
