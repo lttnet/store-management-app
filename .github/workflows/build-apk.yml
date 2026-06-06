@@ -32,57 +32,19 @@ jobs:
           flutter-version: '3.19.6'
           channel: 'stable'
       
-      - name: Create pyproject.toml with permissions
-        run: |
-          cat > pyproject.toml << 'EOF'
-[project]
-name = "store-management"
-version = "1.0.0"
-description = "Store Management System"
-dependencies = [
-    "flet>=0.21.0",
-]
-
-[tool.flet]
-app_name = "Store Management"
-app_description = "Store Management System"
-app_version = "1.0.0"
-
-[tool.flet.android]
-permissions = [
-    "android.permission.READ_EXTERNAL_STORAGE",
-    "android.permission.WRITE_EXTERNAL_STORAGE",
-    "android.permission.MANAGE_EXTERNAL_STORAGE",
-]
-
-[tool.flet.windows]
-product_name = "Store Management"
-company_name = "YourCompany"
-file_version = "1.0.0"
-product_version = "1.0.0"
-EOF
-          echo "✅ pyproject.toml created with permissions"
-      
       - name: Install dependencies
         run: |
           pip install flet==0.21.2
           pip install requests
       
-      - name: Build APK with permissions
+      - name: Build APK
         id: build
         run: |
-          # Build with explicit permissions
-          flet build apk \
-            --android-permission "android.permission.READ_EXTERNAL_STORAGE" \
-            --android-permission "android.permission.WRITE_EXTERNAL_STORAGE" \
-            --android-permission "android.permission.MANAGE_EXTERNAL_STORAGE" \
-            --verbose
+          flet build apk --verbose
           
-          # Search for APK
           echo "=== Searching for APK ==="
           find . -name "*.apk" -type f
           
-          # Get APK path
           APK_FILE=$(find . -name "*.apk" -type f | head -1)
           if [ -n "$APK_FILE" ]; then
             echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
