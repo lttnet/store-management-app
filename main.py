@@ -1059,12 +1059,16 @@ class StoreApp:
                     self.apply_zoom_to_current_view(e.control.page)
 
     def show_activation_dialog(self, page: ft.Page, user_id=None, email=None):
-        """Show activation dialog for expired trial"""
+        """Show activation dialog for expired trial with working close button"""
         import sqlite3
         from database import DB_PATH
         
         activation_field = ft.TextField(label="Activation Code", hint_text="Enter your 16-digit code", width=300, bgcolor=self.card_color)
         status_text = ft.Text("", size=12)
+        
+        def close_dialog():
+            page.dialog.open = False
+            page.update()
         
         def verify_activation(e):
             code = activation_field.value.strip().upper()
@@ -1094,7 +1098,8 @@ class StoreApp:
                 conn.commit()
                 conn.close()
                 
-                page.dialog.open = False
+                close_dialog()
+                
                 page.snack_bar = ft.SnackBar(
                     ft.Text("✓ Account activated! You now have full access. Please login again."),
                     bgcolor=self.success_color,
@@ -1110,7 +1115,7 @@ class StoreApp:
                 conn.close()
         
         def buy_license(e):
-            page.dialog.open = False
+            close_dialog()
             page.snack_bar = ft.SnackBar(
                 ft.Text("📧 Please email support@storemanagement.com to purchase a license"),
                 bgcolor=self.accent_color,
@@ -1120,7 +1125,10 @@ class StoreApp:
             page.update()
         
         dialog = ft.AlertDialog(
-            title=ft.Text("Activate Full Access", size=18, weight=ft.FontWeight.BOLD, color=self.accent_color),
+            title=ft.Row([
+                ft.Text("Activate Full Access", size=18, weight=ft.FontWeight.BOLD, color=self.accent_color, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
+            ]),
             content=ft.Container(
                 content=ft.Column([
                     ft.Text("Your trial has expired.", size=13, color="#888888"),
@@ -1134,12 +1142,12 @@ class StoreApp:
                     ft.Text("to purchase a license.", size=11, color=self.accent_color),
                 ], spacing=8),
                 width=380,
-                height=370,
+                height=400,
                 padding=20,
             ),
             actions=[
                 ft.TextButton("Buy License", on_click=buy_license),
-                ft.TextButton("Cancel", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog()),
                 ft.FilledButton("Activate", on_click=verify_activation, style=ft.ButtonStyle(bgcolor=self.success_color)),
             ],
         )
@@ -1149,13 +1157,17 @@ class StoreApp:
         page.update()
 
     def show_activation_only_dialog(self, page: ft.Page):
-        """Show activation dialog for existing users"""
+        """Show activation dialog for existing users with working close button"""
         import sqlite3
         from database import DB_PATH
         
         email_field = ft.TextField(label="Email", width=300, bgcolor=self.card_color)
         activation_field = ft.TextField(label="Activation Code", width=300, bgcolor=self.card_color)
         status_text = ft.Text("", size=12)
+        
+        def close_dialog():
+            page.dialog.open = False
+            page.update()
         
         def verify_activation(e):
             email = email_field.value.strip()
@@ -1177,7 +1189,8 @@ class StoreApp:
                 conn.commit()
                 conn.close()
                 
-                page.dialog.open = False
+                close_dialog()
+                
                 page.snack_bar = ft.SnackBar(
                     ft.Text("✓ Account activated! You can now log in."),
                     bgcolor=self.success_color,
@@ -1192,7 +1205,10 @@ class StoreApp:
                 conn.close()
         
         dialog = ft.AlertDialog(
-            title=ft.Text("Activate License", size=18, weight=ft.FontWeight.BOLD, color=self.accent_color),
+            title=ft.Row([
+                ft.Text("Activate License", size=18, weight=ft.FontWeight.BOLD, color=self.accent_color, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
+            ]),
             content=ft.Container(
                 content=ft.Column([
                     ft.Text("Enter your email and activation code:", size=13),
@@ -1206,7 +1222,7 @@ class StoreApp:
                 padding=20,
             ),
             actions=[
-                ft.TextButton("Cancel", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog()),
                 ft.FilledButton("Activate", on_click=verify_activation, style=ft.ButtonStyle(bgcolor=self.success_color)),
             ],
         )
@@ -1216,7 +1232,7 @@ class StoreApp:
         page.update()
     
     def show_trial_signup_dialog(self, page: ft.Page):
-        """Dialog for 30-day trial signup"""
+        """Dialog for 30-day trial signup with working close button"""
         import sqlite3
         from database import DB_PATH
         from datetime import datetime, timedelta
@@ -1232,6 +1248,10 @@ class StoreApp:
         
         def generate_activation_code():
             return ''.join(random.choices(string.ascii_uppercase + string.digits, k=16))
+        
+        def close_dialog():
+            page.dialog.open = False
+            page.update()
         
         def create_trial_account(e):
             name = name_field.value.strip()
@@ -1283,7 +1303,8 @@ class StoreApp:
             conn.commit()
             conn.close()
             
-            page.dialog.open = False
+            close_dialog()
+            
             page.snack_bar = ft.SnackBar(
                 ft.Text(f"✓ Trial account created! Login with your email. Trial expires in 30 days."),
                 bgcolor=self.success_color,
@@ -1293,7 +1314,10 @@ class StoreApp:
             page.update()
         
         dialog = ft.AlertDialog(
-            title=ft.Text("Start 30-Day Free Trial", size=20, weight=ft.FontWeight.BOLD, color=self.success_color),
+            title=ft.Row([
+                ft.Text("Start 30-Day Free Trial", size=20, weight=ft.FontWeight.BOLD, color=self.success_color, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
+            ]),
             content=ft.Container(
                 content=ft.Column([
                     ft.Text("Create your account to start your free trial:", size=13, color="#888888"),
@@ -1309,11 +1333,11 @@ class StoreApp:
                     ft.Text("✓ Cancel anytime", size=11, color="#888888"),
                 ], spacing=8),
                 width=380,
-                height=470,
+                height=500,
                 padding=20,
             ),
             actions=[
-                ft.TextButton("Cancel", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog()),
                 ft.FilledButton("Start Trial", on_click=create_trial_account, style=ft.ButtonStyle(bgcolor=self.success_color)),
             ],
         )
@@ -1323,7 +1347,7 @@ class StoreApp:
         page.update()
         
     def show_login(self, page: ft.Page):
-        """Show login screen with trial access only"""
+        """Show login screen with trial access only for regular users"""
         page.controls.clear()
         
         field_width = 280
@@ -1342,14 +1366,13 @@ class StoreApp:
                 page.update()
                 return
             
-            # Authenticate user
             user = UserManager.authenticate(email, password)
             
             if user:
                 user_dict = dict(user)
                 user_id = user_dict.get('id')
+                user_role = user_dict.get('role', 'user')
                 
-                # Check trial status
                 import sqlite3
                 from database import DB_PATH
                 from datetime import datetime
@@ -1360,6 +1383,20 @@ class StoreApp:
                 result = cursor.fetchone()
                 conn.close()
                 
+                # ADMIN USERS - Full access immediately, no trial
+                if user_role == 'admin':
+                    self.current_user = user_dict
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("✓ Welcome Admin! Full access granted."),
+                        bgcolor=self.success_color,
+                        duration=3000
+                    )
+                    page.snack_bar.open = True
+                    self.show_dashboard(page)
+                    page.update()
+                    return
+                
+                # REGULAR USERS - Check trial status
                 if result:
                     end_date_str = result[0]
                     is_activated = result[1]
@@ -1369,7 +1406,7 @@ class StoreApp:
                         # Full access user
                         self.current_user = user_dict
                         page.snack_bar = ft.SnackBar(
-                            ft.Text("✓ Welcome back! Full access granted."),
+                            ft.Text("✓ Welcome! Full access granted."),
                             bgcolor=self.success_color,
                             duration=3000
                         )
@@ -3967,7 +4004,7 @@ class StoreApp:
 
                 # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Dashboard with trial system integration"""
+        """Dashboard with trial system - Admin gets no trial messages"""
         page.controls.clear()
         
         # Check if mobile
@@ -4016,8 +4053,12 @@ class StoreApp:
         )
         main_column.controls.append(ft.Text("Welcome back!", size=14, color="#888888"))
         
-        # ========== TRIAL WARNING (if applicable) ==========
-        if self.current_user and self.current_user.get('account_type') == 'trial':
+        # ========== TRIAL WARNING (ONLY for trial users, NOT for admin) ==========
+        user_role = self.current_user.get('role') if self.current_user else 'user'
+        user_account_type = self.current_user.get('account_type') if self.current_user else 'trial'
+        
+        # Only show trial warning for non-admin users with trial account
+        if user_role != 'admin' and user_account_type == 'trial':
             import sqlite3
             from database import DB_PATH
             from datetime import datetime
@@ -4180,19 +4221,16 @@ class StoreApp:
         # ========== SECTION 7: QUICK ACTIONS ==========
         main_column.controls.append(ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD))
         
-        # Check if user has write access
-        has_write_access = self.current_user and self.current_user.get('role') != 'guest'
-        
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Add Material", on_click=lambda e: self.open_add_modal(page) if has_write_access else self.show_no_permission(page), expand=True),
-                ft.ElevatedButton("Add Part", on_click=lambda e: self.open_add_accessory_modal(page) if has_write_access else self.show_no_permission(page), expand=True),
+                ft.ElevatedButton("Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
+                ft.ElevatedButton("Add Part", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
             ], spacing=8)
         )
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton("Scan", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
-                ft.ElevatedButton("Export Data", on_click=lambda e: self.export_all_data_simple(page) if has_write_access else self.show_no_permission(page), expand=True),
+                ft.ElevatedButton("Export Data", on_click=lambda e: self.export_all_data_simple(page), expand=True),
             ], spacing=8)
         )
         
@@ -4201,8 +4239,8 @@ class StoreApp:
         
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Import Materials", on_click=lambda e: self.show_import_dialog(page, "materials") if has_write_access else self.show_no_permission(page), expand=True),
-                ft.ElevatedButton("Import Accessories", on_click=lambda e: self.show_import_dialog(page, "accessories") if has_write_access else self.show_no_permission(page), expand=True),
+                ft.ElevatedButton("Import Materials", on_click=lambda e: self.show_import_dialog(page, "materials"), expand=True),
+                ft.ElevatedButton("Import Accessories", on_click=lambda e: self.show_import_dialog(page, "accessories"), expand=True),
             ], spacing=8)
         )
         
@@ -4242,8 +4280,8 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # ========== SECTION 9: ACCOUNT INFO (for trial users) ==========
-        if self.current_user and self.current_user.get('account_type') == 'trial':
+        # ========== SECTION 9: ACCOUNT INFO (ONLY for trial users, NOT for admin) ==========
+        if user_role != 'admin' and user_account_type == 'trial':
             import sqlite3
             from database import DB_PATH
             from datetime import datetime
