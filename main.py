@@ -1239,9 +1239,73 @@ class StoreApp:
             bgcolor=self.sidebar_color,
         )
     
-    def export_html_to_browser(self, page: ft.Page):
-        """Export HTML and open directly in browser - No storage needed"""
+    def export_html_chrome_alternative(self, page: ft.Page):
+        """Force open in Chrome using package name"""
+        import subprocess
+        import tempfile
+        from datetime import datetime
+        
+        try:
+            materials = self.dict_list(MaterialManager.get_all())
+            
+            html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Store Export</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    body {{ font-family: Arial; margin: 20px; }}
+                    table {{ border-collapse: collapse; width: 100%; }}
+                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                    th {{ background-color: #4CAF50; color: white; }}
+                </style>
+            </head>
+            <body>
+                <h1>Store Management Export</h1>
+                <p>Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <h2>Materials ({len(materials)})</h2>
+                </table>
+                    <tr><th>Name</th><th>Quantity</th><th>Quality</th></tr>
+            """
+            
+            for m in materials[:100]:
+                html += f"<tr><td>{m.get('name', '')}</td><td>{m.get('quantity', 0)}</td><td>{m.get('quality', 'New')}</td></tr>"
+            
+            html += "</table></body></html>"
+            
+            # Save temp file
+            temp = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8')
+            temp.write(html)
+            temp.close()
+            
+            # Force open in Chrome using ADB-like intent (works on Samsung)
+            file_url = f"file://{temp.name}"
+            
+            # Use Chrome intent
+            page.launch_url(f"intent://{file_url}#Intent;scheme=file;package=com.android.chrome;end")
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text("🌐 Opening in Chrome..."),
+                bgcolor=self.success_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Error: {str(e)}"),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
+    def export_html_force_chrome(self, page: ft.Page):
+        """Export HTML and force open in Chrome browser"""
         import os
+        import tempfile
         from datetime import datetime
         
         try:
@@ -1281,6 +1345,8 @@ class StoreApp:
                         padding: 30px;
                         text-align: center;
                     }}
+                    .header h1 {{ font-size: 24px; margin-bottom: 8px; }}
+                    .header p {{ font-size: 14px; opacity: 0.9; }}
                     .stats {{
                         display: grid;
                         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -1300,14 +1366,14 @@ class StoreApp:
                         font-weight: bold;
                         color: #1976D2;
                     }}
-                    .section {{
-                        padding: 20px 25px;
-                    }}
+                    .stat-card .label {{ font-size: 12px; color: #666; margin-top: 5px; }}
+                    .section {{ padding: 20px 25px; }}
                     .section h2 {{
                         color: #333;
                         border-left: 4px solid #1976D2;
                         padding-left: 15px;
                         margin-bottom: 15px;
+                        font-size: 18px;
                     }}
                     table {{
                         width: 100%;
@@ -1321,6 +1387,7 @@ class StoreApp:
                     th {{
                         background-color: #1976D2;
                         color: white;
+                        font-weight: 600;
                     }}
                     .badge {{
                         display: inline-block;
@@ -1344,7 +1411,7 @@ class StoreApp:
                     @media (max-width: 600px) {{
                         .stats {{ gap: 8px; padding: 15px; }}
                         .stat-card .value {{ font-size: 22px; }}
-                        th, td {{ padding: 6px; font-size: 12px; }}
+                        th, td {{ padding: 6px; font-size: 11px; }}
                     }}
                 </style>
             </head>
@@ -1358,15 +1425,15 @@ class StoreApp:
                     <div class="stats">
                         <div class="stat-card">
                             <div class="value">{len(materials)}</div>
-                            <div>Materials</div>
+                            <div class="label">Materials</div>
                         </div>
                         <div class="stat-card">
                             <div class="value">{len(accessories)}</div>
-                            <div>Accessories</div>
+                            <div class="label">Accessories</div>
                         </div>
                         <div class="stat-card">
                             <div class="value">{len(materials) + len(accessories)}</div>
-                            <div>Total Items</div>
+                            <div class="label">Total Items</div>
                         </div>
                     </div>
                     
@@ -1421,7 +1488,7 @@ class StoreApp:
                                     </tr>
                 """
             
-            html_content += """
+            html_content += f"""
                                 </tbody>
                             </table>
                         </div>
@@ -1429,26 +1496,41 @@ class StoreApp:
                     
                     <div class="footer">
                         <p>Generated by Store Management System</p>
-                        <p>Report ID: """ + timestamp + """</p>
+                        <p>Report ID: {timestamp}</p>
+                        <p>© {datetime.now().year} Store Management</p>
                     </div>
                 </div>
             </body>
             </html>
             """
             
-            # Create a temporary HTML file
-            import tempfile
+            # Create temporary HTML file
             temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8')
             temp_file.write(html_content)
             temp_file.close()
             
-            # Open in browser
-            import webbrowser
-            webbrowser.open(f"file://{temp_file.name}")
+            # Method 1: Force open in Chrome using intent
+            file_path = temp_file.name
+            file_url = f"file://{file_path}"
+            
+            # Chrome intent URI
+            chrome_intent = f"googlechrome://{file_path}"
+            
+            # Try multiple methods to force Chrome
+            try:
+                # Method 1: Direct Chrome intent
+                page.launch_url(chrome_intent)
+            except:
+                try:
+                    # Method 2: Use chrome:// URL
+                    page.launch_url(f"chrome://{file_path}")
+                except:
+                    # Method 3: Default browser (fallback)
+                    page.launch_url(file_url)
             
             # Show success message
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"🌐 Report opened in browser! {len(materials)} materials, {len(accessories)} accessories"),
+                ft.Text(f"🌐 Report opened in Chrome! {len(materials)} materials, {len(accessories)} accessories"),
                 bgcolor=self.success_color,
                 duration=4000
             )
@@ -3728,14 +3810,14 @@ class StoreApp:
             ft.Row([
                 ft.ElevatedButton(
                     "📊 Export CSV",
-                    on_click=lambda e:  self.export_csv_direct_samsung(page),
+                    on_click=lambda e:  self.export_html_chrome_alternative(page),
                     expand=True,
                     style=ft.ButtonStyle(bgcolor="#4CAF50"),
                     icon=ft.icons.SHARE,
                 ),
                 ft.ElevatedButton(
                     "🌐 Export HTML",
-                    on_click=lambda e: self.export_html_to_browser(page),
+                    on_click=lambda e: self.export_html_force_chrome(page),
                     expand=True,
                     style=ft.ButtonStyle(bgcolor="#2196F3"),
                     icon=ft.icons.WEB,
