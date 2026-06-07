@@ -1239,97 +1239,382 @@ class StoreApp:
             bgcolor=self.sidebar_color,
         )
     
-    def test_filepicker(self, page: ft.Page):
-        """Simple test to verify FilePicker works"""
-        def on_result(e: ft.FilePickerResultEvent):
-            if e.path:
-                page.snack_bar = ft.SnackBar(ft.Text(f"Selected: {e.path}"))
-            else:
-                page.snack_bar = ft.SnackBar(ft.Text("Cancelled"))
-            page.snack_bar.open = True
-            page.update()
-        
-        picker = ft.FilePicker(on_result=on_result)
-        page.overlay.append(picker)
-        page.update()
-        
-        picker.save_file(file_name="test.txt")
-
-    def export_csv_safe(self, page: ft.Page):
-        """Safe CSV export using FilePicker - No permission requests needed"""
-        import csv
+    def export_html_to_browser(self, page: ft.Page):
+        """Export HTML and open directly in browser - No storage needed"""
+        import os
         from datetime import datetime
         
-        def on_file_selected(e: ft.FilePickerResultEvent):
-            if not e.path:
-                page.snack_bar = ft.SnackBar(ft.Text("Save cancelled"))
-                page.snack_bar.open = True
-                page.update()
-                return
-                
-            try:
-                # Get data
-                materials = self.dict_list(MaterialManager.get_all())
-                accessories = self.dict_list(AccessoryManager.get_all())
-                
-                # Write CSV to user-selected location
-                with open(e.path, mode='w', newline='', encoding='utf-8-sig') as file:
-                    writer = csv.writer(file)
-                    writer.writerow(['STORE MANAGEMENT SYSTEM - EXPORT'])
-                    writer.writerow([f'Export Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'])
-                    writer.writerow([])
-                    writer.writerow(['MATERIALS'])
-                    writer.writerow(['Name', 'Category', 'Quantity', 'Quality', 'Location'])
+        try:
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Generate HTML content
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Store Management Report</title>
+                <style>
+                    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+                    body {{
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        min-height: 100vh;
+                        padding: 20px;
+                    }}
+                    .container {{
+                        max-width: 1200px;
+                        margin: 0 auto;
+                        background: white;
+                        border-radius: 16px;
+                        overflow: hidden;
+                        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                    }}
+                    .header {{
+                        background: linear-gradient(135deg, #1976D2 0%, #2196F3 100%);
+                        color: white;
+                        padding: 30px;
+                        text-align: center;
+                    }}
+                    .stats {{
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                        gap: 15px;
+                        padding: 25px;
+                        background: #f8f9fa;
+                    }}
+                    .stat-card {{
+                        background: white;
+                        padding: 15px;
+                        border-radius: 12px;
+                        text-align: center;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                    }}
+                    .stat-card .value {{
+                        font-size: 28px;
+                        font-weight: bold;
+                        color: #1976D2;
+                    }}
+                    .section {{
+                        padding: 20px 25px;
+                    }}
+                    .section h2 {{
+                        color: #333;
+                        border-left: 4px solid #1976D2;
+                        padding-left: 15px;
+                        margin-bottom: 15px;
+                    }}
+                    table {{
+                        width: 100%;
+                        border-collapse: collapse;
+                    }}
+                    th, td {{
+                        border: 1px solid #ddd;
+                        padding: 10px;
+                        text-align: left;
+                    }}
+                    th {{
+                        background-color: #1976D2;
+                        color: white;
+                    }}
+                    .badge {{
+                        display: inline-block;
+                        padding: 3px 10px;
+                        border-radius: 20px;
+                        font-size: 11px;
+                        font-weight: bold;
+                        color: white;
+                    }}
+                    .badge-new {{ background-color: #4CAF50; }}
+                    .badge-used {{ background-color: #FF9800; }}
+                    .badge-damaged {{ background-color: #F44336; }}
+                    .badge-repaired {{ background-color: #2196F3; }}
+                    .footer {{
+                        text-align: center;
+                        padding: 20px;
+                        background: #f8f9fa;
+                        color: #888;
+                        font-size: 12px;
+                    }}
+                    @media (max-width: 600px) {{
+                        .stats {{ gap: 8px; padding: 15px; }}
+                        .stat-card .value {{ font-size: 22px; }}
+                        th, td {{ padding: 6px; font-size: 12px; }}
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>📊 Store Management Report</h1>
+                        <p>Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}</p>
+                    </div>
                     
-                    for m in materials[:500]:
-                        writer.writerow([
-                            m.get('name', ''),
-                            m.get('category_name', 'Other'),
-                            m.get('quantity', 0),
-                            m.get('quality', 'New'),
-                            m.get('location_ids', '')
-                        ])
+                    <div class="stats">
+                        <div class="stat-card">
+                            <div class="value">{len(materials)}</div>
+                            <div>Materials</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="value">{len(accessories)}</div>
+                            <div>Accessories</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="value">{len(materials) + len(accessories)}</div>
+                            <div>Total Items</div>
+                        </div>
+                    </div>
                     
-                    writer.writerow([])
-                    writer.writerow(['ACCESSORIES'])
-                    writer.writerow(['Name', 'Category', 'Quantity', 'Price', 'Quality', 'Location'])
+                    <div class="section">
+                        <h2>📦 Materials</h2>
+                        <div style="overflow-x: auto;">
+                            <table>
+                                <thead>
+                                    <tr><th>Name</th><th>Quantity</th><th>Quality</th><th>Location</th></tr>
+                                </thead>
+                                <tbody>
+            """
+            
+            for m in materials[:50]:
+                quality = m.get('quality', 'Used')
+                html_content += f"""
+                                    <tr>
+                                        <td>{m.get('name', 'N/A')}</td>
+                                        <td>{m.get('quantity', 0)}</td>
+                                        <td><span class="badge badge-{quality.lower()}">{quality}</span></td>
+                                        <td>{m.get('location_ids', 'N/A')}</td>
+                                    </tr>
+                """
+            
+            html_content += f"""
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                     
-                    for a in accessories[:500]:
-                        writer.writerow([
-                            a.get('name', ''),
-                            a.get('category_name', 'Other'),
-                            a.get('quantity', 0),
-                            a.get('price', 0),
-                            a.get('quality', 'New'),
-                            a.get('location', '')
-                        ])
+                    <div class="section">
+                        <h2>🔧 Accessories</h2>
+                        <div style="overflow-x: auto;">
+                            <table>
+                                <thead>
+                                    <tr><th>Name</th><th>Quantity</th><th>Price</th><th>Quality</th><th>Location</th></tr>
+                                </thead>
+                                <tbody>
+            """
+            
+            for a in accessories[:50]:
+                quality = a.get('quality', 'Used')
+                price = a.get('price', 0)
+                price_text = f"${price:.2f}" if price else "-"
+                html_content += f"""
+                                    <tr>
+                                        <td>{a.get('name', 'N/A')}</td>
+                                        <td>{a.get('quantity', 0)}</td>
+                                        <td>{price_text}</td>
+                                        <td><span class="badge badge-{quality.lower()}">{quality}</span></td>
+                                        <td>{a.get('location', 'N/A')}</td>
+                                    </tr>
+                """
+            
+            html_content += """
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>Generated by Store Management System</p>
+                        <p>Report ID: """ + timestamp + """</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            # Create a temporary HTML file
+            import tempfile
+            temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8')
+            temp_file.write(html_content)
+            temp_file.close()
+            
+            # Open in browser
+            import webbrowser
+            webbrowser.open(f"file://{temp_file.name}")
+            
+            # Show success message
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"🌐 Report opened in browser! {len(materials)} materials, {len(accessories)} accessories"),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Error: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+
+    def export_csv_direct_samsung(self, page: ft.Page):
+        """Direct save to Samsung accessible folder - No FilePicker needed"""
+        import csv
+        import os
+        from datetime import datetime
+        
+        try:
+            # Get data
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"store_export_{timestamp}.csv"
+            
+            # Try multiple accessible paths on Samsung
+            possible_paths = [
+                "/storage/emulated/0/Download",      # Downloads folder
+                "/storage/emulated/0/Documents",     # Documents folder
+                "/sdcard/Download",                  # SD Card Download
+                "/storage/emulated/0/DCIM",          # DCIM folder
+            ]
+            
+            saved_path = None
+            for path in possible_paths:
+                try:
+                    if os.path.exists(path):
+                        full_path = os.path.join(path, filename)
+                        with open(full_path, 'w', newline='', encoding='utf-8-sig') as file:
+                            writer = csv.writer(file)
+                            writer.writerow(['STORE MANAGEMENT SYSTEM - EXPORT'])
+                            writer.writerow([f'Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'])
+                            writer.writerow([])
+                            writer.writerow(['MATERIALS'])
+                            writer.writerow(['Name', 'Category', 'Quantity', 'Quality', 'Location'])
+                            
+                            for m in materials[:500]:
+                                writer.writerow([
+                                    m.get('name', ''),
+                                    m.get('category_name', 'Other'),
+                                    m.get('quantity', 0),
+                                    m.get('quality', 'New'),
+                                    m.get('location_ids', '')
+                                ])
+                            
+                            writer.writerow([])
+                            writer.writerow(['ACCESSORIES'])
+                            writer.writerow(['Name', 'Category', 'Quantity', 'Price', 'Quality', 'Location'])
+                            
+                            for a in accessories[:500]:
+                                writer.writerow([
+                                    a.get('name', ''),
+                                    a.get('category_name', 'Other'),
+                                    a.get('quantity', 0),
+                                    a.get('price', 0),
+                                    a.get('quality', 'New'),
+                                    a.get('location', '')
+                                ])
+                        
+                        saved_path = full_path
+                        break
+                except Exception as e:
+                    print(f"Failed to save to {path}: {e}")
+                    continue
+            
+            if saved_path:
+                # Show success with instructions
+                def copy_path():
+                    page.set_clipboard(saved_path)
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("✓ Path copied to clipboard"),
+                        bgcolor=self.success_color,
+                        duration=2000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
                 
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✓ CSV saved successfully!"),
-                    bgcolor=self.success_color,
-                    duration=4000
+                def open_folder():
+                    folder = os.path.dirname(saved_path)
+                    page.launch_url(f"file://{folder}")
+                    close_overlay()
+                
+                def close_overlay():
+                    if hasattr(page, 'dialog') and page.dialog:
+                        page.dialog.open = False
+                    page.update()
+                
+                # Create dialog
+                dialog = ft.AlertDialog(
+                    title=ft.Row([
+                        ft.Text("✅ Export Successful", size=18, weight=ft.FontWeight.BOLD, color=self.success_color, expand=True),
+                        ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_overlay()),
+                    ]),
+                    content=ft.Container(
+                        content=ft.Column([
+                            ft.Text(filename, size=14, weight=ft.FontWeight.BOLD),
+                            ft.Text(f"Materials: {len(materials)} | Accessories: {len(accessories)}", size=11, color="#888888"),
+                            ft.Divider(),
+                            ft.Text("📍 File saved to:", size=13, weight=ft.FontWeight.BOLD),
+                            ft.Container(
+                                content=ft.Text(saved_path, size=9, color="#888888", selectable=True),
+                                padding=6,
+                                bgcolor="#2C2C2C",
+                                border_radius=4,
+                            ),
+                            ft.Row([
+                                ft.ElevatedButton(
+                                    "📋 Copy Path",
+                                    on_click=lambda e: copy_path(),
+                                    expand=True,
+                                    icon=ft.icons.CONTENT_COPY,
+                                ),
+                                ft.ElevatedButton(
+                                    "📂 Open Folder",
+                                    on_click=lambda e: open_folder(),
+                                    expand=True,
+                                    icon=ft.icons.FOLDER_OPEN,
+                                ),
+                            ], spacing=8),
+                            ft.Divider(),
+                            ft.Text("📱 To open this file:", size=13, weight=ft.FontWeight.BOLD),
+                            ft.Text("1. Open 'My Files' app", size=11),
+                            ft.Text("2. Go to 'Internal Storage'", size=11),
+                            ft.Text("3. Look in 'Download' folder", size=11),
+                            ft.Text("4. Tap the file to open", size=11),
+                        ], spacing=8),
+                        width=420,
+                        height=450,
+                        padding=15,
+                    ),
                 )
-            except Exception as ex:
+                
+                page.dialog = dialog
+                dialog.open = True
+                page.update()
+            else:
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"Save failed: {str(ex)}"),
+                    ft.Text("Could not save file. No accessible folder found."),
                     bgcolor=self.danger_color,
                     duration=4000
                 )
+                page.snack_bar.open = True
+                page.update()
             
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Error: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=4000
+            )
             page.snack_bar.open = True
             page.update()
-        
-        # Create FilePicker (no permissions needed)
-        file_picker = ft.FilePicker(on_result=on_file_selected)
-        page.overlay.append(file_picker)
-        page.update()
-        
-        # Open save dialog
-        file_picker.save_file(
-            file_name=f"store_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            allowed_extensions=["csv"],
-            dialog_title="Save CSV"
-        )
 
     def export_csv_reliable(self, page: ft.Page):
         """Most reliable CSV export - uses cache and share"""
@@ -3443,14 +3728,14 @@ class StoreApp:
             ft.Row([
                 ft.ElevatedButton(
                     "📊 Export CSV",
-                    on_click=lambda e:  self.test_filepicker(page),
+                    on_click=lambda e:  self.export_csv_direct_samsung(page),
                     expand=True,
                     style=ft.ButtonStyle(bgcolor="#4CAF50"),
                     icon=ft.icons.SHARE,
                 ),
                 ft.ElevatedButton(
                     "🌐 Export HTML",
-                    on_click=lambda e: self.export_html_and_open(page),
+                    on_click=lambda e: self.export_html_to_browser(page),
                     expand=True,
                     style=ft.ButtonStyle(bgcolor="#2196F3"),
                     icon=ft.icons.WEB,
