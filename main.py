@@ -3535,7 +3535,7 @@ class StoreApp:
         webview.on_javascript_message = on_message
 
     def export_html_simple(self, page: ft.Page):
-        """Simple HTML export - saves to Downloads folder with copy path"""
+        """Simple HTML export - saves to app storage, user copies via share"""
         import os
         from datetime import datetime
         
@@ -3550,13 +3550,20 @@ class StoreApp:
             # Generate HTML content
             html_content = self.generate_html_report(materials, accessories, timestamp)
             
-            # Save to Downloads folder
-            download_path = "/storage/emulated/0/Download"
-            file_path = os.path.join(download_path, filename)
+            # Save to app's private storage (ALWAYS works - no permission needed)
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            exports_dir = os.path.join(base_dir, "exports")
+            os.makedirs(exports_dir, exist_ok=True)
+            file_path = os.path.join(exports_dir, filename)
             
-            # Write HTML file
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
+            
+            file_size = os.path.getsize(file_path)
+            if file_size < 1024:
+                size_str = f"{file_size} bytes"
+            else:
+                size_str = f"{file_size / 1024:.1f} KB"
             
             def copy_path():
                 page.set_clipboard(file_path)
@@ -3568,11 +3575,21 @@ class StoreApp:
                 page.snack_bar.open = True
                 page.update()
             
+            def share_file():
+                page.launch_url(f"file://{file_path}")
+                close_dialog()
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("📤 Select 'Save to Drive' or 'Save to Device' to save to Downloads"),
+                    bgcolor=self.accent_color,
+                    duration=4000
+                )
+                page.snack_bar.open = True
+                page.update()
+            
             def close_dialog():
                 page.dialog.open = False
                 page.update()
             
-            # Show success dialog
             dialog = ft.AlertDialog(
                 title=ft.Row([
                     ft.Text("✅ Export Complete", size=18, weight=ft.FontWeight.BOLD, color=self.success_color, expand=True),
@@ -3581,7 +3598,7 @@ class StoreApp:
                 content=ft.Container(
                     content=ft.Column([
                         ft.Text(filename, size=14, weight=ft.FontWeight.BOLD),
-                        ft.Text(f"Saved to: Downloads folder", size=12, color="#888888"),
+                        ft.Text(f"Size: {size_str} | Materials: {len(materials)}", size=11, color="#888888"),
                         ft.Container(
                             content=ft.Text(file_path, size=9, color="#888888", selectable=True),
                             padding=6,
@@ -3589,6 +3606,21 @@ class StoreApp:
                             border_radius=4,
                         ),
                         ft.Divider(),
+                        ft.Text("How to save to Downloads:", size=13, weight=ft.FontWeight.BOLD, color="#4CAF50"),
+                        ft.Text("1️⃣ Tap 'Share File' below", size=12),
+                        ft.Text("2️⃣ Select 'Save to Drive' or 'Save to Device'", size=12),
+                        ft.Text("3️⃣ Choose 'Downloads' folder", size=12),
+                        ft.Text("4️⃣ Tap 'Save'", size=12),
+                        ft.Divider(),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "📤 Share File",
+                                on_click=lambda e: share_file(),
+                                expand=True,
+                                icon=ft.icons.SHARE,
+                                style=ft.ButtonStyle(bgcolor="#9C27B0"),
+                            ),
+                        ], spacing=8),
                         ft.Row([
                             ft.ElevatedButton(
                                 "📋 Copy Path",
@@ -3598,12 +3630,11 @@ class StoreApp:
                                 style=ft.ButtonStyle(bgcolor="#2196F3"),
                             ),
                         ], spacing=8),
-                        ft.Container(height=10),
-                        ft.Text("💡 File saved to: Internal Storage → Download", size=10, color="#888888"),
-                        ft.Text("💡 Tap Copy Path to get file location", size=10, color="#888888"),
+                        ft.Container(height=5),
+                        ft.Text("💡 File saved in app storage. Use Share to save to Downloads.", size=9, color="#888888"),
                     ], spacing=8),
-                    width=420,
-                    height=320,
+                    width=450,
+                    height=420,
                     padding=20,
                 ),
             )
@@ -3841,7 +3872,7 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # View Exports button
+        # In the Import/Export section, add:
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton(
@@ -3904,29 +3935,44 @@ class StoreApp:
         )
     
     def show_exported_files_simple(self, page: ft.Page):
-        """Simple view exports - show HTML files with copy path"""
+        """Show exported files from app storage"""
         import os
         
-        download_path = "/storage/emulated/0/Download"
-        all_files = []
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        export_dir = os.path.join(base_dir, "exports")
         
-        if os.path.exists(download_path):
-            for f in os.listdir(download_path):
-                if f.startswith('store_report_') and f.endswith('.html'):
-                    file_path = os.path.join(download_path, f)
+        if not os.path.exists(export_dir):
+            os.makedirs(export_dir, exist_ok=True)
+        
+        # Get all HTML files
+        all_files = []
+        if os.path.exists(export_dir):
+            for f in os.listdir(export_dir):
+                if f.endswith('.html'):
+                    file_path = os.path.join(export_dir, f)
                     size_bytes = os.path.getsize(file_path)
                     if size_bytes < 1024:
                         size_str = f"{size_bytes} B"
                     else:
                         size_str = f"{size_bytes / 1024:.1f} KB"
-                    all_files.append((f, file_path, size_str))
+                    
+                    # Get file date from filename
+                    date_str = "Unknown"
+                    if '_' in f:
+                        parts = f.replace('.html', '').split('_')
+                        if len(parts) >= 2:
+                            date_str = parts[1]
+                            if len(date_str) == 8:
+                                date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+                    
+                    all_files.append((f, file_path, size_str, date_str))
         
         all_files.sort(reverse=True)
         
         if not all_files:
             dialog = ft.AlertDialog(
                 title=ft.Text("📁 No Files"),
-                content=ft.Text("No HTML reports found.\n\nExport some data first."),
+                content=ft.Text("No exported HTML reports found.\n\nExport some data first from Dashboard or Inventory."),
                 actions=[ft.TextButton("OK", on_click=lambda e: setattr(page.dialog, 'open', False))],
             )
             page.dialog = dialog
@@ -3936,12 +3982,22 @@ class StoreApp:
         
         file_items = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, height=400)
         
-        for filename, file_path, size_str in all_files:
+        for filename, file_path, size_str, date_str in all_files:
             def copy_path(p=file_path):
                 page.set_clipboard(p)
                 page.snack_bar = ft.SnackBar(
                     ft.Text("✓ Path copied to clipboard!"),
                     bgcolor=self.success_color,
+                    duration=2000
+                )
+                page.snack_bar.open = True
+                page.update()
+            
+            def share_file(p=file_path, f=filename):
+                page.launch_url(f"file://{p}")
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"📤 Sharing {f}"),
+                    bgcolor=self.accent_color,
                     duration=2000
                 )
                 page.snack_bar.open = True
@@ -3954,15 +4010,24 @@ class StoreApp:
                             ft.Text("🌐", size=24),
                             ft.Column([
                                 ft.Text(filename, size=13, weight=ft.FontWeight.BOLD),
-                                ft.Text(f"Size: {size_str}", size=10, color="#888888"),
+                                ft.Text(f"Date: {date_str} • Size: {size_str}", size=10, color="#888888"),
                             ], spacing=2, expand=True),
-                            ft.IconButton(
-                                icon=ft.icons.CONTENT_COPY,
-                                icon_size=20,
-                                icon_color=self.accent_color,
-                                on_click=lambda e: copy_path(),
-                                tooltip="Copy Path",
-                            ),
+                            ft.Row([
+                                ft.IconButton(
+                                    icon=ft.icons.SHARE,
+                                    icon_size=20,
+                                    icon_color="#9C27B0",
+                                    on_click=lambda e: share_file(),
+                                    tooltip="Share",
+                                ),
+                                ft.IconButton(
+                                    icon=ft.icons.CONTENT_COPY,
+                                    icon_size=20,
+                                    icon_color=self.accent_color,
+                                    on_click=lambda e: copy_path(),
+                                    tooltip="Copy Path",
+                                ),
+                            ]),
                         ], spacing=10),
                         padding=12,
                     ),
@@ -3981,11 +4046,11 @@ class StoreApp:
             ]),
             content=ft.Container(
                 content=ft.Column([
-                    ft.Text(f"Found {len(all_files)} HTML report(s) in Downloads:", size=13),
+                    ft.Text(f"Found {len(all_files)} HTML report(s):", size=13),
                     ft.Container(height=10),
                     file_items,
                 ], spacing=10),
-                width=450,
+                width=480,
                 height=500,
                 padding=15,
             ),
@@ -4994,17 +5059,16 @@ class StoreApp:
             print(f"Export error: {e}")
 
     def export_inventory_html(self, page: ft.Page):
-        """Export inventory to HTML file in Downloads folder"""
+        """Export inventory to HTML - saves to app storage, user copies via share"""
         import os
         from datetime import datetime
         
         try:
-            # Get current filtered items
             items = getattr(self, 'current_filtered_items', [])
             
             if not items:
                 page.snack_bar = ft.SnackBar(
-                    ft.Text("No items to export. Apply filters or add items first."),
+                    ft.Text("No items to export."),
                     bgcolor=self.warning_color,
                     duration=3000
                 )
@@ -5018,9 +5082,11 @@ class StoreApp:
             # Generate HTML content
             html_content = self.generate_inventory_html_content(items, timestamp)
             
-            # Save to Downloads folder
-            download_path = "/storage/emulated/0/Download"
-            file_path = os.path.join(download_path, filename)
+            # Save to app storage (ALWAYS works)
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            exports_dir = os.path.join(base_dir, "exports")
+            os.makedirs(exports_dir, exist_ok=True)
+            file_path = os.path.join(exports_dir, filename)
             
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
@@ -5028,9 +5094,20 @@ class StoreApp:
             def copy_path():
                 page.set_clipboard(file_path)
                 page.snack_bar = ft.SnackBar(
-                    ft.Text("✓ File path copied to clipboard!"),
+                    ft.Text("✓ Path copied!"),
                     bgcolor=self.success_color,
                     duration=2000
+                )
+                page.snack_bar.open = True
+                page.update()
+            
+            def share_file():
+                page.launch_url(f"file://{file_path}")
+                close_dialog()
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("📤 Select 'Save to Device' to save to Downloads"),
+                    bgcolor=self.accent_color,
+                    duration=4000
                 )
                 page.snack_bar.open = True
                 page.update()
@@ -5047,7 +5124,7 @@ class StoreApp:
                 content=ft.Container(
                     content=ft.Column([
                         ft.Text(filename, size=14, weight=ft.FontWeight.BOLD),
-                        ft.Text(f"Items: {len(items)}", size=12, color="#888888"),
+                        ft.Text(f"Items: {len(items)}", size=11, color="#888888"),
                         ft.Container(
                             content=ft.Text(file_path, size=9, color="#888888", selectable=True),
                             padding=6,
@@ -5055,6 +5132,20 @@ class StoreApp:
                             border_radius=4,
                         ),
                         ft.Divider(),
+                        ft.Text("How to save to Downloads:", size=13, weight=ft.FontWeight.BOLD, color="#4CAF50"),
+                        ft.Text("1️⃣ Tap 'Share File' below", size=12),
+                        ft.Text("2️⃣ Select 'Save to Device'", size=12),
+                        ft.Text("3️⃣ Choose 'Downloads' folder", size=12),
+                        ft.Divider(),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "📤 Share File",
+                                on_click=lambda e: share_file(),
+                                expand=True,
+                                icon=ft.icons.SHARE,
+                                style=ft.ButtonStyle(bgcolor="#9C27B0"),
+                            ),
+                        ], spacing=8),
                         ft.Row([
                             ft.ElevatedButton(
                                 "📋 Copy Path",
@@ -5064,12 +5155,9 @@ class StoreApp:
                                 style=ft.ButtonStyle(bgcolor="#2196F3"),
                             ),
                         ], spacing=8),
-                        ft.Container(height=10),
-                        ft.Text("💡 File saved to: Internal Storage → Download", size=10, color="#888888"),
-                        ft.Text("💡 Tap Copy Path to get file location", size=10, color="#888888"),
                     ], spacing=8),
-                    width=420,
-                    height=340,
+                    width=450,
+                    height=380,
                     padding=20,
                 ),
             )
