@@ -1057,8 +1057,273 @@ class StoreApp:
                 if new_zoom != self.zoom_level:
                     self.zoom_level = new_zoom
                     self.apply_zoom_to_current_view(e.control.page)
-    # ============ LOGIN ============
+
+    def show_activation_dialog(self, page: ft.Page, user_id=None, email=None):
+        """Show activation dialog for expired trial"""
+        import sqlite3
+        from database import DB_PATH
+        
+        activation_field = ft.TextField(label="Activation Code", hint_text="Enter your 16-digit code", width=300, bgcolor=self.card_color)
+        status_text = ft.Text("", size=12)
+        
+        def verify_activation(e):
+            code = activation_field.value.strip().upper()
+            
+            if not code:
+                status_text.value = "❌ Please enter activation code"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            if user_id:
+                cursor.execute("SELECT activation_code FROM users WHERE id = ?", (user_id,))
+            elif email:
+                cursor.execute("SELECT activation_code FROM users WHERE email = ?", (email,))
+            else:
+                status_text.value = "❌ User not found"
+                page.update()
+                return
+            
+            result = cursor.fetchone()
+            
+            if result and result[0] == code:
+                cursor.execute("UPDATE users SET is_activated = 1, account_type = 'full' WHERE id = ?", (user_id,))
+                conn.commit()
+                conn.close()
+                
+                page.dialog.open = False
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("✓ Account activated! You now have full access. Please login again."),
+                    bgcolor=self.success_color,
+                    duration=4000
+                )
+                page.snack_bar.open = True
+                page.update()
+                self.show_login(page)
+            else:
+                status_text.value = "❌ Invalid activation code"
+                status_text.color = self.danger_color
+                page.update()
+                conn.close()
+        
+        def buy_license(e):
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(
+                ft.Text("📧 Please email support@storemanagement.com to purchase a license"),
+                bgcolor=self.accent_color,
+                duration=5000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Activate Full Access", size=18, weight=ft.FontWeight.BOLD, color=self.accent_color),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Your trial has expired.", size=13, color="#888888"),
+                    ft.Text("Enter your activation code to continue:", size=12),
+                    ft.Container(height=10),
+                    activation_field,
+                    status_text,
+                    ft.Divider(),
+                    ft.Text("Don't have a code?", size=13, weight=ft.FontWeight.BOLD),
+                    ft.Text("Email us at support@storemanagement.com", size=11, color=self.accent_color),
+                    ft.Text("to purchase a license.", size=11, color=self.accent_color),
+                ], spacing=8),
+                width=380,
+                height=370,
+                padding=20,
+            ),
+            actions=[
+                ft.TextButton("Buy License", on_click=buy_license),
+                ft.TextButton("Cancel", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.FilledButton("Activate", on_click=verify_activation, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ],
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def show_activation_only_dialog(self, page: ft.Page):
+        """Show activation dialog for existing users"""
+        import sqlite3
+        from database import DB_PATH
+        
+        email_field = ft.TextField(label="Email", width=300, bgcolor=self.card_color)
+        activation_field = ft.TextField(label="Activation Code", width=300, bgcolor=self.card_color)
+        status_text = ft.Text("", size=12)
+        
+        def verify_activation(e):
+            email = email_field.value.strip()
+            code = activation_field.value.strip().upper()
+            
+            if not email or not code:
+                status_text.value = "❌ Please enter email and activation code"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, activation_code FROM users WHERE email = ?", (email,))
+            result = cursor.fetchone()
+            
+            if result and result[1] == code:
+                cursor.execute("UPDATE users SET is_activated = 1, account_type = 'full' WHERE id = ?", (result[0],))
+                conn.commit()
+                conn.close()
+                
+                page.dialog.open = False
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("✓ Account activated! You can now log in."),
+                    bgcolor=self.success_color,
+                    duration=4000
+                )
+                page.snack_bar.open = True
+                page.update()
+            else:
+                status_text.value = "❌ Invalid email or activation code"
+                status_text.color = self.danger_color
+                page.update()
+                conn.close()
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Activate License", size=18, weight=ft.FontWeight.BOLD, color=self.accent_color),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Enter your email and activation code:", size=13),
+                    ft.Container(height=10),
+                    email_field,
+                    activation_field,
+                    status_text,
+                ], spacing=8),
+                width=380,
+                height=300,
+                padding=20,
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.FilledButton("Activate", on_click=verify_activation, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ],
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+    
+    def show_trial_signup_dialog(self, page: ft.Page):
+        """Dialog for 30-day trial signup"""
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime, timedelta
+        import hashlib
+        import random
+        import string
+        
+        name_field = ft.TextField(label="Full Name", width=300, bgcolor=self.card_color)
+        email_field = ft.TextField(label="Email", width=300, bgcolor=self.card_color)
+        password_field = ft.TextField(label="Password", password=True, width=300, bgcolor=self.card_color)
+        confirm_field = ft.TextField(label="Confirm Password", password=True, width=300, bgcolor=self.card_color)
+        status_text = ft.Text("", size=12)
+        
+        def generate_activation_code():
+            return ''.join(random.choices(string.ascii_uppercase + string.digits, k=16))
+        
+        def create_trial_account(e):
+            name = name_field.value.strip()
+            email = email_field.value.strip()
+            password = password_field.value
+            confirm = confirm_field.value
+            
+            if not name or not email or not password:
+                status_text.value = "❌ Please fill all fields"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            if password != confirm:
+                status_text.value = "❌ Passwords do not match"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            if len(password) < 4:
+                status_text.value = "❌ Password must be at least 4 characters"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Check if email exists
+            cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+            if cursor.fetchone():
+                status_text.value = "❌ Email already registered"
+                status_text.color = self.danger_color
+                page.update()
+                conn.close()
+                return
+            
+            # Create trial account
+            start_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            end_date = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+            hashed_password = hashlib.sha256(password.encode()).hexdigest()
+            activation_code = generate_activation_code()
+            
+            cursor.execute('''
+                INSERT INTO users (name, email, password_hash, role, trial_start_date, trial_end_date, account_type, activation_code, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (name, email, hashed_password, 'user', start_date, end_date, 'trial', activation_code, start_date))
+            
+            conn.commit()
+            conn.close()
+            
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Trial account created! Login with your email. Trial expires in 30 days."),
+                bgcolor=self.success_color,
+                duration=5000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Start 30-Day Free Trial", size=20, weight=ft.FontWeight.BOLD, color=self.success_color),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Create your account to start your free trial:", size=13, color="#888888"),
+                    ft.Container(height=5),
+                    name_field,
+                    email_field,
+                    password_field,
+                    confirm_field,
+                    status_text,
+                    ft.Container(height=10),
+                    ft.Text("✓ 30 days full access", size=11, color="#888888"),
+                    ft.Text("✓ No credit card required", size=11, color="#888888"),
+                    ft.Text("✓ Cancel anytime", size=11, color="#888888"),
+                ], spacing=8),
+                width=380,
+                height=470,
+                padding=20,
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.FilledButton("Start Trial", on_click=create_trial_account, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ],
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+        
     def show_login(self, page: ft.Page):
+        """Show login screen with trial access only"""
         page.controls.clear()
         
         field_width = 280
@@ -1068,17 +1333,78 @@ class StoreApp:
         status_text = ft.Text("", color="red", size=12)
         
         def on_login(e):
-            user = UserManager.authenticate(email_field.value, password_field.value)
+            email = email_field.value.strip()
+            password = password_field.value
+            
+            if not email or not password:
+                status_text.value = "Please enter email and password!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            # Authenticate user
+            user = UserManager.authenticate(email, password)
+            
             if user:
-                self.current_user = dict(user)
-                self.show_dashboard(page)
+                user_dict = dict(user)
+                user_id = user_dict.get('id')
+                
+                # Check trial status
+                import sqlite3
+                from database import DB_PATH
+                from datetime import datetime
+                
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute("SELECT trial_end_date, is_activated, account_type FROM users WHERE id = ?", (user_id,))
+                result = cursor.fetchone()
+                conn.close()
+                
+                if result:
+                    end_date_str = result[0]
+                    is_activated = result[1]
+                    account_type = result[2]
+                    
+                    if is_activated == 1 or account_type == 'full':
+                        # Full access user
+                        self.current_user = user_dict
+                        page.snack_bar = ft.SnackBar(
+                            ft.Text("✓ Welcome back! Full access granted."),
+                            bgcolor=self.success_color,
+                            duration=3000
+                        )
+                        page.snack_bar.open = True
+                        self.show_dashboard(page)
+                        
+                    elif end_date_str:
+                        end_date = datetime.strptime(end_date_str, '%Y-%m-%d %H:%M:%S')
+                        if datetime.now() > end_date:
+                            # Trial expired
+                            status_text.value = "⚠️ Your trial has expired! Please activate your account."
+                            status_text.color = self.warning_color
+                            self.show_activation_dialog(page, user_id, email)
+                        else:
+                            # Valid trial
+                            days_left = (end_date - datetime.now()).days
+                            self.current_user = user_dict
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text(f"✓ Welcome! Your trial expires in {days_left} days"),
+                                bgcolor=self.success_color,
+                                duration=3000
+                            )
+                            page.snack_bar.open = True
+                            self.show_dashboard(page)
+                else:
+                    status_text.value = "Account error. Please contact support."
+                    status_text.color = self.danger_color
             else:
                 status_text.value = "Invalid email or password!"
-                page.update()
+                status_text.color = self.danger_color
+            
+            page.update()
         
-        def on_guest_login(e):
-            self.current_user = {'id': 0, 'name': 'Guest', 'email': 'guest@store.com', 'role': 'guest', 'guest_mode': True}
-            self.show_dashboard(page)
+        def on_trial_signup(e):
+            self.show_trial_signup_dialog(page)
         
         logo_exists = os.path.exists(logo_path)
         logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=60)
@@ -1094,8 +1420,13 @@ class StoreApp:
             status_text, ft.Container(height=10),
             ft.Row([logo, ft.Container(width=20), ft.FilledButton("Sign In", width=140, height=45, on_click=on_login)], alignment=ft.MainAxisAlignment.CENTER),
             ft.Divider(height=20, color="#3C3C3C"),
-            ft.OutlinedButton("Continue as Guest", width=field_width, height=40, on_click=on_guest_login),
-            ft.TextButton("Forgot Password?", on_click=lambda e: None, style=ft.ButtonStyle(color="#888888")),
+            ft.OutlinedButton("Start 30-Day Free Trial", width=field_width, height=45, on_click=on_trial_signup, 
+                            style=ft.ButtonStyle(color=self.success_color)),
+            ft.Row([
+                ft.TextButton("Activate License", on_click=lambda e: self.show_activation_only_dialog(page), 
+                            style=ft.ButtonStyle(color=self.accent_color)),
+                ft.TextButton("Forgot Password?", on_click=lambda e: None, style=ft.ButtonStyle(color="#888888")),
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
         
         login_card = ft.Container(content=main_layout, padding=40, bgcolor=None, border_radius=20, width=500)
@@ -3535,7 +3866,7 @@ class StoreApp:
         webview.on_javascript_message = on_message
 
     def export_html_simple(self, page: ft.Page):
-        """Simple HTML export - saves to app storage, user copies via share"""
+        """Simple HTML export - saves to app storage, user copies path"""
         import os
         from datetime import datetime
         
@@ -3550,7 +3881,7 @@ class StoreApp:
             # Generate HTML content
             html_content = self.generate_html_report(materials, accessories, timestamp)
             
-            # Save to app's private storage (ALWAYS works - no permission needed)
+            # Save to app's private storage (ALWAYS works)
             base_dir = os.path.dirname(os.path.abspath(__file__))
             exports_dir = os.path.join(base_dir, "exports")
             os.makedirs(exports_dir, exist_ok=True)
@@ -3570,18 +3901,7 @@ class StoreApp:
                 page.snack_bar = ft.SnackBar(
                     ft.Text("✓ File path copied to clipboard!"),
                     bgcolor=self.success_color,
-                    duration=2000
-                )
-                page.snack_bar.open = True
-                page.update()
-            
-            def share_file():
-                page.launch_url(f"file://{file_path}")
-                close_dialog()
-                page.snack_bar = ft.SnackBar(
-                    ft.Text("📤 Select 'Save to Drive' or 'Save to Device' to save to Downloads"),
-                    bgcolor=self.accent_color,
-                    duration=4000
+                    duration=3000
                 )
                 page.snack_bar.open = True
                 page.update()
@@ -3599,28 +3919,14 @@ class StoreApp:
                     content=ft.Column([
                         ft.Text(filename, size=14, weight=ft.FontWeight.BOLD),
                         ft.Text(f"Size: {size_str} | Materials: {len(materials)}", size=11, color="#888888"),
+                        ft.Divider(),
+                        ft.Text("📍 File Location:", size=13, weight=ft.FontWeight.BOLD),
                         ft.Container(
                             content=ft.Text(file_path, size=9, color="#888888", selectable=True),
-                            padding=6,
+                            padding=8,
                             bgcolor="#2C2C2C",
-                            border_radius=4,
+                            border_radius=6,
                         ),
-                        ft.Divider(),
-                        ft.Text("How to save to Downloads:", size=13, weight=ft.FontWeight.BOLD, color="#4CAF50"),
-                        ft.Text("1️⃣ Tap 'Share File' below", size=12),
-                        ft.Text("2️⃣ Select 'Save to Drive' or 'Save to Device'", size=12),
-                        ft.Text("3️⃣ Choose 'Downloads' folder", size=12),
-                        ft.Text("4️⃣ Tap 'Save'", size=12),
-                        ft.Divider(),
-                        ft.Row([
-                            ft.ElevatedButton(
-                                "📤 Share File",
-                                on_click=lambda e: share_file(),
-                                expand=True,
-                                icon=ft.icons.SHARE,
-                                style=ft.ButtonStyle(bgcolor="#9C27B0"),
-                            ),
-                        ], spacing=8),
                         ft.Row([
                             ft.ElevatedButton(
                                 "📋 Copy Path",
@@ -3630,11 +3936,18 @@ class StoreApp:
                                 style=ft.ButtonStyle(bgcolor="#2196F3"),
                             ),
                         ], spacing=8),
+                        ft.Divider(),
+                        ft.Text("📱 How to get this file:", size=13, weight=ft.FontWeight.BOLD, color="#4CAF50"),
+                        ft.Text("1️⃣ Tap 'Copy Path' above", size=12),
+                        ft.Text("2️⃣ Open 'My Files' app on your Samsung", size=12),
+                        ft.Text("3️⃣ Tap the search icon and paste the path", size=12),
+                        ft.Text("4️⃣ Long press the file → Copy → Downloads", size=12),
                         ft.Container(height=5),
-                        ft.Text("💡 File saved in app storage. Use Share to save to Downloads.", size=9, color="#888888"),
+                        ft.Text("💡 The file is saved in the app's private storage", size=9, color="#888888"),
+                        ft.Text("💡 You can also connect your phone to a computer to copy the file", size=9, color="#888888"),
                     ], spacing=8),
                     width=450,
-                    height=420,
+                    height=450,
                     padding=20,
                 ),
             )
@@ -3652,9 +3965,9 @@ class StoreApp:
             page.snack_bar.open = True
             page.update()
 
-               # ============ DASHBOARD ============
+                # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Dashboard with simplified HTML export only"""
+        """Dashboard with trial system integration"""
         page.controls.clear()
         
         # Check if mobile
@@ -3702,6 +4015,37 @@ class StoreApp:
             ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color)
         )
         main_column.controls.append(ft.Text("Welcome back!", size=14, color="#888888"))
+        
+        # ========== TRIAL WARNING (if applicable) ==========
+        if self.current_user and self.current_user.get('account_type') == 'trial':
+            import sqlite3
+            from database import DB_PATH
+            from datetime import datetime
+            
+            user_id = self.current_user.get('id')
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT trial_end_date FROM users WHERE id = ?", (user_id,))
+            result = cursor.fetchone()
+            conn.close()
+            
+            if result and result[0]:
+                end_date = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
+                days_left = (end_date - datetime.now()).days
+                
+                if days_left <= 5:
+                    trial_warning = ft.Container(
+                        content=ft.Row([
+                            ft.Icon(ft.icons.WARNING, color=self.warning_color),
+                            ft.Text(f"⚠️ Your trial expires in {days_left} days! Activate now to continue.", size=12, color=self.warning_color),
+                            ft.TextButton("Activate Now", on_click=lambda e: self.show_activation_only_dialog(page), style=ft.ButtonStyle(color=self.accent_color)),
+                        ], spacing=8),
+                        padding=10,
+                        bgcolor=self.card_color,
+                        border_radius=8,
+                        margin=ft.margin.only(bottom=10),
+                    )
+                    main_column.controls.append(trial_warning)
         
         # ========== SECTION 2: STATS CARDS ==========
         main_column.controls.append(
@@ -3836,30 +4180,32 @@ class StoreApp:
         # ========== SECTION 7: QUICK ACTIONS ==========
         main_column.controls.append(ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD))
         
+        # Check if user has write access
+        has_write_access = self.current_user and self.current_user.get('role') != 'guest'
+        
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
-                ft.ElevatedButton("Add Part", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
+                ft.ElevatedButton("Add Material", on_click=lambda e: self.open_add_modal(page) if has_write_access else self.show_no_permission(page), expand=True),
+                ft.ElevatedButton("Add Part", on_click=lambda e: self.open_add_accessory_modal(page) if has_write_access else self.show_no_permission(page), expand=True),
             ], spacing=8)
         )
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton("Scan", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
-                ft.ElevatedButton("Export Data", on_click=lambda e: self.export_all_data_simple(page), expand=True),
+                ft.ElevatedButton("Export Data", on_click=lambda e: self.export_all_data_simple(page) if has_write_access else self.show_no_permission(page), expand=True),
             ], spacing=8)
         )
         
-        # ========== SECTION 8: IMPORT / EXPORT (SIMPLIFIED - HTML ONLY) ==========
+        # ========== SECTION 8: IMPORT / EXPORT ==========
         main_column.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
         
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Import Materials", on_click=lambda e: self.show_import_dialog(page, "materials"), expand=True),
-                ft.ElevatedButton("Import Accessories", on_click=lambda e: self.show_import_dialog(page, "accessories"), expand=True),
+                ft.ElevatedButton("Import Materials", on_click=lambda e: self.show_import_dialog(page, "materials") if has_write_access else self.show_no_permission(page), expand=True),
+                ft.ElevatedButton("Import Accessories", on_click=lambda e: self.show_import_dialog(page, "accessories") if has_write_access else self.show_no_permission(page), expand=True),
             ], spacing=8)
         )
         
-        # HTML Export only - No CSV
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton(
@@ -3872,7 +4218,6 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # In the Import/Export section, add:
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton(
@@ -3885,7 +4230,6 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # Low Stock Report
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton(
@@ -3897,6 +4241,57 @@ class StoreApp:
                 ),
             ], spacing=8)
         )
+        
+        # ========== SECTION 9: ACCOUNT INFO (for trial users) ==========
+        if self.current_user and self.current_user.get('account_type') == 'trial':
+            import sqlite3
+            from database import DB_PATH
+            from datetime import datetime
+            
+            user_id = self.current_user.get('id')
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT trial_end_date FROM users WHERE id = ?", (user_id,))
+            result = cursor.fetchone()
+            conn.close()
+            
+            if result and result[0]:
+                end_date = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
+                days_left = (end_date - datetime.now()).days
+                
+                account_card = ft.Card(
+                    content=ft.Container(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Icon(ft.icons.INFO, color=self.accent_color),
+                                ft.Text("Account Information", size=14, weight=ft.FontWeight.BOLD, expand=True),
+                            ]),
+                            ft.Divider(),
+                            ft.Row([
+                                ft.Text("Account Type:", size=12, color="#888888"),
+                                ft.Text("Trial", size=12, color=self.success_color, weight=ft.FontWeight.BOLD),
+                            ]),
+                            ft.Row([
+                                ft.Text("Days Remaining:", size=12, color="#888888"),
+                                ft.Text(f"{days_left} days", size=12, color=self.warning_color if days_left <= 5 else self.success_color),
+                            ]),
+                            ft.Row([
+                                ft.ElevatedButton(
+                                    "Activate Full Version",
+                                    on_click=lambda e: self.show_activation_only_dialog(page),
+                                    style=ft.ButtonStyle(bgcolor=self.accent_color),
+                                    expand=True,
+                                ),
+                            ]),
+                        ], spacing=8),
+                        padding=12,
+                    ),
+                    margin=ft.margin.only(top=10),
+                )
+                main_column.controls.append(account_card)
+        
+        # ========== SECTION 10: FOOTER SPACING ==========
+        main_column.controls.append(ft.Container(height=20))
         
         # Wrap in a Container with Scroll
         main_container = ft.Container(
@@ -3920,6 +4315,7 @@ class StoreApp:
         self.current_view = "dashboard"
         page.update()
 
+
     def _create_stat_card(self, icon, value, label):
         """Create a statistics card"""
         return ft.Container(
@@ -3935,7 +4331,7 @@ class StoreApp:
         )
     
     def show_exported_files_simple(self, page: ft.Page):
-        """Show exported files from app storage"""
+        """Show exported files with instructions to find them"""
         import os
         
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -3980,7 +4376,7 @@ class StoreApp:
             page.update()
             return
         
-        file_items = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, height=400)
+        file_items = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, height=350)
         
         for filename, file_path, size_str, date_str in all_files:
             def copy_path(p=file_path):
@@ -3988,16 +4384,6 @@ class StoreApp:
                 page.snack_bar = ft.SnackBar(
                     ft.Text("✓ Path copied to clipboard!"),
                     bgcolor=self.success_color,
-                    duration=2000
-                )
-                page.snack_bar.open = True
-                page.update()
-            
-            def share_file(p=file_path, f=filename):
-                page.launch_url(f"file://{p}")
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"📤 Sharing {f}"),
-                    bgcolor=self.accent_color,
                     duration=2000
                 )
                 page.snack_bar.open = True
@@ -4012,28 +4398,33 @@ class StoreApp:
                                 ft.Text(filename, size=13, weight=ft.FontWeight.BOLD),
                                 ft.Text(f"Date: {date_str} • Size: {size_str}", size=10, color="#888888"),
                             ], spacing=2, expand=True),
-                            ft.Row([
-                                ft.IconButton(
-                                    icon=ft.icons.SHARE,
-                                    icon_size=20,
-                                    icon_color="#9C27B0",
-                                    on_click=lambda e: share_file(),
-                                    tooltip="Share",
-                                ),
-                                ft.IconButton(
-                                    icon=ft.icons.CONTENT_COPY,
-                                    icon_size=20,
-                                    icon_color=self.accent_color,
-                                    on_click=lambda e: copy_path(),
-                                    tooltip="Copy Path",
-                                ),
-                            ]),
+                            ft.IconButton(
+                                icon=ft.icons.CONTENT_COPY,
+                                icon_size=20,
+                                icon_color=self.accent_color,
+                                on_click=lambda e: copy_path(),
+                                tooltip="Copy Path",
+                            ),
                         ], spacing=10),
                         padding=12,
                     ),
                     elevation=1,
                 )
             )
+        
+        # Instructions for finding files
+        instructions = ft.Column([
+            ft.Divider(),
+            ft.Text("📱 How to find these files:", size=13, weight=ft.FontWeight.BOLD, color="#4CAF50"),
+            ft.Text("1️⃣ Tap 'Copy Path' next to any file", size=11),
+            ft.Text("2️⃣ Open 'My Files' app on your Samsung", size=11),
+            ft.Text("3️⃣ Tap the search icon (🔍)", size=11),
+            ft.Text("4️⃣ Paste the copied path", size=11),
+            ft.Text("5️⃣ Long press the file → Copy → Downloads", size=11),
+            ft.Container(height=5),
+            ft.Text("💡 You can also connect your phone to a computer to access these files", size=9, color="#888888"),
+            ft.Text(f"💡 App storage path: {base_dir}/exports/", size=9, color="#888888"),
+        ], spacing=6)
         
         def close_dialog():
             page.dialog.open = False
@@ -4047,11 +4438,11 @@ class StoreApp:
             content=ft.Container(
                 content=ft.Column([
                     ft.Text(f"Found {len(all_files)} HTML report(s):", size=13),
-                    ft.Container(height=10),
                     file_items,
+                    instructions,
                 ], spacing=10),
                 width=480,
-                height=500,
+                height=550,
                 padding=15,
             ),
         )
@@ -5059,7 +5450,7 @@ class StoreApp:
             print(f"Export error: {e}")
 
     def export_inventory_html(self, page: ft.Page):
-        """Export inventory to HTML - saves to app storage, user copies via share"""
+        """Export inventory HTML - saves to app storage, user copies path"""
         import os
         from datetime import datetime
         
@@ -5082,7 +5473,7 @@ class StoreApp:
             # Generate HTML content
             html_content = self.generate_inventory_html_content(items, timestamp)
             
-            # Save to app storage (ALWAYS works)
+            # Save to app storage
             base_dir = os.path.dirname(os.path.abspath(__file__))
             exports_dir = os.path.join(base_dir, "exports")
             os.makedirs(exports_dir, exist_ok=True)
@@ -5094,20 +5485,9 @@ class StoreApp:
             def copy_path():
                 page.set_clipboard(file_path)
                 page.snack_bar = ft.SnackBar(
-                    ft.Text("✓ Path copied!"),
+                    ft.Text("✓ File path copied to clipboard!"),
                     bgcolor=self.success_color,
-                    duration=2000
-                )
-                page.snack_bar.open = True
-                page.update()
-            
-            def share_file():
-                page.launch_url(f"file://{file_path}")
-                close_dialog()
-                page.snack_bar = ft.SnackBar(
-                    ft.Text("📤 Select 'Save to Device' to save to Downloads"),
-                    bgcolor=self.accent_color,
-                    duration=4000
+                    duration=3000
                 )
                 page.snack_bar.open = True
                 page.update()
@@ -5125,27 +5505,14 @@ class StoreApp:
                     content=ft.Column([
                         ft.Text(filename, size=14, weight=ft.FontWeight.BOLD),
                         ft.Text(f"Items: {len(items)}", size=11, color="#888888"),
+                        ft.Divider(),
+                        ft.Text("📍 File Location:", size=13, weight=ft.FontWeight.BOLD),
                         ft.Container(
                             content=ft.Text(file_path, size=9, color="#888888", selectable=True),
-                            padding=6,
+                            padding=8,
                             bgcolor="#2C2C2C",
-                            border_radius=4,
+                            border_radius=6,
                         ),
-                        ft.Divider(),
-                        ft.Text("How to save to Downloads:", size=13, weight=ft.FontWeight.BOLD, color="#4CAF50"),
-                        ft.Text("1️⃣ Tap 'Share File' below", size=12),
-                        ft.Text("2️⃣ Select 'Save to Device'", size=12),
-                        ft.Text("3️⃣ Choose 'Downloads' folder", size=12),
-                        ft.Divider(),
-                        ft.Row([
-                            ft.ElevatedButton(
-                                "📤 Share File",
-                                on_click=lambda e: share_file(),
-                                expand=True,
-                                icon=ft.icons.SHARE,
-                                style=ft.ButtonStyle(bgcolor="#9C27B0"),
-                            ),
-                        ], spacing=8),
                         ft.Row([
                             ft.ElevatedButton(
                                 "📋 Copy Path",
@@ -5155,6 +5522,12 @@ class StoreApp:
                                 style=ft.ButtonStyle(bgcolor="#2196F3"),
                             ),
                         ], spacing=8),
+                        ft.Divider(),
+                        ft.Text("📱 How to get this file:", size=13, weight=ft.FontWeight.BOLD, color="#4CAF50"),
+                        ft.Text("1️⃣ Tap 'Copy Path' above", size=12),
+                        ft.Text("2️⃣ Open 'My Files' app", size=12),
+                        ft.Text("3️⃣ Search for the path", size=12),
+                        ft.Text("4️⃣ Copy file to Downloads folder", size=12),
                     ], spacing=8),
                     width=450,
                     height=380,
@@ -10765,9 +11138,9 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
-        
+            
     def show_settings(self, page: ft.Page):
-        """Show settings screen - Using SAF for backup/restore"""
+        """Show settings screen - Company info syncs with About section"""
         page.controls.clear()
         
         # Check if mobile
@@ -10795,6 +11168,16 @@ class StoreApp:
         
         current_user = self.current_user
         is_admin = current_user.get('role') == 'admin' if current_user else False
+        
+        # Get company info
+        company_info = self.get_company_info()
+        company_name = company_info.get('company_name', 'Store Management System')
+        company_phone = company_info.get('phone', 'Not set')
+        company_email = company_info.get('email', 'Not set')
+        company_website = company_info.get('website', 'Not set')
+        company_address = company_info.get('address', 'Not set')
+        company_city = company_info.get('city', 'Not set')
+        company_tax = company_info.get('tax_id', 'Not set')
         
         # Create scrollable content
         scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
@@ -10852,11 +11235,6 @@ class StoreApp:
                         trailing=ft.Icon(ft.icons.CHEVRON_RIGHT),
                         on_click=lambda e: self.change_password_dialog(page),
                     ),
-                    ft.ListTile(
-                        leading=ft.Icon(ft.icons.SHIELD, color=self.accent_color),
-                        title=ft.Text("Two-Factor Authentication"),
-                        trailing=ft.Switch(value=False, on_change=lambda e: self.toggle_2fa(page, e)),
-                    ),
                 ], spacing=8),
                 padding=15,
             ),
@@ -10907,15 +11285,14 @@ class StoreApp:
         scroll_content.controls.append(appearance_card)
         
         # ========== COMPANY INFO SECTION ==========
-        company_info = self.get_company_info()
-        
-        self.company_name_display = ft.Text(company_info.get('company_name', 'Not set'), size=font_normal, weight=ft.FontWeight.BOLD)
-        self.company_phone_display = ft.Text(company_info.get('phone', 'Not set'), size=font_small)
-        self.company_email_display = ft.Text(company_info.get('email', 'Not set'), size=font_small)
-        self.company_website_display = ft.Text(company_info.get('website', 'Not set'), size=font_small)
-        self.company_address_display = ft.Text(company_info.get('address', 'Not set'), size=font_small)
-        self.company_city_display = ft.Text(company_info.get('city', 'Not set'), size=font_small)
-        self.company_tax_display = ft.Text(company_info.get('tax_id', 'Not set'), size=font_small)
+        # Create display widgets (will be updated when edited)
+        self.company_name_display = ft.Text(company_name, size=font_normal, weight=ft.FontWeight.BOLD)
+        self.company_phone_display = ft.Text(company_phone if company_phone != 'Not set' else 'Not set', size=font_small)
+        self.company_email_display = ft.Text(company_email if company_email != 'Not set' else 'Not set', size=font_small)
+        self.company_website_display = ft.Text(company_website if company_website != 'Not set' else 'Not set', size=font_small)
+        self.company_address_display = ft.Text(company_address if company_address != 'Not set' else 'Not set', size=font_small)
+        self.company_city_display = ft.Text(company_city if company_city != 'Not set' else 'Not set', size=font_small)
+        self.company_tax_display = ft.Text(company_tax if company_tax != 'Not set' else 'Not set', size=font_small)
         
         company_card = ft.Card(
             content=ft.Container(
@@ -11004,101 +11381,7 @@ class StoreApp:
         )
         scroll_content.controls.append(company_card)
         
-        # ========== DATABASE SECTION ==========
-        db_size = "N/A"
-        try:
-            import os
-            db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "store_management.db")
-            if os.path.exists(db_path):
-                size_bytes = os.path.getsize(db_path)
-                if size_bytes < 1024:
-                    db_size = f"{size_bytes} B"
-                elif size_bytes < 1024 * 1024:
-                    db_size = f"{size_bytes / 1024:.1f} KB"
-                else:
-                    db_size = f"{size_bytes / (1024 * 1024):.1f} MB"
-        except:
-            db_size = "N/A"
-        
-        database_section = ft.Container(
-            content=ft.Column([
-                ft.Text("💾 Database", size=font_normal, weight=ft.FontWeight.BOLD, color=self.accent_color),
-                ft.Divider(),
-                ft.Row([
-                    ft.Icon(ft.icons.STORAGE, size=30, color=self.accent_color),
-                    ft.Column([
-                        ft.Text("Database Size", size=font_small, color="#888888"),
-                        ft.Text(db_size, size=font_normal, weight=ft.FontWeight.BOLD),
-                    ], spacing=2),
-                    ft.IconButton(icon=ft.icons.REFRESH, icon_size=20, on_click=lambda e: self.show_settings(page)),
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Container(height=10),
-                # Backup and Restore buttons - MAKE SURE THESE ARE HERE
-                ft.Row([
-                    ft.ElevatedButton(
-                        "📥 Backup Database", 
-                        on_click=lambda e: self.backup_database_saf(page), 
-                        expand=True,
-                        style=ft.ButtonStyle(bgcolor=self.accent_color),
-                    ),
-                    ft.ElevatedButton(
-                        "🔄 Restore Database", 
-                        on_click=lambda e: self.restore_database_saf(page), 
-                        expand=True,
-                        style=ft.ButtonStyle(bgcolor=self.warning_color),
-                    ),
-                ], spacing=10),
-                ft.Row([
-                    ft.OutlinedButton(
-                        "📁 View Backups", 
-                        on_click=lambda e: self.show_backup_list(page), 
-                        expand=True,
-                    ),
-                    ft.ElevatedButton(
-                        "⚠️ Reset Database", 
-                        on_click=lambda e: self.reset_database_confirm(page), 
-                        expand=True,
-                        style=ft.ButtonStyle(bgcolor=self.danger_color),
-                    ),
-                ], spacing=10),
-                ft.Text("Backups are saved in the 'backups' folder", size=10, color="#888888"),
-            ], spacing=12),
-            padding=15,
-            bgcolor=self.card_color,
-            border_radius=10,
-            margin=ft.margin.only(bottom=12),
-        )
-        scroll_content.controls.append(database_section)
-        
-        # ========== LOGOUT SECTION ==========
-        logout_card = ft.Card(
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Row([
-                        ft.Icon(ft.icons.LOGOUT, size=24, color=self.danger_color),
-                        ft.Text("Account", size=font_normal, weight=ft.FontWeight.BOLD, color=self.danger_color),
-                        ft.Container(expand=True),
-                    ]),
-                    ft.Divider(),
-                    ft.Text("You are currently logged in as:", size=font_small, color="#888888"),
-                    ft.Text(f"{self.current_user.get('name', 'User')}", size=font_normal, weight=ft.FontWeight.BOLD),
-                    ft.Text(f"{self.current_user.get('email', 'N/A')}", size=font_small - 1, color="#888888"),
-                    ft.Container(height=10),
-                    ft.ElevatedButton(
-                        "🚪 Logout",
-                        on_click=lambda e: self.confirm_logout(page),
-                        icon=ft.icons.LOGOUT,
-                        style=ft.ButtonStyle(bgcolor=self.danger_color, color=self.text_color),
-                    ),
-                ], spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=15,
-            ),
-            elevation=2,
-            margin=ft.margin.only(bottom=12),
-        )
-        scroll_content.controls.append(logout_card)
-        
-        # ========== ABOUT SECTION ==========
+        # ========== ABOUT SECTION (UPDATED WITH COMPANY INFO) ==========
         about_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
@@ -11107,19 +11390,24 @@ class StoreApp:
                     ft.Container(
                         content=ft.Column([
                             ft.Text("🏪", size=60),
-                            ft.Text("Store Management System", size=font_normal + 4, weight=ft.FontWeight.BOLD),
-                            ft.Text("Version 2.0.0", size=font_small - 1, color="#888888"),
+                            ft.Text(f"{company_name}", size=font_normal + 4, weight=ft.FontWeight.BOLD),
+                            ft.Text("Store Management System", size=font_small, color="#888888"),
+                            ft.Text(f"Version 2.0.0", size=font_small - 1, color="#888888"),
                         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
                         margin=ft.margin.only(bottom=10),
                     ),
                     ft.Container(
                         content=ft.Column([
                             ft.Text("Developed By", size=font_small, weight=ft.FontWeight.BOLD, color="#888888"),
-                            ft.Text("Your Company Name", size=font_small, color=self.accent_color),
+                            ft.Text(f"{company_name}", size=font_small, color=self.accent_color),
                             ft.Container(height=5),
                             ft.Text("Contact", size=font_small, weight=ft.FontWeight.BOLD, color="#888888"),
-                            ft.Text("support@storemanagement.com", size=font_small, color=self.accent_color),
-                            ft.Text("+1 (555) 123-4567", size=font_small, color=self.accent_color),
+                            ft.Text(company_email if company_email != 'Not set' else 'support@storemanagement.com', size=font_small, color=self.accent_color),
+                            ft.Text(company_phone if company_phone != 'Not set' else '+1 (555) 123-4567', size=font_small, color=self.accent_color),
+                            ft.Text(company_website if company_website != 'Not set' else 'www.storemanagement.com', size=font_small, color=self.accent_color),
+                            ft.Container(height=5),
+                            ft.Text("Address", size=font_small, weight=ft.FontWeight.BOLD, color="#888888"),
+                            ft.Text(f"{company_address}, {company_city}" if company_address != 'Not set' else 'Not specified', size=font_small, color=self.accent_color),
                         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
                         margin=ft.margin.only(bottom=10),
                     ),
@@ -11129,12 +11417,12 @@ class StoreApp:
                         ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Inventory Management", size=font_small - 1)], spacing=8),
                         ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Barcode Scanning", size=font_small - 1)], spacing=8),
                         ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("User Management", size=font_small - 1)], spacing=8),
-                        ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Export Reports (CSV/PDF)", size=font_small - 1)], spacing=8),
+                        ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Export Reports (HTML)", size=font_small - 1)], spacing=8),
                         ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE, size=14, color=self.success_color), ft.Text("Database Backup & Restore", size=font_small - 1)], spacing=8),
                     ], spacing=6),
                     ft.Container(height=10),
                     ft.Divider(),
-                    ft.Text("© 2024 Store Management System", size=font_small - 2, color="#888888", text_align=ft.TextAlign.CENTER),
+                    ft.Text(f"© 2024 {company_name}", size=font_small - 2, color="#888888", text_align=ft.TextAlign.CENTER),
                     ft.Text("All Rights Reserved", size=font_small - 2, color="#888888", text_align=ft.TextAlign.CENTER),
                     ft.Text("Made with ❤️ using Flet", size=font_small - 2, color="#888888", text_align=ft.TextAlign.CENTER),
                     ft.Container(height=10),
@@ -11379,18 +11667,81 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
+
+    def update_database_for_trial(self, page: ft.Page):
+        """Update database with trial and activation columns"""
+        import sqlite3
+        from database import DB_PATH
         
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        try:
+            # Add trial_start_date column if not exists
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            if 'trial_start_date' not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN trial_start_date TEXT")
+                print("✓ Added trial_start_date column")
+            
+            if 'trial_end_date' not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN trial_end_date TEXT")
+                print("✓ Added trial_end_date column")
+            
+            if 'is_activated' not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN is_activated INTEGER DEFAULT 0")
+                print("✓ Added is_activated column")
+            
+            if 'activation_code' not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN activation_code TEXT")
+                print("✓ Added activation_code column")
+            
+            if 'account_type' not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN account_type TEXT DEFAULT 'trial'")
+                print("✓ Added account_type column")
+            
+            conn.commit()
+            
+            # Set trial for existing users
+            from datetime import datetime, timedelta
+            for user_id in [1, 2, 3]:
+                cursor.execute("SELECT trial_start_date FROM users WHERE id = ?", (user_id,))
+                result = cursor.fetchone()
+                if result and not result[0]:
+                    start_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    end_date = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+                    cursor.execute("UPDATE users SET trial_start_date = ?, trial_end_date = ?, account_type = 'trial' WHERE id = ?", 
+                                (start_date, end_date, user_id))
+            
+            conn.commit()
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text("✓ Database updated for trial system!"),
+                bgcolor=self.success_color,
+                duration=3000
+            )
+            
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"Error: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+        
+        page.snack_bar.open = True
+        page.update()
+        conn.close()  
+
     def edit_company_info_dialog(self, page: ft.Page):
-        """Open dialog to edit company information with working buttons"""
+        """Open dialog to edit company information and refresh About section"""
         
         import json
         import os
         
-        # Get base directory from current file
         base_dir = os.path.dirname(os.path.abspath(__file__))
         config_file = os.path.join(base_dir, "company_config.json")
         
-        # Get current company info
         current = self.get_company_info()
         
         is_mobile = page.width < 800 if page.width else False
@@ -11413,8 +11764,6 @@ class StoreApp:
             city_tax_row = ft.Row([city_field, tax_id_field], spacing=10)
         
         status_text = ft.Text("", size=12)
-        
-        # Dialog reference
         dialog_ref = None
         
         def close_dialog():
@@ -11443,20 +11792,20 @@ class StoreApp:
                 with open(config_file, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=4, ensure_ascii=False)
                 
-                # Update the display widgets if they exist in settings screen
+                # Update the display widgets in Settings
                 if hasattr(self, 'company_name_display'):
                     self.company_name_display.value = data['company_name']
-                    self.company_phone_display.value = data['phone']
-                    self.company_email_display.value = data['email']
-                    self.company_website_display.value = data['website']
-                    self.company_address_display.value = data['address']
-                    self.company_city_display.value = data['city']
-                    self.company_tax_display.value = data['tax_id']
+                    self.company_phone_display.value = data['phone'] if data['phone'] else 'Not set'
+                    self.company_email_display.value = data['email'] if data['email'] else 'Not set'
+                    self.company_website_display.value = data['website'] if data['website'] else 'Not set'
+                    self.company_address_display.value = data['address'] if data['address'] else 'Not set'
+                    self.company_city_display.value = data['city'] if data['city'] else 'Not set'
+                    self.company_tax_display.value = data['tax_id'] if data['tax_id'] else 'Not set'
                     page.update()
                 
                 close_dialog()
                 page.snack_bar = ft.SnackBar(
-                    ft.Text("✓ Company information saved!"),
+                    ft.Text("✓ Company information saved! About section updated."),
                     bgcolor=self.success_color,
                     duration=3000
                 )
@@ -11468,7 +11817,6 @@ class StoreApp:
                 status_text.color = self.danger_color
                 page.update()
         
-        # Scrollable content
         scroll_content = ft.Column([
             name_field,
             phone_field,
