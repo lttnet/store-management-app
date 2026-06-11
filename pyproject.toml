@@ -1,19 +1,25 @@
 [project]
-name = "store-management"
+name = "store-management-system"
 version = "1.0.0"
-description = "Store Management System"
+description = "Store Management System with Cloud Sync"
 dependencies = [
     "flet>=0.21.0",
 ]
 
 [tool.flet]
 app_name = "Store Management"
-app_description = "Store Management System"
+app_description = "Complete inventory management solution with cloud sync"
 app_version = "1.0.0"
 
 [tool.flet.android]
+min_sdk_version = 21
+target_sdk_version = 33
 permissions = [
+    "android.permission.CAMERA",
     "android.permission.READ_EXTERNAL_STORAGE",
     "android.permission.WRITE_EXTERNAL_STORAGE",
-    "android.permission.MANAGE_EXTERNAL_STORAGE",
 ]
+
+[tool.flet.ios]
+bundle_identifier = "com.yourcompany.storemanagement"
+bundle_version = "1.0.0"
