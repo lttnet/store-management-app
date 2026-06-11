@@ -1515,16 +1515,239 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
+
+    def show_register_dialog(self, page: ft.Page):
+        """Register new user dialog"""
+        import sqlite3
+        import hashlib
+        from database import DB_PATH
+        from datetime import datetime
         
+        name_field = ft.TextField(label="Full Name", width=300, bgcolor=self.card_color)
+        email_field = ft.TextField(label="Email", width=300, bgcolor=self.card_color)
+        password_field = ft.TextField(label="Password", password=True, width=300, bgcolor=self.card_color)
+        confirm_field = ft.TextField(label="Confirm Password", password=True, width=300, bgcolor=self.card_color)
+        status_text = ft.Text("", size=12)
+        
+        def close_dialog():
+            page.dialog.open = False
+            page.update()
+        
+        def create_account(e):
+            name = name_field.value.strip()
+            email = email_field.value.strip()
+            password = password_field.value
+            confirm = confirm_field.value
+            
+            if not name or not email or not password:
+                status_text.value = "❌ Please fill all fields"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            if password != confirm:
+                status_text.value = "❌ Passwords do not match"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            if len(password) < 4:
+                status_text.value = "❌ Password must be at least 4 characters"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Check if email exists
+            cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+            if cursor.fetchone():
+                status_text.value = "❌ Email already registered"
+                status_text.color = self.danger_color
+                page.update()
+                conn.close()
+                return
+            
+            # Create new user
+            hashed_password = hashlib.sha256(password.encode()).hexdigest()
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute('''
+                INSERT INTO users (name, email, password_hash, role, account_type, is_activated, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (name, email, hashed_password, 'user', 'trial', 0, current_time))
+            
+            conn.commit()
+            conn.close()
+            
+            close_dialog()
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Account created! Please login."),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text("Create Account", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
+            ]),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Create your account:", size=13, color="#888888"),
+                    ft.Container(height=5),
+                    name_field,
+                    email_field,
+                    password_field,
+                    confirm_field,
+                    status_text,
+                ], spacing=8),
+                width=380,
+                height=420,
+                padding=20,
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog()),
+                ft.FilledButton("Create Account", on_click=create_account, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ],
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+    
+    def show_forgot_password_dialog(self, page: ft.Page):
+        """Forgot password dialog"""
+        import sqlite3
+        import hashlib
+        import random
+        import string
+        from database import DB_PATH
+        
+        email_field = ft.TextField(label="Email", width=300, bgcolor=self.card_color)
+        status_text = ft.Text("", size=12)
+        
+        def close_dialog():
+            page.dialog.open = False
+            page.update()
+        
+        def reset_password(e):
+            email = email_field.value.strip()
+            
+            if not email:
+                status_text.value = "❌ Please enter your email"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+            user = cursor.fetchone()
+            
+            if user:
+                # Generate temporary password
+                temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+                hashed_password = hashlib.sha256(temp_password.encode()).hexdigest()
+                cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hashed_password, user[0]))
+                conn.commit()
+                
+                status_text.value = f"✓ Temporary password: {temp_password}\n\nPlease login with this password and change it in Settings."
+                status_text.color = self.success_color
+                page.set_clipboard(temp_password)
+            else:
+                status_text.value = "❌ Email not found"
+                status_text.color = self.danger_color
+            
+            conn.close()
+            page.update()
+        
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text("Reset Password", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
+            ]),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Enter your email to reset password:", size=13),
+                    ft.Container(height=10),
+                    email_field,
+                    status_text,
+                ], spacing=10),
+                width=380,
+                height=280,
+                padding=20,
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog()),
+                ft.FilledButton("Reset Password", on_click=reset_password, style=ft.ButtonStyle(bgcolor=self.accent_color)),
+            ],
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
     def show_login(self, page: ft.Page):
-        """Show login screen with trial access only for regular users"""
+        """Complete login screen - Works on mobile with cloud sync"""
         page.controls.clear()
         
         field_width = 280
         
-        email_field = ft.TextField(label="Email", hint_text="your@email.com", width=field_width, bgcolor="#2C2C2C", border_color=self.accent_color)
-        password_field = ft.TextField(label="Password", hint_text="••••••••", password=True, can_reveal_password=True, width=field_width, bgcolor="#2C2C2C", border_color=self.accent_color)
+        email_field = ft.TextField(
+            label="Email", 
+            hint_text="your@email.com", 
+            width=field_width, 
+            bgcolor="#2C2C2C", 
+            border_color=self.accent_color
+        )
+        password_field = ft.TextField(
+            label="Password", 
+            hint_text="••••••••", 
+            password=True, 
+            can_reveal_password=True, 
+            width=field_width, 
+            bgcolor="#2C2C2C", 
+            border_color=self.accent_color
+        )
         status_text = ft.Text("", color="red", size=12)
+        
+        loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
+        
+        def create_default_admin_if_needed():
+            import sqlite3
+            import hashlib
+            from database import DB_PATH
+            from datetime import datetime
+            
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM users")
+                count = cursor.fetchone()[0]
+                
+                if count == 0:
+                    hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
+                    sql = """
+                        INSERT INTO users (name, email, password_hash, role, account_type, is_activated, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """
+                    cursor.execute(sql, ('Administrator', 'admin@store.com', hashed_password, 'admin', 'full', 1, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    conn.commit()
+                    print("✅ Created default admin: admin@store.com / admin123")
+                    
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("✓ Default admin created! Email: admin@store.com, Password: admin123"),
+                        bgcolor=self.success_color,
+                        duration=5000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+                conn.close()
+            except Exception as e:
+                print(f"Error creating default admin: {e}")
         
         def on_login(e):
             email = email_field.value.strip()
@@ -1536,98 +1759,108 @@ class StoreApp:
                 page.update()
                 return
             
-            user = UserManager.authenticate(email, password)
+            loading_indicator.visible = True
+            status_text.value = "🔄 Authenticating..."
+            status_text.color = self.accent_color
+            page.update()
             
-            if user:
-                user_dict = dict(user)
-                user_id = user_dict.get('id')
-                user_role = user_dict.get('role', 'user')
-                company_id = user_dict.get('company_id', 1)  # Get company_id from user
+            try:
+                user = UserManager.authenticate(email, password)
                 
-                import sqlite3
-                from database import DB_PATH
-                from datetime import datetime
-                
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute("SELECT trial_end_date, is_activated, account_type FROM users WHERE id = ?", (user_id,))
-                result = cursor.fetchone()
-                conn.close()
-                
-                # Store company_id in user_dict for cloud sync
-                user_dict['company_id'] = company_id
-                
-                # ADMIN USERS - Full access immediately, no trial
-                if user_role == 'admin':
+                if user:
+                    user_dict = dict(user)
+                    user_id = user_dict.get('id')
+                    user_role = user_dict.get('role', 'user')
+                    company_id = user_dict.get('company_id', 1)
+                    
+                    user_dict['company_id'] = company_id
+                    
+                    import sqlite3
+                    from database import DB_PATH
+                    from datetime import datetime
+                    
+                    conn = sqlite3.connect(DB_PATH)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT trial_end_date, is_activated, account_type FROM users WHERE id = ?", (user_id,))
+                    result = cursor.fetchone()
+                    conn.close()
+                    
                     self.current_user = user_dict
-                    page.snack_bar = ft.SnackBar(
-                        ft.Text("✓ Welcome Admin! Full access granted."),
-                        bgcolor=self.success_color,
-                        duration=3000
-                    )
-                    page.snack_bar.open = True
                     
-                    # Auto-sync cloud data for this company
-                    self.auto_sync_on_start(page)
-                    
-                    self.show_dashboard(page)
-                    page.update()
-                    return
-                
-                # REGULAR USERS - Check trial status
-                if result:
-                    end_date_str = result[0]
-                    is_activated = result[1]
-                    account_type = result[2]
-                    
-                    if is_activated == 1 or account_type == 'full':
-                        # Full access user
-                        self.current_user = user_dict
+                    if user_role == 'admin':
+                        loading_indicator.visible = False
                         page.snack_bar = ft.SnackBar(
-                            ft.Text("✓ Welcome! Full access granted."),
+                            ft.Text("✓ Welcome Admin! Full access granted."),
                             bgcolor=self.success_color,
                             duration=3000
                         )
                         page.snack_bar.open = True
-                        
-                        # Auto-sync cloud data for this company
+                        page.update()
                         self.auto_sync_on_start(page)
-                        
                         self.show_dashboard(page)
+                        return
+                    
+                    if result:
+                        end_date_str = result[0]
+                        is_activated = result[1]
+                        account_type = result[2]
                         
-                    elif end_date_str:
-                        end_date = datetime.strptime(end_date_str, '%Y-%m-%d %H:%M:%S')
-                        if datetime.now() > end_date:
-                            # Trial expired
-                            status_text.value = "⚠️ Your trial has expired! Please activate your account."
-                            status_text.color = self.warning_color
-                            self.show_activation_dialog(page, user_id, email)
-                        else:
-                            # Valid trial
-                            days_left = (end_date - datetime.now()).days
-                            self.current_user = user_dict
+                        if is_activated == 1 or account_type == 'full':
+                            loading_indicator.visible = False
                             page.snack_bar = ft.SnackBar(
-                                ft.Text(f"✓ Welcome! Your trial expires in {days_left} days"),
+                                ft.Text("✓ Welcome! Full access granted."),
                                 bgcolor=self.success_color,
                                 duration=3000
                             )
                             page.snack_bar.open = True
-                            
-                            # Auto-sync cloud data for this company
+                            page.update()
                             self.auto_sync_on_start(page)
-                            
                             self.show_dashboard(page)
+                        elif end_date_str:
+                            end_date = datetime.strptime(end_date_str, '%Y-%m-%d %H:%M:%S')
+                            if datetime.now() > end_date:
+                                loading_indicator.visible = False
+                                status_text.value = "⚠️ Your trial has expired! Please activate your account."
+                                status_text.color = self.warning_color
+                                page.update()
+                                self.show_activation_dialog(page, user_id, email)
+                            else:
+                                days_left = (end_date - datetime.now()).days
+                                loading_indicator.visible = False
+                                page.snack_bar = ft.SnackBar(
+                                    ft.Text(f"✓ Welcome! Your trial expires in {days_left} days"),
+                                    bgcolor=self.success_color,
+                                    duration=3000
+                                )
+                                page.snack_bar.open = True
+                                page.update()
+                                self.auto_sync_on_start(page)
+                                self.show_dashboard(page)
+                    else:
+                        loading_indicator.visible = False
+                        status_text.value = "Account error. Please contact support."
+                        status_text.color = self.danger_color
+                        page.update()
                 else:
-                    status_text.value = "Account error. Please contact support."
+                    loading_indicator.visible = False
+                    status_text.value = "Invalid email or password!"
                     status_text.color = self.danger_color
-            else:
-                status_text.value = "Invalid email or password!"
+                    page.update()
+                    
+            except Exception as ex:
+                loading_indicator.visible = False
+                status_text.value = f"Error: {str(ex)[:50]}"
                 status_text.color = self.danger_color
-            
-            page.update()
+                page.update()
+                print(f"Login error: {ex}")
         
-        def on_trial_signup(e):
-            self.show_trial_signup_dialog(page)
+        def on_register(e):
+            self.show_register_dialog(page)
+        
+        def on_forgot_password(e):
+            self.show_forgot_password_dialog(page)
+        
+        create_default_admin_if_needed()
         
         logo_exists = os.path.exists(logo_path)
         logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=60)
@@ -1638,18 +1871,24 @@ class StoreApp:
             ft.Container(height=20),
             ft.Container(width=50, height=2, bgcolor=self.accent_color, border_radius=1),
             ft.Container(height=20),
-            email_field, ft.Container(height=15),
-            password_field, ft.Container(height=15),
-            status_text, ft.Container(height=10),
-            ft.Row([logo, ft.Container(width=20), ft.FilledButton("Sign In", width=140, height=45, on_click=on_login)], alignment=ft.MainAxisAlignment.CENTER),
-            ft.Divider(height=20, color="#3C3C3C"),
-            ft.OutlinedButton("Start 30-Day Free Trial", width=field_width, height=45, on_click=on_trial_signup, 
-                            style=ft.ButtonStyle(color=self.success_color)),
+            email_field, 
+            ft.Container(height=15),
+            password_field, 
+            ft.Container(height=15),
+            ft.Row([status_text, loading_indicator], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+            ft.Container(height=10),
             ft.Row([
-                ft.TextButton("Activate License", on_click=lambda e: self.show_activation_only_dialog(page), 
-                            style=ft.ButtonStyle(color=self.accent_color)),
-                ft.TextButton("Forgot Password?", on_click=lambda e: None, style=ft.ButtonStyle(color="#888888")),
+                logo, 
+                ft.Container(width=20), 
+                ft.FilledButton("Sign In", width=140, height=45, on_click=on_login)
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Divider(height=20, color="#3C3C3C"),
+            ft.Row([
+                ft.TextButton("Create Account", on_click=on_register, style=ft.ButtonStyle(color=self.success_color)),
+                ft.TextButton("Forgot Password?", on_click=on_forgot_password, style=ft.ButtonStyle(color="#888888")),
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
+            ft.Container(height=10),
+            ft.Text("💡 Default admin: admin@store.com / admin123", size=10, color="#888888", selectable=True),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
         
         login_card = ft.Container(content=main_layout, padding=40, bgcolor=None, border_radius=20, width=500)
@@ -13456,11 +13695,12 @@ class StoreApp:
             dialog_title="Save Test File",
             initial_directory="/storage/emulated/0/Download"
         )
+
     def close_dialog(self, page: ft.Page):
-        """Close the current dialog"""
         if page.dialog:
             page.dialog.open = False
             page.update()
+
 if __name__ == "__main__":
     app = StoreApp()
     ft.app(target=app.main)
