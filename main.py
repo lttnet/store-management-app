@@ -24,6 +24,7 @@ from database import init_database
 from managers.material_manager import MaterialManager
 from managers.accessory_manager import AccessoryManager
 from managers.user_manager import UserManager
+from cloud_sync_manager import CloudSyncManager  # <-- ADD THIS LINE
 
 import os
 from datetime import datetime
@@ -105,6 +106,90 @@ class StoreApp:
             result.append(row_dict)
         return result
     
+    def show_company_registration(self, page: ft.Page):
+        """First-time setup for new customer"""
+        
+        company_name_field = ft.TextField(label="Company Name", width=300)
+        admin_name_field = ft.TextField(label="Your Name", width=300)
+        admin_email_field = ft.TextField(label="Email", width=300)
+        admin_password_field = ft.TextField(label="Password", password=True, width=300)
+        status_text = ft.Text("", size=12)
+        
+        def register_company(e):
+            company_name = company_name_field.value.strip()
+            admin_name = admin_name_field.value.strip()
+            admin_email = admin_email_field.value.strip()
+            admin_password = admin_password_field.value
+            
+            if not all([company_name, admin_name, admin_email, admin_password]):
+                status_text.value = "❌ Please fill all fields"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            if len(admin_password) < 4:
+                status_text.value = "❌ Password must be at least 4 characters"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            import sqlite3
+            import hashlib
+            from database import DB_PATH
+            from datetime import datetime
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Create company
+            cursor.execute("INSERT INTO companies (name) VALUES (?)", (company_name,))
+            company_id = cursor.lastrowid
+            
+            # Create admin user
+            hashed_password = hashlib.sha256(admin_password.encode()).hexdigest()
+            cursor.execute('''
+                INSERT INTO users (name, email, password_hash, role, company_id, account_type, is_activated, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (admin_name, admin_email, hashed_password, 'admin', company_id, 'full', 1, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            conn.commit()
+            conn.close()
+            
+            page.dialog.open = False
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Company '{company_name}' created! Please login."),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Register Your Company", size=20, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Create your company account to get started:", size=13),
+                    ft.Container(height=10),
+                    company_name_field,
+                    admin_name_field,
+                    admin_email_field,
+                    admin_password_field,
+                    status_text,
+                ], spacing=10),
+                width=380,
+                height=350,
+                padding=20,
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.FilledButton("Register Company", on_click=register_company, style=ft.ButtonStyle(bgcolor=self.success_color)),
+            ],
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
     def show_categories_page(self, page: ft.Page):
         """Categories Page - SIMPLE VERSION that works on mobile"""
         print("DEBUG: show_categories_page called!")
@@ -955,6 +1040,90 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
+    
+    def add_cloud_sync_button(self, page: ft.Page):
+        sync_btn = ft.IconButton(
+            icon=ft.icons.CLOUD_SYNC,
+            icon_size=24,
+            icon_color=self.accent_color,
+            on_click=lambda e: self.manual_sync(page),
+            tooltip="Sync with Cloud",
+        )
+        return sync_btn
+    
+    def manual_sync(self, page: ft.Page):
+        """Manual sync with cloud - uses company_id"""
+        if not self.current_user:
+            return
+        
+        company_id = self.current_user.get('company_id', 1)
+        
+        page.snack_bar = ft.SnackBar(
+            ft.Text(f"🔄 Syncing company {company_id} with cloud..."),
+            bgcolor=self.accent_color,
+            duration=2000
+        )
+        page.snack_bar.open = True
+        page.update()
+        
+        from cloud_sync_manager import CloudSyncManager
+        
+        upload_success = CloudSyncManager.full_sync_to_cloud(company_id)
+        download_success = CloudSyncManager.full_sync_from_cloud(company_id)
+        
+        if upload_success or download_success:
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✅ Sync completed for company {company_id}!"),
+                bgcolor=self.success_color,
+                duration=3000
+            )
+            if self.current_view == "materials":
+                self.show_materials_screen(page)
+            elif self.current_view == "accessories":
+                self.show_accessories(page)
+            elif self.current_view == "dashboard":
+                self.show_dashboard(page)
+            elif self.current_view == "inventory":
+                self.show_inventory(page)
+        else:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("⚠️ Sync completed - no changes detected"),
+                bgcolor=self.warning_color,
+                duration=3000
+            )
+        
+        page.snack_bar.open = True
+        page.update()
+
+    def auto_sync_after_change(self, page: ft.Page):
+        """Auto sync after data changes - uses company_id"""
+        if self.current_user and self.current_user.get('id', 0) > 0:
+            company_id = self.current_user.get('company_id', 1)
+            from cloud_sync_manager import CloudSyncManager
+            CloudSyncManager.full_sync_to_cloud(company_id)
+            print(f"✅ Company {company_id}: Auto-synced after data change")
+
+    def auto_sync_on_start(self, page: ft.Page):
+        """Auto sync when app starts - uses company_id"""
+        if self.current_user and self.current_user.get('id', 0) > 0:
+            company_id = self.current_user.get('company_id', 1)
+            from cloud_sync_manager import CloudSyncManager
+            
+            print(f"🔄 Auto-syncing for company ID: {company_id}")
+            
+            # Try to download latest data from cloud for this company
+            success = CloudSyncManager.full_sync_from_cloud(company_id)
+            
+            if success:
+                print(f"✅ Auto-sync completed for company {company_id}")
+                if self.current_view == "materials":
+                    self.show_materials_screen(page)
+                elif self.current_view == "accessories":
+                    self.show_accessories(page)
+                elif self.current_view == "dashboard":
+                    self.show_dashboard(page)
+            else:
+                print(f"ℹ️ No cloud data found for company {company_id}, using local data")
     # ============ ZOOM METHODS ============
     def zoom_in(self, page: ft.Page):
         self.zoom_level = min(self.zoom_level + 0.1, 2.0)
@@ -1039,7 +1208,8 @@ class StoreApp:
     def is_mobile(self, page: ft.Page):
         """Check if running on mobile device"""
         return page.width < 800 if page.width else False        
-        def wrap_with_touch_zoom(self, content):
+        
+    def wrap_with_touch_zoom(self, content):
             """Wrap content to enable touch pinch-to-zoom"""
             return ft.Container(
                 content=content,
@@ -1372,6 +1542,7 @@ class StoreApp:
                 user_dict = dict(user)
                 user_id = user_dict.get('id')
                 user_role = user_dict.get('role', 'user')
+                company_id = user_dict.get('company_id', 1)  # Get company_id from user
                 
                 import sqlite3
                 from database import DB_PATH
@@ -1383,6 +1554,9 @@ class StoreApp:
                 result = cursor.fetchone()
                 conn.close()
                 
+                # Store company_id in user_dict for cloud sync
+                user_dict['company_id'] = company_id
+                
                 # ADMIN USERS - Full access immediately, no trial
                 if user_role == 'admin':
                     self.current_user = user_dict
@@ -1392,6 +1566,10 @@ class StoreApp:
                         duration=3000
                     )
                     page.snack_bar.open = True
+                    
+                    # Auto-sync cloud data for this company
+                    self.auto_sync_on_start(page)
+                    
                     self.show_dashboard(page)
                     page.update()
                     return
@@ -1411,6 +1589,10 @@ class StoreApp:
                             duration=3000
                         )
                         page.snack_bar.open = True
+                        
+                        # Auto-sync cloud data for this company
+                        self.auto_sync_on_start(page)
+                        
                         self.show_dashboard(page)
                         
                     elif end_date_str:
@@ -1430,6 +1612,10 @@ class StoreApp:
                                 duration=3000
                             )
                             page.snack_bar.open = True
+                            
+                            # Auto-sync cloud data for this company
+                            self.auto_sync_on_start(page)
+                            
                             self.show_dashboard(page)
                 else:
                     status_text.value = "Account error. Please contact support."
@@ -4048,9 +4234,12 @@ class StoreApp:
         main_column = ft.Column(spacing=15, expand=True)
         
         # ========== SECTION 1: HEADER ==========
-        main_column.controls.append(
-            ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color)
-        )
+        header_row = ft.Row([
+            ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color, expand=True),
+            self.add_cloud_sync_button(page),
+        ])
+        main_column.controls.append(header_row)
+
         main_column.controls.append(ft.Text("Welcome back!", size=14, color="#888888"))
         
         # ========== TRIAL WARNING (ONLY for trial users, NOT for admin) ==========
@@ -7742,7 +7931,7 @@ class StoreApp:
                 ))
                 conn.commit()
                 conn.close()
-                print("DEBUG: Accessory saved successfully")
+                self.auto_sync_after_change(page)
                 
                 close_dialog()
                 page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=2000)
@@ -7958,7 +8147,7 @@ class StoreApp:
                 ))
                 conn.commit()
                 conn.close()
-                print("DEBUG: Accessory updated successfully")
+                self.auto_sync_after_change(page)
                 
                 close_dialog()
                 page.snack_bar = ft.SnackBar(ft.Text(f"✓ Updated: {name_field.value}"), bgcolor=self.success_color, duration=2000)
@@ -7998,6 +8187,7 @@ class StoreApp:
         """Delete accessory confirmation modal"""
         
         accessory = AccessoryManager.get_by_id(accessory_id)
+        self.auto_sync_after_change(page)
         if not accessory:
             return
         
@@ -9045,7 +9235,8 @@ class StoreApp:
             ))
             conn.commit()
             conn.close()
-            
+            self.auto_sync_after_change(page)
+
             close_dialog()
             page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=2000)
             page.snack_bar.open = True
@@ -9296,6 +9487,10 @@ class StoreApp:
                 conn.close()
                 print("DEBUG: Material updated successfully")
                 
+                # ========== ADD AUTO SYNC HERE ==========
+                self.auto_sync_after_change(page)
+                # ======================================
+                
                 close_dialog()
                 page.snack_bar = ft.SnackBar(ft.Text(f"✓ Updated: {name_field.value}"), bgcolor=self.success_color, duration=2000)
                 page.snack_bar.open = True
@@ -9347,6 +9542,7 @@ class StoreApp:
         
         def confirm_delete(e):
             MaterialManager.delete(material_id)
+            self.auto_sync_after_change(page)  
             page.dialog.open = False
             page.snack_bar = ft.SnackBar(ft.Text(f"✓ Deleted: {name}"), bgcolor=self.danger_color)
             page.snack_bar.open = True
