@@ -4383,7 +4383,7 @@ class StoreApp:
 
                 # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Dashboard with trial system - Admin gets no trial messages"""
+        """Complete dashboard - Works on mobile"""
         page.controls.clear()
         
         # Check if mobile
@@ -4397,22 +4397,36 @@ class StoreApp:
             sidebar = self.create_sidebar(page)
             nav = None
         
-        # Get data
-        materials = self.dict_list(MaterialManager.get_all())
-        accessories = self.dict_list(AccessoryManager.get_all())
-        users = self.dict_list(UserManager.get_all())
+        # Get data safely
+        try:
+            materials = self.dict_list(MaterialManager.get_all())
+            accessories = self.dict_list(AccessoryManager.get_all())
+            users = self.dict_list(UserManager.get_all())
+        except Exception as e:
+            print(f"Error loading data: {e}")
+            materials = []
+            accessories = []
+            users = []
         
         # Calculate statistics
         total_materials = len(materials)
         total_accessories = len(accessories)
         total_items = total_materials + total_accessories
-        total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
+        total_stock = 0
+        for m in materials:
+            total_stock += m.get('quantity', 0)
+        for a in accessories:
+            total_stock += a.get('quantity', 0)
         total_users = len(users)
         
         # Low stock items
-        low_stock_materials = [m for m in materials if m.get('quantity', 0) < 10]
-        low_stock_accessories = [a for a in accessories if a.get('quantity', 0) < 10]
-        total_low_stock = len(low_stock_materials) + len(low_stock_accessories)
+        total_low_stock = 0
+        for m in materials:
+            if m.get('quantity', 0) < 10:
+                total_low_stock += 1
+        for a in accessories:
+            if a.get('quantity', 0) < 10:
+                total_low_stock += 1
         
         # Quality counts
         quality_counts = {"New": 0, "Used": 0, "Damaged": 0, "Repaired": 0}
@@ -4426,61 +4440,24 @@ class StoreApp:
         # Create main column
         main_column = ft.Column(spacing=15, expand=True)
         
-        # ========== SECTION 1: HEADER ==========
+        # Header with sync button
         header_row = ft.Row([
             ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color, expand=True),
             self.add_cloud_sync_button(page),
         ])
         main_column.controls.append(header_row)
-
         main_column.controls.append(ft.Text("Welcome back!", size=14, color="#888888"))
         
-        # ========== TRIAL WARNING (ONLY for trial users, NOT for admin) ==========
-        user_role = self.current_user.get('role') if self.current_user else 'user'
-        user_account_type = self.current_user.get('account_type') if self.current_user else 'trial'
+        # Stats cards
+        stats_row = ft.Row([
+            self._create_stat_card("📦", str(total_items), "Items"),
+            self._create_stat_card("📊", str(total_stock), "Stock"),
+            self._create_stat_card("⚠️", str(total_low_stock), "Low Stock"),
+            self._create_stat_card("👥", str(total_users), "Users"),
+        ], spacing=8)
+        main_column.controls.append(stats_row)
         
-        # Only show trial warning for non-admin users with trial account
-        if user_role != 'admin' and user_account_type == 'trial':
-            import sqlite3
-            from database import DB_PATH
-            from datetime import datetime
-            
-            user_id = self.current_user.get('id')
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT trial_end_date FROM users WHERE id = ?", (user_id,))
-            result = cursor.fetchone()
-            conn.close()
-            
-            if result and result[0]:
-                end_date = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
-                days_left = (end_date - datetime.now()).days
-                
-                if days_left <= 5:
-                    trial_warning = ft.Container(
-                        content=ft.Row([
-                            ft.Icon(ft.icons.WARNING, color=self.warning_color),
-                            ft.Text(f"⚠️ Your trial expires in {days_left} days! Activate now to continue.", size=12, color=self.warning_color),
-                            ft.TextButton("Activate Now", on_click=lambda e: self.show_activation_only_dialog(page), style=ft.ButtonStyle(color=self.accent_color)),
-                        ], spacing=8),
-                        padding=10,
-                        bgcolor=self.card_color,
-                        border_radius=8,
-                        margin=ft.margin.only(bottom=10),
-                    )
-                    main_column.controls.append(trial_warning)
-        
-        # ========== SECTION 2: STATS CARDS ==========
-        main_column.controls.append(
-            ft.Row([
-                self._create_stat_card("📦", str(total_items), "Items"),
-                self._create_stat_card("📊", str(total_stock), "Stock"),
-                self._create_stat_card("⚠️", str(total_low_stock), "Low Stock"),
-                self._create_stat_card("👥", str(total_users), "Users"),
-            ], spacing=8)
-        )
-        
-        # ========== SECTION 3: QUALITY DISTRIBUTION ==========
+        # Quality Distribution
         main_column.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
         
         quality_row1 = ft.Row([
@@ -4531,9 +4508,12 @@ class StoreApp:
         ], spacing=8)
         main_column.controls.append(quality_row2)
         
-        # ========== SECTION 4: STOCK HEALTH ==========
-        healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100) if total_stock > 0 else 100)
-        healthy_percentage = max(0, min(healthy_percentage, 100))
+        # Stock Health
+        if total_stock > 0:
+            healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100))
+            healthy_percentage = max(0, min(healthy_percentage, 100))
+        else:
+            healthy_percentage = 100
         
         main_column.controls.append(ft.Text("💪 Stock Health", size=16, weight=ft.FontWeight.BOLD))
         main_column.controls.append(
@@ -4547,9 +4527,8 @@ class StoreApp:
             )
         )
         
-        # ========== SECTION 5: RECENT MATERIALS ==========
+        # Recent Materials
         main_column.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
-        
         if materials:
             for m in materials[:3]:
                 main_column.controls.append(
@@ -4572,20 +4551,16 @@ class StoreApp:
         else:
             main_column.controls.append(ft.Text("No materials", size=12, color="#888888"))
         
-        # ========== SECTION 6: RECENT ACCESSORIES ==========
+        # Recent Accessories
         main_column.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
-        
         if accessories:
             for a in accessories[:3]:
-                price = a.get('price', 0)
-                price_text = f"${price:.2f}" if price else ""
                 main_column.controls.append(
                     ft.Container(
                         content=ft.Row([
                             ft.Text("🔧", size=18),
                             ft.Text(a.get('name', 'N/A'), size=14, expand=True),
                             ft.Text(f"Qty: {a.get('quantity', 0)}", size=14),
-                            ft.Text(price_text, size=12, color="#4CAF50"),
                             ft.Container(
                                 content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
                                 bgcolor=self.get_quality_color(a.get('quality', 'Used')),
@@ -4600,9 +4575,8 @@ class StoreApp:
         else:
             main_column.controls.append(ft.Text("No accessories", size=12, color="#888888"))
         
-        # ========== SECTION 7: QUICK ACTIONS ==========
+        # Quick Actions
         main_column.controls.append(ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD))
-        
         main_column.controls.append(
             ft.Row([
                 ft.ElevatedButton("Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
@@ -4616,125 +4590,35 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # ========== SECTION 8: IMPORT / EXPORT ==========
+        # Import/Export
         main_column.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
-        
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton("Import Materials", on_click=lambda e: self.show_import_dialog(page, "materials"), expand=True),
-                ft.ElevatedButton("Import Accessories", on_click=lambda e: self.show_import_dialog(page, "accessories"), expand=True),
+                ft.ElevatedButton("🌐 Export HTML", on_click=lambda e: self.export_html_simple(page), expand=True),
+                ft.ElevatedButton("📁 View Exports", on_click=lambda e: self.show_exported_files_simple(page), expand=True),
             ], spacing=8)
         )
         
-        main_column.controls.append(
-            ft.Row([
-                ft.ElevatedButton(
-                    "🌐 Export HTML",
-                    on_click=lambda e: self.export_html_simple(page),
-                    expand=True,
-                    style=ft.ButtonStyle(bgcolor="#2196F3"),
-                    icon=ft.icons.WEB,
-                ),
-            ], spacing=8)
-        )
-        
-        main_column.controls.append(
-            ft.Row([
-                ft.ElevatedButton(
-                    "📁 View Exports",
-                    on_click=lambda e: self.show_exported_files_simple(page),
-                    expand=True,
-                    style=ft.ButtonStyle(bgcolor=self.accent_color),
-                    icon=ft.icons.FOLDER_OPEN,
-                ),
-            ], spacing=8)
-        )
-        
-        main_column.controls.append(
-            ft.Row([
-                ft.ElevatedButton(
-                    "⚠️ Low Stock Report",
-                    on_click=lambda e: self.export_low_stock_html(page),
-                    expand=True,
-                    style=ft.ButtonStyle(bgcolor=self.danger_color),
-                    icon=ft.icons.WARNING,
-                ),
-            ], spacing=8)
-        )
-        
-        # ========== SECTION 9: ACCOUNT INFO (ONLY for trial users, NOT for admin) ==========
-        if user_role != 'admin' and user_account_type == 'trial':
-            import sqlite3
-            from database import DB_PATH
-            from datetime import datetime
-            
-            user_id = self.current_user.get('id')
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT trial_end_date FROM users WHERE id = ?", (user_id,))
-            result = cursor.fetchone()
-            conn.close()
-            
-            if result and result[0]:
-                end_date = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
-                days_left = (end_date - datetime.now()).days
-                
-                account_card = ft.Card(
-                    content=ft.Container(
-                        content=ft.Column([
-                            ft.Row([
-                                ft.Icon(ft.icons.INFO, color=self.accent_color),
-                                ft.Text("Account Information", size=14, weight=ft.FontWeight.BOLD, expand=True),
-                            ]),
-                            ft.Divider(),
-                            ft.Row([
-                                ft.Text("Account Type:", size=12, color="#888888"),
-                                ft.Text("Trial", size=12, color=self.success_color, weight=ft.FontWeight.BOLD),
-                            ]),
-                            ft.Row([
-                                ft.Text("Days Remaining:", size=12, color="#888888"),
-                                ft.Text(f"{days_left} days", size=12, color=self.warning_color if days_left <= 5 else self.success_color),
-                            ]),
-                            ft.Row([
-                                ft.ElevatedButton(
-                                    "Activate Full Version",
-                                    on_click=lambda e: self.show_activation_only_dialog(page),
-                                    style=ft.ButtonStyle(bgcolor=self.accent_color),
-                                    expand=True,
-                                ),
-                            ]),
-                        ], spacing=8),
-                        padding=12,
-                    ),
-                    margin=ft.margin.only(top=10),
-                )
-                main_column.controls.append(account_card)
-        
-        # ========== SECTION 10: FOOTER SPACING ==========
-        main_column.controls.append(ft.Container(height=20))
-        
-        # Wrap in a Container with Scroll
-        main_container = ft.Container(
+        # Wrap in scrollable container
+        scroll_container = ft.Container(
             content=main_column,
             expand=True,
             padding=15,
         )
         
-        # Make it scrollable
-        scrollable_container = ft.Container(
-            content=ft.Column([main_container], scroll=ft.ScrollMode.AUTO, expand=True),
+        scrollable = ft.Container(
+            content=ft.Column([scroll_container], scroll=ft.ScrollMode.AUTO, expand=True),
             expand=True,
         )
         
         # Layout
         if is_mobile and nav:
-            page.add(ft.Column([scrollable_container, nav], spacing=0, expand=True))
+            page.add(ft.Column([scrollable, nav], spacing=0, expand=True))
         else:
-            page.add(ft.Row([sidebar, scrollable_container], spacing=0, expand=True))
+            page.add(ft.Row([sidebar, scrollable], spacing=0, expand=True))
         
         self.current_view = "dashboard"
         page.update()
-
 
     def _create_stat_card(self, icon, value, label):
         """Create a statistics card"""
