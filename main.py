@@ -1052,43 +1052,58 @@ class StoreApp:
         return sync_btn
     
     def manual_sync(self, page: ft.Page):
-        """Manual sync with cloud - uses company_id"""
+        """Manual sync with cloud - Working version"""
         if not self.current_user:
+            page.snack_bar = ft.SnackBar(ft.Text("Please login first"), bgcolor=self.warning_color)
+            page.snack_bar.open = True
+            page.update()
             return
         
         company_id = self.current_user.get('company_id', 1)
         
         page.snack_bar = ft.SnackBar(
-            ft.Text(f"🔄 Syncing company {company_id} with cloud..."),
+            ft.Text(f"🔄 Syncing..."),
             bgcolor=self.accent_color,
             duration=2000
         )
         page.snack_bar.open = True
         page.update()
         
-        from cloud_sync_manager import CloudSyncManager
-        
-        upload_success = CloudSyncManager.full_sync_to_cloud(company_id)
-        download_success = CloudSyncManager.full_sync_from_cloud(company_id)
-        
-        if upload_success or download_success:
+        try:
+            from cloud_sync_manager import CloudSyncManager
+            
+            # Upload to cloud
+            upload_success = CloudSyncManager.full_sync_to_cloud(company_id)
+            print(f"Upload success: {upload_success}")
+            
+            # Download from cloud
+            download_success = CloudSyncManager.full_sync_from_cloud(company_id)
+            print(f"Download success: {download_success}")
+            
+            if upload_success or download_success:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✅ Sync completed!"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                # Refresh current view
+                if self.current_view == "dashboard":
+                    self.show_dashboard(page)
+                elif self.current_view == "materials":
+                    self.show_materials_screen(page)
+                elif self.current_view == "accessories":
+                    self.show_accessories(page)
+            else:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("ℹ️ No changes to sync"),
+                    bgcolor=self.warning_color,
+                    duration=2000
+                )
+        except Exception as e:
+            print(f"Sync error: {e}")
             page.snack_bar = ft.SnackBar(
-                ft.Text(f"✅ Sync completed for company {company_id}!"),
-                bgcolor=self.success_color,
-                duration=3000
-            )
-            if self.current_view == "materials":
-                self.show_materials_screen(page)
-            elif self.current_view == "accessories":
-                self.show_accessories(page)
-            elif self.current_view == "dashboard":
-                self.show_dashboard(page)
-            elif self.current_view == "inventory":
-                self.show_inventory(page)
-        else:
-            page.snack_bar = ft.SnackBar(
-                ft.Text("⚠️ Sync completed - no changes detected"),
-                bgcolor=self.warning_color,
+                ft.Text(f"Sync error: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
                 duration=3000
             )
         
@@ -9034,12 +9049,10 @@ class StoreApp:
         page.update()
 
     def open_add_modal(self, page: ft.Page):
-        """Add material - Working Cancel and Close buttons"""
+        """Add material - Working save with company_id"""
         import random
         import string
         import sqlite3
-        import os
-        import shutil
         from datetime import datetime
         from database import DB_PATH
         
@@ -9067,11 +9080,6 @@ class StoreApp:
             dialog_width = 500
             scroll_height = 450
         
-        # Create images folder
-        images_folder = "images"
-        if not os.path.exists(images_folder):
-            os.makedirs(images_folder)
-        
         # Load categories
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -9095,7 +9103,7 @@ class StoreApp:
         color_field = ft.TextField(label="Colors", width=field_width, bgcolor=self.card_color)
         notes_field = ft.TextField(label="Notes", width=field_width, bgcolor=self.card_color, multiline=True, min_lines=2, max_lines=3)
         
-        # Barcode field with paste and scan buttons
+        # Barcode field
         barcode_field = ft.TextField(
             label="Barcode", 
             width=field_width - 80,
@@ -9104,107 +9112,9 @@ class StoreApp:
             read_only=True,
         )
         
-        def quick_paste(e):
-            try:
-                clipboard = page.get_clipboard()
-                if clipboard:
-                    barcode_field.value = clipboard
-                    page.snack_bar = ft.SnackBar(ft.Text(f"✓ Pasted: {clipboard}"), bgcolor=self.success_color, duration=1500)
-                    page.snack_bar.open = True
-                    page.update()
-                else:
-                    page.snack_bar = ft.SnackBar(ft.Text("❌ Nothing in clipboard"), bgcolor=self.danger_color)
-                    page.snack_bar.open = True
-                    page.update()
-            except:
-                page.snack_bar = ft.SnackBar(ft.Text("❌ Cannot access clipboard"), bgcolor=self.danger_color)
-                page.snack_bar.open = True
-                page.update()
-        
-        barcode_paste_btn = ft.IconButton(
-            icon=ft.icons.CONTENT_PASTE,
-            icon_size=20,
-            icon_color=self.success_color,
-            tooltip="Paste from Clipboard",
-            on_click=quick_paste,
-        )
-        
-        barcode_scan_btn = ft.IconButton(
-            icon=ft.icons.QR_CODE_SCANNER,
-            icon_size=20,
-            icon_color=self.accent_color,
-            tooltip="Scan Barcode",
-            on_click=lambda e: self.show_barcode_scanner(page, barcode_field),
-        )
-        
-        barcode_row = ft.Row([barcode_field, barcode_paste_btn, barcode_scan_btn], spacing=8)
         regenerate_btn = ft.TextButton("🔄 New Barcode", on_click=lambda e: setattr(barcode_field, 'value', generate_barcode()) or page.update())
         
-        # Image upload
-        image_status_text = ft.Text("No image (max 2MB)", size=10, color="#888888")
-        selected_image_data = None
-        
-        def on_image_picked(e: ft.FilePickerResultEvent):
-            nonlocal selected_image_data
-            if e.files:
-                file = e.files[0]
-                size_kb = file.size / 1024
-                max_size = 2 * 1024 * 1024
-                
-                if file.size > max_size:
-                    size_mb = file.size / (1024 * 1024)
-                    image_status_text.value = f"❌ Too large! {size_mb:.1f}MB (max 2MB)"
-                    image_status_text.color = self.danger_color
-                    page.update()
-                    return
-                
-                try:
-                    with open(file.path, 'rb') as f:
-                        file_data = f.read()
-                    
-                    selected_image_data = {
-                        'name': file.name,
-                        'data': file_data,
-                        'size': file.size
-                    }
-                    
-                    image_status_text.value = f"✓ {file.name[:20]} ({size_kb:.0f}KB)"
-                    image_status_text.color = self.success_color
-                except Exception as ex:
-                    image_status_text.value = f"❌ Error reading image"
-                    image_status_text.color = self.danger_color
-                page.update()
-        
-        image_picker = ft.FilePicker(on_result=on_image_picked)
-        page.overlay.append(image_picker)
-        
-        def upload_image(e):
-            image_picker.pick_files(allow_multiple=False, allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
-        
-        upload_btn = ft.ElevatedButton(
-            "📁 Upload",
-            on_click=upload_image,
-            icon=ft.icons.UPLOAD_FILE,
-            style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
-        )
-        
-        image_row = ft.Row([upload_btn, image_status_text], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True)
-        
-        def save_uploaded_image():
-            if selected_image_data:
-                try:
-                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    file_ext = os.path.splitext(selected_image_data['name'])[1].lower()
-                    new_filename = f"img_{timestamp}{file_ext}"
-                    new_path = os.path.join(images_folder, new_filename)
-                    
-                    with open(new_path, 'wb') as f:
-                        f.write(selected_image_data['data'])
-                    
-                    return f"images/{new_filename}"
-                except:
-                    return None
-            return None
+        barcode_row = ft.Row([barcode_field, regenerate_btn], spacing=8)
         
         def update_length(e):
             size_value = size_field.value
@@ -9231,12 +9141,10 @@ class StoreApp:
         
         size_field.on_change = update_length
         
-        # Function to close dialog
         def close_dialog():
             page.dialog.open = False
             page.update()
         
-        # Create scrollable fields (WITHOUT buttons)
         scrollable_fields = ft.Column([
             name_field,
             category_field,
@@ -9247,26 +9155,8 @@ class StoreApp:
             location_field,
             color_field,
             barcode_row,
-            regenerate_btn,
-            image_row,
             notes_field,
         ], spacing=10, scroll=ft.ScrollMode.AUTO, height=scroll_height)
-        
-        # Dialog content with buttons SEPARATE from scroll
-        dialog_content = ft.Column([
-            ft.Row([
-                ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
-            ]),
-            ft.Divider(height=1),
-            scrollable_fields,
-            ft.Divider(height=1),
-            ft.Row([
-                ft.TextButton("Cancel", on_click=lambda e: close_dialog(), expand=True),
-                ft.FilledButton("Save", on_click=lambda e: save_material(), 
-                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
-            ], spacing=10),
-        ], spacing=10)
         
         def save_material():
             if not name_field.value:
@@ -9275,9 +9165,9 @@ class StoreApp:
                 page.update()
                 return
             
-            saved_image_path = save_uploaded_image() if selected_image_data else None
             selected_category_id = int(category_field.value)
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            company_id = self.current_user.get('company_id', 1) if self.current_user else 1
             
             size_val = size_field.value
             length_val = None
@@ -9296,28 +9186,49 @@ class StoreApp:
                 except:
                     length_val = None
             
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO materials (name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                name_field.value, selected_category_id,
-                int(quantity_field.value) if quantity_field.value else 0,
-                quality_field.value, location_field.value,
-                size_field.value, length_val,
-                color_field.value, notes_field.value,
-                saved_image_path,
-                barcode_field.value, current_time, current_time
-            ))
-            conn.commit()
-            conn.close()
-            self.auto_sync_after_change(page)
-
-            close_dialog()
-            page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=2000)
-            page.snack_bar.open = True
-            self.show_materials_screen(page)
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO materials (name, category_id, quantity, quality, location_ids, size, length, colors, notes, barcode_value, company_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    name_field.value, selected_category_id,
+                    int(quantity_field.value) if quantity_field.value else 0,
+                    quality_field.value, location_field.value,
+                    size_field.value, length_val,
+                    color_field.value, notes_field.value,
+                    barcode_field.value, company_id, current_time, current_time
+                ))
+                conn.commit()
+                conn.close()
+                
+                close_dialog()
+                page.snack_bar = ft.SnackBar(ft.Text(f"✓ Added: {name_field.value}"), bgcolor=self.success_color, duration=2000)
+                page.snack_bar.open = True
+                
+                # Refresh the materials screen
+                self.show_materials_screen(page)
+                
+            except Exception as e:
+                page.snack_bar = ft.SnackBar(ft.Text(f"Error: {str(e)}"), bgcolor=self.danger_color)
+                page.snack_bar.open = True
+                page.update()
+        
+        dialog_content = ft.Column([
+            ft.Row([
+                ft.Text("Add New Material", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
+            ]),
+            ft.Divider(height=1),
+            scrollable_fields,
+            ft.Divider(height=1),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=lambda e: close_dialog(), expand=True),
+                ft.FilledButton("Save", on_click=lambda e: save_material(), 
+                            style=ft.ButtonStyle(bgcolor=self.success_color), expand=True),
+            ], spacing=10),
+        ], spacing=10)
         
         dialog = ft.AlertDialog(
             title=ft.Text(""),
@@ -9749,6 +9660,17 @@ class StoreApp:
         
     def show_inventory(self, page: ft.Page):
         """Show advanced inventory management screen with HTML export only"""
+            # DEBUG: Print data to console
+        materials = self.dict_list(MaterialManager.get_all())
+        accessories = self.dict_list(AccessoryManager.get_all())
+        print(f"DEBUG: Materials count = {len(materials)}")
+        print(f"DEBUG: Accessories count = {len(accessories)}")
+        if materials:
+            print(f"DEBUG: First material = {materials[0].get('name')}")
+        
+        # Rest of your original code continues exactly as is...
+
+
         page.controls.clear()
         
         # Check if mobile
