@@ -1517,7 +1517,7 @@ class StoreApp:
         page.update()
 
     def show_register_dialog(self, page: ft.Page):
-        """Register new user dialog"""
+        """Register new user dialog - Simplified"""
         import sqlite3
         import hashlib
         from database import DB_PATH
@@ -1560,7 +1560,6 @@ class StoreApp:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             
-            # Check if email exists
             cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
             if cursor.fetchone():
                 status_text.value = "❌ Email already registered"
@@ -1569,13 +1568,12 @@ class StoreApp:
                 conn.close()
                 return
             
-            # Create new user
             hashed_password = hashlib.sha256(password.encode()).hexdigest()
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            cursor.execute('''
-                INSERT INTO users (name, email, password_hash, role, account_type, is_activated, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (name, email, hashed_password, 'user', 'trial', 0, current_time))
+            cursor.execute("""
+                INSERT INTO users (name, email, password_hash, role, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (name, email, hashed_password, 'user', current_time))
             
             conn.commit()
             conn.close()
@@ -1691,7 +1689,7 @@ class StoreApp:
         page.update()
 
     def show_login(self, page: ft.Page):
-        """Complete login screen - Works on mobile with cloud sync"""
+        """Simplified login screen - No trial check, works immediately"""
         page.controls.clear()
         
         field_width = 280
@@ -1713,10 +1711,10 @@ class StoreApp:
             border_color=self.accent_color
         )
         status_text = ft.Text("", color="red", size=12)
-        
         loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
         
-        def create_default_admin_if_needed():
+        def create_default_admin():
+            """Create default admin if no users exist"""
             import sqlite3
             import hashlib
             from database import DB_PATH
@@ -1725,16 +1723,24 @@ class StoreApp:
             try:
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
+                
+                # Check if users table exists
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+                if not cursor.fetchone():
+                    print("Users table doesn't exist yet")
+                    conn.close()
+                    return
+                
                 cursor.execute("SELECT COUNT(*) FROM users")
                 count = cursor.fetchone()[0]
                 
                 if count == 0:
                     hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
-                    sql = """
-                        INSERT INTO users (name, email, password_hash, role, account_type, is_activated, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """
-                    cursor.execute(sql, ('Administrator', 'admin@store.com', hashed_password, 'admin', 'full', 1, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    cursor.execute("""
+                        INSERT INTO users (name, email, password_hash, role, created_at)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, ('Administrator', 'admin@store.com', hashed_password, 'admin', current_time))
                     conn.commit()
                     print("✅ Created default admin: admin@store.com / admin123")
                     
@@ -1769,78 +1775,25 @@ class StoreApp:
                 
                 if user:
                     user_dict = dict(user)
-                    user_id = user_dict.get('id')
-                    user_role = user_dict.get('role', 'user')
                     company_id = user_dict.get('company_id', 1)
-                    
                     user_dict['company_id'] = company_id
-                    
-                    import sqlite3
-                    from database import DB_PATH
-                    from datetime import datetime
-                    
-                    conn = sqlite3.connect(DB_PATH)
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT trial_end_date, is_activated, account_type FROM users WHERE id = ?", (user_id,))
-                    result = cursor.fetchone()
-                    conn.close()
                     
                     self.current_user = user_dict
                     
-                    if user_role == 'admin':
-                        loading_indicator.visible = False
-                        page.snack_bar = ft.SnackBar(
-                            ft.Text("✓ Welcome Admin! Full access granted."),
-                            bgcolor=self.success_color,
-                            duration=3000
-                        )
-                        page.snack_bar.open = True
-                        page.update()
-                        self.auto_sync_on_start(page)
-                        self.show_dashboard(page)
-                        return
+                    loading_indicator.visible = False
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✓ Welcome {user_dict.get('name', 'User')}!"),
+                        bgcolor=self.success_color,
+                        duration=3000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
                     
-                    if result:
-                        end_date_str = result[0]
-                        is_activated = result[1]
-                        account_type = result[2]
-                        
-                        if is_activated == 1 or account_type == 'full':
-                            loading_indicator.visible = False
-                            page.snack_bar = ft.SnackBar(
-                                ft.Text("✓ Welcome! Full access granted."),
-                                bgcolor=self.success_color,
-                                duration=3000
-                            )
-                            page.snack_bar.open = True
-                            page.update()
-                            self.auto_sync_on_start(page)
-                            self.show_dashboard(page)
-                        elif end_date_str:
-                            end_date = datetime.strptime(end_date_str, '%Y-%m-%d %H:%M:%S')
-                            if datetime.now() > end_date:
-                                loading_indicator.visible = False
-                                status_text.value = "⚠️ Your trial has expired! Please activate your account."
-                                status_text.color = self.warning_color
-                                page.update()
-                                self.show_activation_dialog(page, user_id, email)
-                            else:
-                                days_left = (end_date - datetime.now()).days
-                                loading_indicator.visible = False
-                                page.snack_bar = ft.SnackBar(
-                                    ft.Text(f"✓ Welcome! Your trial expires in {days_left} days"),
-                                    bgcolor=self.success_color,
-                                    duration=3000
-                                )
-                                page.snack_bar.open = True
-                                page.update()
-                                self.auto_sync_on_start(page)
-                                self.show_dashboard(page)
-                    else:
-                        loading_indicator.visible = False
-                        status_text.value = "Account error. Please contact support."
-                        status_text.color = self.danger_color
-                        page.update()
+                    # Sync cloud data
+                    self.auto_sync_on_start(page)
+                    
+                    # Navigate to dashboard
+                    self.show_dashboard(page)
                 else:
                     loading_indicator.visible = False
                     status_text.value = "Invalid email or password!"
@@ -1860,7 +1813,8 @@ class StoreApp:
         def on_forgot_password(e):
             self.show_forgot_password_dialog(page)
         
-        create_default_admin_if_needed()
+        # Create default admin
+        create_default_admin()
         
         logo_exists = os.path.exists(logo_path)
         logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=60)
