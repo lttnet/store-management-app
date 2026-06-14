@@ -32,165 +32,32 @@ jobs:
           flutter-version: '3.19.6'
           channel: 'stable'
       
-      - name: Install dependencies
+      - name: Decode Firebase Service Account Key
         run: |
-          pip install flet==0.21.2
-          pip install requests
-          # No need for firebase-admin if using mock cloud
-          # pip install firebase-admin
+          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}" | base64 -d > serviceAccountKey.json
+          echo "✅ Firebase key created"
+      
+      - name: Create firestore_sync.py
+        run: |
+          cat > firestore_sync.py << 'EOF'
+          # firestore_sync.py content here
+          # (paste your firestore_sync.py content)
+          EOF
+          echo "✅ firestore_sync.py created"
       
       - name: Create cloud_sync_manager.py
         run: |
           cat > cloud_sync_manager.py << 'EOF'
-          # cloud_sync_manager.py
-          import sqlite3
-          import json
-          import os
-          from datetime import datetime
-          from database import DB_PATH
-          
-          class CloudSyncManager:
-              
-              @staticmethod
-              def _get_cloud_data_file(company_id):
-                  base_dir = os.path.dirname(os.path.abspath(__file__))
-                  cloud_dir = os.path.join(base_dir, "cloud_data")
-                  if not os.path.exists(cloud_dir):
-                      os.makedirs(cloud_dir)
-                  return os.path.join(cloud_dir, f"company_{company_id}.json")
-              
-              @staticmethod
-              def sync_all_materials_to_cloud(company_id):
-                  try:
-                      conn = sqlite3.connect(DB_PATH)
-                      conn.row_factory = sqlite3.Row
-                      cursor = conn.cursor()
-                      cursor.execute("SELECT * FROM materials")
-                      materials = cursor.fetchall()
-                      conn.close()
-                      
-                      materials_list = [dict(m) for m in materials]
-                      cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
-                      cloud_data = {'company_id': company_id, 'materials': materials_list, 'last_sync': datetime.now().isoformat(), 'version': '1.0'}
-                      
-                      with open(cloud_file, 'w') as f:
-                          json.dump(cloud_data, f, indent=2)
-                      
-                      print(f"✅ Synced {len(materials_list)} materials to cloud")
-                      return True
-                  except Exception as e:
-                      print(f"Sync error: {e}")
-                      return False
-              
-              @staticmethod
-              def download_materials_from_cloud(company_id):
-                  try:
-                      cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
-                      if not os.path.exists(cloud_file):
-                          return False
-                      
-                      with open(cloud_file, 'r') as f:
-                          cloud_data = json.load(f)
-                      
-                      materials = cloud_data.get('materials', [])
-                      if not materials:
-                          return False
-                      
-                      conn = sqlite3.connect(DB_PATH)
-                      cursor = conn.cursor()
-                      count = 0
-                      for material in materials:
-                          cursor.execute('''INSERT OR REPLACE INTO materials (id, name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (material.get('id'), material.get('name'), material.get('category_id'), material.get('quantity'), material.get('quality'), material.get('location_ids'), material.get('size'), material.get('length'), material.get('colors'), material.get('notes'), material.get('image_path'), material.get('barcode_value'), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                          count += 1
-                      conn.commit()
-                      conn.close()
-                      print(f"✅ Downloaded {count} materials from cloud")
-                      return True
-                  except Exception as e:
-                      print(f"Download error: {e}")
-                      return False
-              
-              @staticmethod
-              def sync_all_accessories_to_cloud(company_id):
-                  try:
-                      conn = sqlite3.connect(DB_PATH)
-                      conn.row_factory = sqlite3.Row
-                      cursor = conn.cursor()
-                      cursor.execute("SELECT * FROM accessories")
-                      accessories = cursor.fetchall()
-                      conn.close()
-                      
-                      accessories_list = [dict(a) for a in accessories]
-                      cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
-                      
-                      if os.path.exists(cloud_file):
-                          with open(cloud_file, 'r') as f:
-                              cloud_data = json.load(f)
-                      else:
-                              cloud_data = {'company_id': company_id, 'materials': []}
-                      
-                      cloud_data['accessories'] = accessories_list
-                      cloud_data['last_sync'] = datetime.now().isoformat()
-                      
-                      with open(cloud_file, 'w') as f:
-                          json.dump(cloud_data, f, indent=2)
-                      
-                      print(f"✅ Synced {len(accessories_list)} accessories to cloud")
-                      return True
-                  except Exception as e:
-                      print(f"Sync error: {e}")
-                      return False
-              
-              @staticmethod
-              def download_accessories_from_cloud(company_id):
-                  try:
-                      cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
-                      if not os.path.exists(cloud_file):
-                          return False
-                      
-                      with open(cloud_file, 'r') as f:
-                          cloud_data = json.load(f)
-                      
-                      accessories = cloud_data.get('accessories', [])
-                      if not accessories:
-                          return False
-                      
-                      conn = sqlite3.connect(DB_PATH)
-                      cursor = conn.cursor()
-                      count = 0
-                      for accessory in accessories:
-                          cursor.execute('''INSERT OR REPLACE INTO accessories (id, name, category_id, quantity, price, quality, location, notes, image_path, barcode_value, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (accessory.get('id'), accessory.get('name'), accessory.get('category_id'), accessory.get('quantity'), accessory.get('price'), accessory.get('quality'), accessory.get('location'), accessory.get('notes'), accessory.get('image_path'), accessory.get('barcode_value'), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                          count += 1
-                      conn.commit()
-                      conn.close()
-                      print(f"✅ Downloaded {count} accessories from cloud")
-                      return True
-                  except Exception as e:
-                      print(f"Download error: {e}")
-                      return False
-              
-              @staticmethod
-              def full_sync_from_cloud(company_id):
-                  success1 = CloudSyncManager.download_materials_from_cloud(company_id)
-                  success2 = CloudSyncManager.download_accessories_from_cloud(company_id)
-                  return success1 or success2
-              
-              @staticmethod
-              def full_sync_to_cloud(company_id):
-                  success1 = CloudSyncManager.sync_all_materials_to_cloud(company_id)
-                  success2 = CloudSyncManager.sync_all_accessories_to_cloud(company_id)
-                  return success1 or success2
-              
-              @staticmethod
-              def get_sync_status(company_id):
-                  cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
-                  if os.path.exists(cloud_file):
-                      with open(cloud_file, 'r') as f:
-                          data = json.load(f)
-                      return {'last_sync': data.get('last_sync', 'Never'), 'materials_count': len(data.get('materials', [])), 'accessories_count': len(data.get('accessories', []))}
-                  return {'last_sync': 'Never', 'materials_count': 0, 'accessories_count': 0}
+          # cloud_sync_manager.py content here
+          # (paste your cloud_sync_manager.py content)
           EOF
           echo "✅ cloud_sync_manager.py created"
+      
+      - name: Install dependencies
+        run: |
+          pip install flet==0.21.2
+          pip install firebase-admin
+          pip install requests
       
       - name: Build APK
         id: build
@@ -214,10 +81,3 @@ jobs:
         with:
           name: Store-Management-APK
           path: ${{ steps.build.outputs.apk_path }}
-      
-      - name: Upload entire build folder (debug)
-        if: steps.build.outputs.apk_path == ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-folder-debug
-          path: build/
