@@ -1,8 +1,8 @@
-# firestore_sync.py - Real Firestore cloud sync
+# firestore_sync.py
 import firebase_admin
 from firebase_admin import credentials, firestore
 import os
-from datetime import datetime
+import json
 
 class FirestoreSync:
     _instance = None
@@ -17,21 +17,47 @@ class FirestoreSync:
     
     def _initialize(self):
         try:
-            # Check for service account key
-            if os.path.exists("serviceAccountKey.json"):
+            # Try multiple sources for credentials
+            cred = None
+            
+            # Option 1: From environment variable (GitHub Actions)
+            firebase_key = os.environ.get('FIREBASE_SERVICE_ACCOUNT_KEY')
+            if firebase_key:
+                try:
+                    # Try to decode if base64
+                    import base64
+                    try:
+                        decoded = base64.b64decode(firebase_key).decode('utf-8')
+                        cred_dict = json.loads(decoded)
+                    except:
+                        cred_dict = json.loads(firebase_key)
+                    cred = credentials.Certificate(cred_dict)
+                    print("✅ Firebase initialized from environment variable")
+                except:
+                    pass
+            
+            # Option 2: From local file (for development)
+            if not cred and os.path.exists("serviceAccountKey.json"):
                 cred = credentials.Certificate("serviceAccountKey.json")
+                print("✅ Firebase initialized from local file")
+            
+            # Option 3: From google-services.json (for Android)
+            if not cred and os.path.exists("google-services.json"):
+                firebase_admin.initialize_app()
+                self.db = firestore.client()
+                self.initialized = True
+                print("✅ Firebase initialized from google-services.json")
+                return
+            
+            if cred:
                 firebase_admin.initialize_app(cred)
                 self.db = firestore.client()
                 self.initialized = True
                 print("✅ Connected to Firestore Cloud!")
-            elif os.path.exists("google-services.json"):
-                firebase_admin.initialize_app()
-                self.db = firestore.client()
-                self.initialized = True
-                print("✅ Connected to Firestore Cloud!")
             else:
-                print("⚠️ No Firebase credentials found. Using local mode.")
+                print("⚠️ No Firebase credentials found")
                 self.initialized = False
+                
         except Exception as e:
             print(f"Firestore error: {e}")
             self.initialized = False
