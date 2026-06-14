@@ -1251,14 +1251,14 @@ class StoreApp:
         
         page.snack_bar.open = True
         page.update()
-
+        
     def auto_sync_after_change(self, page: ft.Page):
-        """Auto sync after data changes - uses company_id"""
+        """Auto sync after data changes - Upload to cloud"""
         if self.current_user and self.current_user.get('id', 0) > 0:
             company_id = self.current_user.get('company_id', 1)
             from cloud_sync_manager import CloudSyncManager
             CloudSyncManager.full_sync_to_cloud(company_id)
-            print(f"✅ Company {company_id}: Auto-synced after data change")
+            print(f"✅ Auto-synced after change for company {company_id}")
 
     def auto_sync_on_start(self, page: ft.Page):
         """Auto sync when app starts - Download from cloud"""
