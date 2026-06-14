@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "907470312452",
+    "project_id": "store-management-system-5e28a",
+    "storage_bucket": "store-management-system-5e28a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:907470312452:android:5e82f5abf62626c32a1151",
+        "android_client_info": {
+          "package_name": "com.stockify.storemanagement"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDq_7B8Iwu-vDH_6Oa_cWsThmjOs4LIFsk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
