@@ -1041,6 +1041,150 @@ class StoreApp:
         dialog.open = True
         page.update()
     
+    def check_cloud_users_direct(self, page: ft.Page):
+        """Directly check what users are in cloud file"""
+        import json
+        import os
+        
+        company_id = self.current_user.get('company_id', 1) if self.current_user else 1
+        cloud_file = f"cloud_data/company_{company_id}.json"
+        
+        if os.path.exists(cloud_file):
+            with open(cloud_file, 'r') as f:
+                data = json.load(f)
+            
+            cloud_users = data.get('users', [])
+            
+            # Also get local users
+            import sqlite3
+            from database import DB_PATH
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name, email, role FROM users")
+            local_users = cursor.fetchall()
+            conn.close()
+            
+            message = f"=== LOCAL USERS ({len(local_users)}) ===\n"
+            for u in local_users:
+                message += f"  ID:{u[0]} - {u[1]} ({u[2]}) - {u[3]}\n"
+            
+            message += f"\n=== CLOUD USERS ({len(cloud_users)}) ===\n"
+            for u in cloud_users:
+                message += f"  ID:{u.get('id')} - {u.get('name')} ({u.get('email')}) - {u.get('role')}\n"
+            
+            dialog = ft.AlertDialog(
+                title=ft.Text("User Sync Status", size=18, weight=ft.FontWeight.BOLD),
+                content=ft.Container(
+                    content=ft.Text(message, size=11, font_family="monospace"),
+                    width=450,
+                    height=450,
+                    padding=20,
+                ),
+                actions=[
+                    ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                    ft.ElevatedButton("Force Sync", on_click=lambda e: self.force_sync_users(page)),
+                ],
+            )
+            page.dialog = dialog
+            dialog.open = True
+        else:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("No cloud file found. Run sync first."),
+                bgcolor=self.warning_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+        
+        page.update()
+
+    def force_sync_users(self, page: ft.Page):
+        """Force sync users to cloud (overwrite cloud with local)"""
+        import json
+        import os
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime
+        
+        company_id = self.current_user.get('company_id', 1) if self.current_user else 1
+        
+        # Get local users
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, email, password_hash, role, company_id, created_at FROM users")
+        local_users = cursor.fetchall()
+        conn.close()
+        
+        users_list = [dict(u) for u in local_users]
+        
+        # Overwrite cloud file
+        cloud_file = f"cloud_data/company_{company_id}.json"
+        if os.path.exists(cloud_file):
+            with open(cloud_file, 'r') as f:
+                cloud_data = json.load(f)
+        else:
+            cloud_data = {'company_id': company_id, 'materials': [], 'accessories': [], 'users': []}
+        
+        cloud_data['users'] = users_list
+        cloud_data['last_sync'] = datetime.now().isoformat()
+        
+        with open(cloud_file, 'w') as f:
+            json.dump(cloud_data, f, indent=2)
+        
+        page.snack_bar = ft.SnackBar(
+            ft.Text(f"✅ Force sync complete! {len(users_list)} users in cloud"),
+            bgcolor=self.success_color,
+            duration=3000
+        )
+        page.snack_bar.open = True
+        
+        # Close the dialog
+        if page.dialog:
+            page.dialog.open = False
+        
+        page.update()
+
+    def debug_cloud_users(self, page: ft.Page):
+        """Debug: Show what users are in cloud"""
+        import json
+        import os
+        
+        company_id = self.current_user.get('company_id', 1) if self.current_user else 1
+        cloud_file = f"cloud_data/company_{company_id}.json"
+        
+        if os.path.exists(cloud_file):
+            with open(cloud_file, 'r') as f:
+                data = json.load(f)
+            
+            cloud_users = data.get('users', [])
+            
+            message = f"Cloud Users for Company {company_id}:\n"
+            message += f"Total: {len(cloud_users)}\n\n"
+            for u in cloud_users:
+                message += f"  • ID:{u.get('id')} - {u.get('name')} ({u.get('email')}) - Role: {u.get('role')}\n"
+            
+            dialog = ft.AlertDialog(
+                title=ft.Text("Cloud Users", size=18, weight=ft.FontWeight.BOLD),
+                content=ft.Container(
+                    content=ft.Text(message, size=11),
+                    width=400,
+                    height=400,
+                    padding=20,
+                ),
+                actions=[ft.TextButton("OK", on_click=lambda e: setattr(page.dialog, 'open', False))],
+            )
+            page.dialog = dialog
+            dialog.open = True
+        else:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("No cloud file found. Run sync first."),
+                bgcolor=self.warning_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+        
+        page.update()
+
     def add_cloud_sync_button(self, page: ft.Page):
         sync_btn = ft.IconButton(
             icon=ft.icons.CLOUD_SYNC,
@@ -1052,7 +1196,7 @@ class StoreApp:
         return sync_btn
     
     def manual_sync(self, page: ft.Page):
-        """Manual sync with cloud - Working version"""
+        """Manual sync with Firestore - No duplicates"""
         if not self.current_user:
             page.snack_bar = ft.SnackBar(ft.Text("Please login first"), bgcolor=self.warning_color)
             page.snack_bar.open = True
@@ -1062,7 +1206,7 @@ class StoreApp:
         company_id = self.current_user.get('company_id', 1)
         
         page.snack_bar = ft.SnackBar(
-            ft.Text(f"🔄 Syncing..."),
+            ft.Text(f"🔄 Syncing company {company_id}..."),
             bgcolor=self.accent_color,
             duration=2000
         )
@@ -1073,16 +1217,14 @@ class StoreApp:
             from cloud_sync_manager import CloudSyncManager
             
             # Upload to cloud
-            upload_success = CloudSyncManager.full_sync_to_cloud(company_id)
-            print(f"Upload success: {upload_success}")
+            upload_result = CloudSyncManager.full_sync_to_cloud(company_id)
             
             # Download from cloud
-            download_success = CloudSyncManager.full_sync_from_cloud(company_id)
-            print(f"Download success: {download_success}")
+            download_result = CloudSyncManager.full_sync_from_cloud(company_id)
             
-            if upload_success or download_success:
+            if upload_result or download_result:
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✅ Sync completed!"),
+                    ft.Text(f"✅ Sync completed for company {company_id}!"),
                     bgcolor=self.success_color,
                     duration=3000
                 )
@@ -1091,11 +1233,11 @@ class StoreApp:
                     self.show_dashboard(page)
                 elif self.current_view == "materials":
                     self.show_materials_screen(page)
-                elif self.current_view == "accessories":
-                    self.show_accessories(page)
+                elif self.current_view == "users":
+                    self.show_users(page)
             else:
                 page.snack_bar = ft.SnackBar(
-                    ft.Text("ℹ️ No changes to sync"),
+                    ft.Text("ℹ️ No changes detected"),
                     bgcolor=self.warning_color,
                     duration=2000
                 )
@@ -1119,22 +1261,23 @@ class StoreApp:
             print(f"✅ Company {company_id}: Auto-synced after data change")
 
     def auto_sync_on_start(self, page: ft.Page):
-        """Auto sync when app starts - uses company_id"""
+        """Auto sync when app starts - Download from cloud"""
         if self.current_user and self.current_user.get('id', 0) > 0:
             company_id = self.current_user.get('company_id', 1)
             from cloud_sync_manager import CloudSyncManager
             
             print(f"🔄 Auto-syncing for company ID: {company_id}")
             
-            # Try to download latest data from cloud for this company
+            # Download latest data from cloud (merge without duplicates)
             success = CloudSyncManager.full_sync_from_cloud(company_id)
             
             if success:
                 print(f"✅ Auto-sync completed for company {company_id}")
-                if self.current_view == "materials":
+                # Refresh current view to show new data
+                if self.current_view == "users":
+                    self.show_users(page)
+                elif self.current_view == "materials":
                     self.show_materials_screen(page)
-                elif self.current_view == "accessories":
-                    self.show_accessories(page)
                 elif self.current_view == "dashboard":
                     self.show_dashboard(page)
             else:
@@ -10428,6 +10571,7 @@ class StoreApp:
     def reset_inventory_filters(self, page: ft.Page):
         """Reset all inventory filters"""
         self.show_inventory(page)
+
     def show_users(self, page: ft.Page):
         """Show users screen - FULL CRUD with role-based permissions"""
         page.controls.clear()
@@ -10533,6 +10677,15 @@ class StoreApp:
         scroll_content.controls.append(search_field)
         scroll_content.controls.append(ft.Container(height=15))
         
+        debug_sync_btn = ft.ElevatedButton(
+            "🔍 Check Cloud Sync",
+            on_click=lambda e: self.check_cloud_users_direct(page),
+            icon=ft.icons.CLOUD_QUEUE,
+            style=ft.ButtonStyle(bgcolor="#FF9800"),
+        )
+        scroll_content.controls.append(debug_sync_btn)
+        scroll_content.controls.append(ft.Container(height=30))
+
         # Users list container
         users_container = ft.Column(spacing=10)
         scroll_content.controls.append(users_container)
@@ -10634,9 +10787,9 @@ class StoreApp:
         
         self.current_view = "users"
         page.update()
-    
+
     def open_add_user_modal(self, page: ft.Page):
-        """Open modal for adding new user"""
+        """Open modal for adding new user with cloud sync"""
         
         name_field = ft.TextField(label="Full Name *", width=350, bgcolor=self.card_color)
         email_field = ft.TextField(label="Email *", width=350, bgcolor=self.card_color)
@@ -10662,7 +10815,6 @@ class StoreApp:
             page.update()
         
         def save_user(e):
-            # Validation
             if not name_field.value:
                 status_text.value = "❌ Please enter name!"
                 status_text.color = self.danger_color
@@ -10689,17 +10841,29 @@ class StoreApp:
                 page.update()
                 return
             
+            # Get company_id from current user
+            company_id = self.current_user.get('company_id', 1) if self.current_user else 1
+            
             # Create user
             result = UserManager.create(
                 name=name_field.value,
                 email=email_field.value,
                 password=password_field.value,
-                role=role_field.value
+                role=role_field.value,
+                company_id=company_id
             )
             
             if result:
+                # Sync to cloud after adding (upload only new user)
+                from cloud_sync_manager import CloudSyncManager
+                CloudSyncManager.sync_users_to_cloud(company_id)
+                
                 page.overlay.clear()
-                page.snack_bar = ft.SnackBar(ft.Text(f"✓ User {name_field.value} added!"), bgcolor=self.success_color)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✓ User {name_field.value} added and synced to cloud!"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
                 page.snack_bar.open = True
                 self.show_users(page)
             else:
@@ -10737,10 +10901,10 @@ class StoreApp:
         
         page.overlay.append(modal)
         page.update()
+
     def open_edit_user_modal(self, page: ft.Page, user_id):
-        """Open modal for editing user with password reset"""
+        """Open modal for editing user with cloud sync"""
         
-        # Find user by ID
         users = self.dict_list(UserManager.get_all())
         user_dict = None
         for u in users:
@@ -10756,6 +10920,7 @@ class StoreApp:
         
         is_current_user = user_dict.get('id') == self.current_user.get('id')
         is_admin = self.current_user.get('role') == 'admin'
+        company_id = user_dict.get('company_id', 1)
         
         name_field = ft.TextField(label="Full Name", value=user_dict.get('name', ''), width=380, bgcolor=self.card_color)
         email_field = ft.TextField(label="Email", value=user_dict.get('email', ''), width=380, bgcolor=self.card_color, read_only=True)
@@ -10773,7 +10938,6 @@ class StoreApp:
             disabled=not is_admin or is_current_user
         )
         
-        # Password reset fields (optional)
         password_field = ft.TextField(
             label="New Password (leave blank to keep current)", 
             width=380, 
@@ -10799,7 +10963,6 @@ class StoreApp:
         def update_user(e):
             new_password = password_field.value
             
-            # Validate password if provided
             if new_password:
                 if new_password != confirm_password_field.value:
                     status_text.value = "❌ Passwords do not match!"
@@ -10821,7 +10984,6 @@ class StoreApp:
                 cursor = conn.cursor()
                 
                 if new_password:
-                    # Hash the new password
                     hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
                     cursor.execute(
                         "UPDATE users SET name = ?, role = ?, password_hash = ? WHERE id = ?",
@@ -10833,28 +10995,28 @@ class StoreApp:
                         (name_field.value, role_field.value, user_dict.get('id'))
                     )
                 conn.commit()
-                result = cursor.rowcount > 0
                 conn.close()
                 
-            except Exception as ex:
-                print(f"Update error: {ex}")
-                result = False
-            
-            if result:
+                # Sync to cloud after update
+                from cloud_sync_manager import CloudSyncManager
+                CloudSyncManager.sync_users_to_cloud(company_id)
+                
                 page.overlay.clear()
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✓ User {name_field.value} updated successfully!"),
+                    ft.Text(f"✓ User {name_field.value} updated and synced to cloud!"),
                     bgcolor=self.success_color,
                     duration=3000
                 )
                 page.snack_bar.open = True
-                # Update current user info if editing self
+                
                 if is_current_user:
                     self.current_user['name'] = name_field.value
                     self.current_user['role'] = role_field.value
+                
                 self.show_users(page)
-            else:
-                status_text.value = "❌ Error updating user!"
+                
+            except Exception as ex:
+                status_text.value = f"❌ Error: {str(ex)}"
                 status_text.color = self.danger_color
                 page.update()
         
@@ -10890,8 +11052,9 @@ class StoreApp:
         
         page.overlay.append(modal)
         page.update()
+
     def open_delete_user_modal(self, page: ft.Page, user_id, user_name):
-        """Open modal for delete confirmation"""
+        """Open modal for delete confirmation with cloud sync"""
         
         def close_modal(e):
             page.overlay.clear()
@@ -10904,31 +11067,42 @@ class StoreApp:
             try:
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
+                
+                # Get company_id before deleting
+                cursor.execute("SELECT company_id FROM users WHERE id = ?", (user_id,))
+                result = cursor.fetchone()
+                company_id = result[0] if result else 1
+                
+                # Delete user from local database
                 cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
                 conn.commit()
-                result = cursor.rowcount > 0
                 conn.close()
                 
-                if result:
-                    page.overlay.clear()
-                    page.snack_bar = ft.SnackBar(
-                        ft.Text(f"✓ User '{user_name}' deleted successfully!"),
-                        bgcolor=self.success_color,
-                        duration=3000
-                    )
-                    page.snack_bar.open = True
-                    self.show_users(page)
-                else:
-                    page.snack_bar = ft.SnackBar(
-                        ft.Text("❌ Error: Could not delete user!"),
-                        bgcolor=self.danger_color,
-                        duration=3000
-                    )
-                    page.snack_bar.open = True
-                    page.update()
-            except Exception as ex:
+                print(f"✅ User '{user_name}' deleted from local database")
+                
+                # IMPORTANT: Upload changes to cloud (this will remove the user from cloud)
+                from cloud_sync_manager import CloudSyncManager
+                sync_result = CloudSyncManager.sync_users_to_cloud(company_id)
+                print(f"Sync to cloud result: {sync_result}")
+                
+                # Also download to confirm
+                CloudSyncManager.download_users_from_cloud(company_id)
+                
+                page.overlay.clear()
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"❌ Error: {str(ex)}"),
+                    ft.Text(f"✓ User '{user_name}' deleted and synced to cloud!"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                
+                # Refresh the users screen
+                self.show_users(page)
+                
+            except Exception as ex:
+                print(f"Delete error: {ex}")
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"❌ Error: {str(ex)[:50]}"),
                     bgcolor=self.danger_color,
                     duration=3000
                 )
