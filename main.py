@@ -24,7 +24,12 @@ from database import init_database
 from managers.material_manager import MaterialManager
 from managers.accessory_manager import AccessoryManager
 from managers.user_manager import UserManager
-from cloud_sync_manager import CloudSyncManager  # <-- ADD THIS LINE
+
+try:
+    from cloud_sync_manager import CloudSyncManager
+except ImportError:
+    print("CloudSyncManager not available")
+    CloudSyncManager = None
 
 import os
 from datetime import datetime
