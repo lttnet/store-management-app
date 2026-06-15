@@ -25,11 +25,6 @@ from managers.material_manager import MaterialManager
 from managers.accessory_manager import AccessoryManager
 from managers.user_manager import UserManager
 
-try:
-    from cloud_sync_manager import CloudSyncManager
-except ImportError:
-    print("CloudSyncManager not available")
-    CloudSyncManager = None
 
 import os
 from datetime import datetime
@@ -67,7 +62,273 @@ class ScaleHelper:
         """Get scaled font size (minimum 8px)"""
         scaled = int(original_size * self.scale)
         return max(scaled, 8)
+# cloud_sync_manager.py - Complete with materials and accessories
+import sqlite3
+from datetime import datetime
+import json
+
+# Import Firestore sync
+try:
+    from firestore_sync import firestore_sync
+    USE_FIRESTORE = firestore_sync.is_ready()
+except:
+    USE_FIRESTORE = False
+    print("⚠️ Firestore not available, using local files")
+
+class CloudSyncManager:
     
+    @staticmethod
+    def _get_cloud_data_file(company_id):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        cloud_dir = os.path.join(base_dir, "cloud_data")
+        if not os.path.exists(cloud_dir):
+            os.makedirs(cloud_dir)
+        return os.path.join(cloud_dir, f"company_{company_id}.json")
+    
+    # ============ USERS SYNC ============
+    @staticmethod
+    def sync_users_to_cloud(company_id):
+        """Sync users to cloud"""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name, email, password_hash, role, company_id, created_at FROM users WHERE company_id = ?", (company_id,))
+            users = cursor.fetchall()
+            conn.close()
+            
+            users_list = [dict(u) for u in users]
+            
+            if USE_FIRESTORE:
+                return firestore_sync.sync_users_to_firestore(company_id, users_list)
+            else:
+                # Fallback to local JSON
+                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
+                if os.path.exists(cloud_file):
+                    with open(cloud_file, 'r') as f:
+                        cloud_data = json.load(f)
+                else:
+                    cloud_data = {'company_id': company_id, 'materials': [], 'accessories': [], 'users': []}
+                
+                cloud_data['users'] = users_list
+                cloud_data['last_sync'] = datetime.now().isoformat()
+                
+                with open(cloud_file, 'w') as f:
+                    json.dump(cloud_data, f, indent=2)
+                
+                return True
+        except Exception as e:
+            print(f"Sync users error: {e}")
+            return False
+    
+    @staticmethod
+    def download_users_from_cloud(company_id):
+        """Download users from cloud"""
+        try:
+            if USE_FIRESTORE:
+                cloud_users = firestore_sync.get_users_from_firestore(company_id)
+            else:
+                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
+                if not os.path.exists(cloud_file):
+                    return False
+                with open(cloud_file, 'r') as f:
+                    cloud_data = json.load(f)
+                cloud_users = cloud_data.get('users', [])
+            
+            if not cloud_users:
+                return False
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT id FROM users WHERE company_id = ?", (company_id,))
+            local_ids = {row[0] for row in cursor.fetchall()}
+            cloud_ids = {u.get('id') for u in cloud_users}
+            
+            # Delete users not in cloud
+            for user_id in (local_ids - cloud_ids):
+                cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            
+            for user in cloud_users:
+                user_id = user.get('id')
+                if user_id in local_ids:
+                    cursor.execute('''UPDATE users SET name = ?, email = ?, role = ? WHERE id = ?''',
+                                 (user.get('name'), user.get('email'), user.get('role'), user_id))
+                else:
+                    import hashlib
+                    default_password = hashlib.sha256("temp123".encode()).hexdigest()
+                    cursor.execute('''INSERT INTO users (id, name, email, password_hash, role, company_id, created_at)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                                 (user_id, user.get('name'), user.get('email'), default_password,
+                                  user.get('role', 'user'), company_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Download users error: {e}")
+            return False
+    
+    # ============ MATERIALS SYNC ============
+    @staticmethod
+    def sync_materials_to_cloud(company_id):
+        """Sync materials to cloud"""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM materials WHERE company_id = ? OR company_id IS NULL", (company_id,))
+            materials = cursor.fetchall()
+            conn.close()
+            
+            materials_list = [dict(m) for m in materials]
+            
+            if USE_FIRESTORE:
+                return firestore_sync.sync_materials_to_firestore(company_id, materials_list)
+            else:
+                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
+                if os.path.exists(cloud_file):
+                    with open(cloud_file, 'r') as f:
+                        cloud_data = json.load(f)
+                else:
+                    cloud_data = {'company_id': company_id, 'materials': [], 'accessories': [], 'users': []}
+                
+                cloud_data['materials'] = materials_list
+                cloud_data['last_sync'] = datetime.now().isoformat()
+                
+                with open(cloud_file, 'w') as f:
+                    json.dump(cloud_data, f, indent=2)
+                
+                return True
+        except Exception as e:
+            print(f"Sync materials error: {e}")
+            return False
+    
+    @staticmethod
+    def download_materials_from_cloud(company_id):
+        """Download materials from cloud"""
+        try:
+            if USE_FIRESTORE:
+                cloud_materials = firestore_sync.get_materials_from_firestore(company_id)
+            else:
+                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
+                if not os.path.exists(cloud_file):
+                    return False
+                with open(cloud_file, 'r') as f:
+                    cloud_data = json.load(f)
+                cloud_materials = cloud_data.get('materials', [])
+            
+            if not cloud_materials:
+                return False
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            for material in cloud_materials:
+                cursor.execute('''INSERT OR REPLACE INTO materials 
+                    (id, name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, company_id, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (material.get('id'), material.get('name'), material.get('category_id'),
+                     material.get('quantity'), material.get('quality'), material.get('location_ids'),
+                     material.get('size'), material.get('length'), material.get('colors'),
+                     material.get('notes'), material.get('image_path'), material.get('barcode_value'),
+                     company_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Download materials error: {e}")
+            return False
+    
+    # ============ ACCESSORIES SYNC ============
+    @staticmethod
+    def sync_accessories_to_cloud(company_id):
+        """Sync accessories to cloud"""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM accessories WHERE company_id = ? OR company_id IS NULL", (company_id,))
+            accessories = cursor.fetchall()
+            conn.close()
+            
+            accessories_list = [dict(a) for a in accessories]
+            
+            if USE_FIRESTORE:
+                return firestore_sync.sync_accessories_to_firestore(company_id, accessories_list)
+            else:
+                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
+                if os.path.exists(cloud_file):
+                    with open(cloud_file, 'r') as f:
+                        cloud_data = json.load(f)
+                else:
+                    cloud_data = {'company_id': company_id, 'materials': [], 'accessories': [], 'users': []}
+                
+                cloud_data['accessories'] = accessories_list
+                cloud_data['last_sync'] = datetime.now().isoformat()
+                
+                with open(cloud_file, 'w') as f:
+                    json.dump(cloud_data, f, indent=2)
+                
+                return True
+        except Exception as e:
+            print(f"Sync accessories error: {e}")
+            return False
+    
+    @staticmethod
+    def download_accessories_from_cloud(company_id):
+        """Download accessories from cloud"""
+        try:
+            if USE_FIRESTORE:
+                cloud_accessories = firestore_sync.get_accessories_from_firestore(company_id)
+            else:
+                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
+                if not os.path.exists(cloud_file):
+                    return False
+                with open(cloud_file, 'r') as f:
+                    cloud_data = json.load(f)
+                cloud_accessories = cloud_data.get('accessories', [])
+            
+            if not cloud_accessories:
+                return False
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            for accessory in cloud_accessories:
+                cursor.execute('''INSERT OR REPLACE INTO accessories 
+                    (id, name, category_id, quantity, price, quality, location, notes, image_path, barcode_value, company_id, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (accessory.get('id'), accessory.get('name'), accessory.get('category_id'),
+                     accessory.get('quantity'), accessory.get('price'), accessory.get('quality'),
+                     accessory.get('location'), accessory.get('notes'), accessory.get('image_path'),
+                     accessory.get('barcode_value'), company_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Download accessories error: {e}")
+            return False
+    
+    # ============ FULL SYNC ============
+    @staticmethod
+    def full_sync_to_cloud(company_id):
+        """Full upload to cloud"""
+        success1 = CloudSyncManager.sync_users_to_cloud(company_id)
+        success2 = CloudSyncManager.sync_materials_to_cloud(company_id)
+        success3 = CloudSyncManager.sync_accessories_to_cloud(company_id)
+        return success1 or success2 or success3
+    
+    @staticmethod
+    def full_sync_from_cloud(company_id):
+        """Full download from cloud"""
+        success1 = CloudSyncManager.download_users_from_cloud(company_id)
+        success2 = CloudSyncManager.download_materials_from_cloud(company_id)
+        success3 = CloudSyncManager.download_accessories_from_cloud(company_id)
+        return success1 or success2 or success3
+        
 class StoreApp:
     def __init__(self):
         self.current_user = None
@@ -1219,7 +1480,7 @@ class StoreApp:
         page.update()
         
         try:
-            from cloud_sync_manager import CloudSyncManager
+           # from cloud_sync_manager import CloudSyncManager
             
             # Upload to cloud
             upload_result = CloudSyncManager.full_sync_to_cloud(company_id)
@@ -1261,7 +1522,7 @@ class StoreApp:
         """Auto sync after data changes - Upload to cloud"""
         if self.current_user and self.current_user.get('id', 0) > 0:
             company_id = self.current_user.get('company_id', 1)
-            from cloud_sync_manager import CloudSyncManager
+          # from cloud_sync_manager import CloudSyncManager
             CloudSyncManager.full_sync_to_cloud(company_id)
             print(f"✅ Auto-synced after change for company {company_id}")
 
@@ -1269,7 +1530,7 @@ class StoreApp:
         """Auto sync when app starts - Download from cloud"""
         if self.current_user and self.current_user.get('id', 0) > 0:
             company_id = self.current_user.get('company_id', 1)
-            from cloud_sync_manager import CloudSyncManager
+          #  from cloud_sync_manager import CloudSyncManager
             
             print(f"🔄 Auto-syncing for company ID: {company_id}")
             
@@ -10860,7 +11121,7 @@ class StoreApp:
             
             if result:
                 # Sync to cloud after adding (upload only new user)
-                from cloud_sync_manager import CloudSyncManager
+                #from cloud_sync_manager import CloudSyncManager
                 CloudSyncManager.sync_users_to_cloud(company_id)
                 
                 page.overlay.clear()
@@ -11003,7 +11264,7 @@ class StoreApp:
                 conn.close()
                 
                 # Sync to cloud after update
-                from cloud_sync_manager import CloudSyncManager
+             #   from cloud_sync_manager import CloudSyncManager
                 CloudSyncManager.sync_users_to_cloud(company_id)
                 
                 page.overlay.clear()
@@ -11086,7 +11347,7 @@ class StoreApp:
                 print(f"✅ User '{user_name}' deleted from local database")
                 
                 # IMPORTANT: Upload changes to cloud (this will remove the user from cloud)
-                from cloud_sync_manager import CloudSyncManager
+             #   from cloud_sync_manager import CloudSyncManager
                 sync_result = CloudSyncManager.sync_users_to_cloud(company_id)
                 print(f"Sync to cloud result: {sync_result}")
                 
