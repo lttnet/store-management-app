@@ -32,41 +32,30 @@ jobs:
           flutter-version: '3.19.6'
           channel: 'stable'
       
-      - name: Create Firebase Key File from Secret
+      - name: Create Firebase Key File
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
         run: |
           echo "$FIREBASE_KEY" | base64 -d > serviceAccountKey.json
           echo "✅ serviceAccountKey.json created"
-          ls -la serviceAccountKey.json
       
-      - name: Install dependencies from requirements.txt
+      - name: Install Python packages
         run: |
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          pip install flet==0.21.2
+          pip install firebase-admin
+          pip install requests
       
-      - name: Verify firebase-admin installation
+      - name: Verify firebase-admin
         run: |
-          python -c "import firebase_admin; print(f'✅ firebase-admin version: {firebase_admin.__version__}')"
+          python -c "import firebase_admin; print('firebase-admin version:', firebase_admin.__version__)"
       
       - name: Build APK
-        id: build
         run: |
           flet build apk --verbose
-          
-          echo "=== Searching for APK ==="
-          find . -name "*.apk" -type f
-          
-          APK_FILE=$(find . -name "*.apk" -type f | head -1)
-          if [ -n "$APK_FILE" ]; then
-            echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
-            echo "✅ APK found: $APK_FILE"
-          else
-            echo "⚠️ No APK found"
-          fi
       
       - name: Upload APK
-        if: steps.build.outputs.apk_path != ''
         uses: actions/upload-artifact@v4
         with:
           name: Store-Management-APK
-          path: ${{ steps.build.outputs.apk_path }}
+          path: build/apk/release/*.apk
