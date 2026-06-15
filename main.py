@@ -372,6 +372,100 @@ class StoreApp:
             result.append(row_dict)
         return result
     
+    def test_firebase_connection(self, page: ft.Page):
+        """Test if Firebase is actually connected and working"""
+        
+        import os
+        import base64
+        import json
+        
+        messages = []
+        
+        # Step 1: Check if environment variable exists
+        firebase_key = os.environ.get('FIREBASE_SERVICE_ACCOUNT_KEY')
+        if firebase_key:
+            messages.append("✅ FIREBASE_SERVICE_ACCOUNT_KEY found in environment")
+            messages.append(f"   Length: {len(firebase_key)} characters")
+        else:
+            messages.append("❌ FIREBASE_SERVICE_ACCOUNT_KEY NOT found in environment")
+            messages.append("   (This is normal for local development)")
+        
+        # Step 2: Try to decode the key
+        if firebase_key:
+            try:
+                decoded = base64.b64decode(firebase_key).decode('utf-8')
+                cred_dict = json.loads(decoded)
+                messages.append("✅ Successfully decoded and parsed JSON")
+                messages.append(f"   Project ID: {cred_dict.get('project_id', 'Unknown')}")
+            except Exception as e:
+                messages.append(f"❌ Failed to decode: {str(e)[:50]}")
+        
+        # Step 3: Try to initialize Firebase
+        try:
+            import firebase_admin
+            from firebase_admin import credentials, firestore
+            
+            if firebase_key:
+                decoded = base64.b64decode(firebase_key).decode('utf-8')
+                cred_dict = json.loads(decoded)
+                cred = credentials.Certificate(cred_dict)
+                
+                # Check if already initialized
+                if not firebase_admin._apps:
+                    firebase_admin.initialize_app(cred)
+                    messages.append("✅ Firebase initialized successfully")
+                else:
+                    messages.append("✅ Firebase already initialized")
+                
+                # Test Firestore connection
+                db = firestore.client()
+                
+                # Try to write a test document
+                test_ref = db.collection('test_connection').document('test')
+                test_ref.set({'status': 'connected', 'timestamp': firestore.SERVER_TIMESTAMP})
+                messages.append("✅ Test write to Firestore successful")
+                
+                # Try to read it back
+                doc = test_ref.get()
+                if doc.exists:
+                    messages.append("✅ Test read from Firestore successful")
+                
+                # Clean up
+                test_ref.delete()
+                messages.append("✅ Firebase is WORKING correctly!")
+                
+            else:
+                messages.append("⚠️ No Firebase key available")
+                messages.append("   App will use local cloud storage")
+                
+        except ImportError:
+            messages.append("⚠️ firebase-admin not installed")
+            messages.append("   App will use local cloud storage")
+        except Exception as e:
+            messages.append(f"❌ Firebase error: {str(e)[:80]}")
+        
+        # Show results in a dialog
+        result_text = ft.Column([
+            ft.Text("🔍 Firebase Connection Test", size=18, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            ft.Column([ft.Text(msg, size=11, selectable=True) for msg in messages], spacing=5),
+            ft.Divider(),
+            ft.Text("💡 If Firebase is connected, users will sync across devices", size=10, color="#888888"),
+        ], spacing=10)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Firebase Test Results", size=18, weight=ft.FontWeight.BOLD),
+            content=ft.Container(content=result_text, width=450, height=450, padding=20),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.ElevatedButton("Test Sync Now", on_click=lambda e: self.manual_sync(page)),
+            ],
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
     def show_company_registration(self, page: ft.Page):
         """First-time setup for new customer"""
         
@@ -5020,9 +5114,54 @@ class StoreApp:
             ft.Row([
                 ft.ElevatedButton("🌐 Export HTML", on_click=lambda e: self.export_html_simple(page), expand=True),
                 ft.ElevatedButton("📁 View Exports", on_click=lambda e: self.show_exported_files_simple(page), expand=True),
+                ft.ElevatedButton(
+                                    "🔍 Test Firebase",
+                                    on_click=lambda e: self.test_firebase_connection(page),
+                                    icon=ft.icons.CLOUD_QUEUE,
+                                    style=ft.ButtonStyle(bgcolor="#FF9800"), ),
             ], spacing=8)
         )
         
+                # Add Firebase status indicator
+        try:
+            import firebase_admin
+            import os
+            import base64
+            
+            firebase_key = os.environ.get('FIREBASE_SERVICE_ACCOUNT_KEY')
+            if firebase_key and firebase_admin._apps:
+                firebase_status = ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.icons.CLOUD_DONE, size=16, color=self.success_color),
+                        ft.Text("Cloud Connected", size=11, color=self.success_color),
+                    ], spacing=4),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                    bgcolor="#2C2C2C",
+                    border_radius=12,
+                )
+            else:
+                firebase_status = ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.icons.CLOUD_OFF, size=16, color=self.warning_color),
+                        ft.Text("Local Mode", size=11, color=self.warning_color),
+                    ], spacing=4),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                    bgcolor="#2C2C2C",
+                    border_radius=12,
+                )
+            
+            # Add to header next to sync button
+            # You'll need to adjust your header row to include this
+        except:
+            pass
+        
+        # Add this button to your dashboard (temporary)
+        test_firebase_btn = ft.ElevatedButton(
+            "🔍 Test Firebase",
+            on_click=lambda e: self.test_firebase_connection(page),
+            icon=ft.icons.CLOUD_QUEUE,
+            style=ft.ButtonStyle(bgcolor="#FF9800"),
+        )
         # Wrap in scrollable container
         scroll_container = ft.Container(
             content=main_column,
