@@ -36,7 +36,6 @@ jobs:
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
         run: |
-          # Decode and save the key file
           echo "$FIREBASE_KEY" | base64 -d > serviceAccountKey.json
           echo "✅ serviceAccountKey.json created"
           ls -la serviceAccountKey.json
@@ -44,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install flet==0.21.2
-          pip install firebase-admin
+          pip install firebase-admin  # <-- ADD THIS LINE
           pip install requests
       
       - name: Build APK
