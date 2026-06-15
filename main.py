@@ -1,5 +1,6 @@
 """Store Management App - ORIGINAL LAYOUT WITH ZOOM SUPPORT"""
 import sys
+import hashlib
 import warnings
 import traceback
 import sqlite3
@@ -25,7 +26,7 @@ from managers.material_manager import MaterialManager
 from managers.accessory_manager import AccessoryManager
 from managers.user_manager import UserManager
 
-
+import requests
 import os
 import json
 from datetime import datetime
@@ -63,108 +64,150 @@ class ScaleHelper:
         """Get scaled font size (minimum 8px)"""
         scaled = int(original_size * self.scale)
         return max(scaled, 8)
-# cloud_sync_manager.py - Complete with materials and accessories
 
-# Import Firestore sync
-try:
-    from firestore_sync import firestore_sync
-    USE_FIRESTORE = firestore_sync.is_ready()
-except:
-    USE_FIRESTORE = False
-    print("⚠️ Firestore not available, using local files")
-
-# ========== COMPLETE CLOUD SYNC MANAGER ==========
-
-# Firebase globals
-firebase_initialized = False
-firestore_db = None
-
-def get_firebase_key_path():
-    """Find the serviceAccountKey.json file"""
-    import sys
+class FirebaseRestAPI:
+    def __init__(self):
+        self.api_key = None
+        self.project_id = None
+        self._load_config()
     
-    possible_paths = [
-        "serviceAccountKey.json",
-        os.path.join(os.path.dirname(sys.argv[0]), "serviceAccountKey.json"),
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "serviceAccountKey.json"),
-        "/data/data/com.flet.store_management_app/files/serviceAccountKey.json",
-    ]
-    
-    for path in possible_paths:
-        if os.path.exists(path):
-            return path
-    return None
-
-def init_firebase():
-    global firebase_initialized, firestore_db
-    
-    try:
-        # Check if firebase-admin is installed
-        import firebase_admin
-        from firebase_admin import credentials, firestore
+    def _load_config(self):
+        # Your Firebase credentials
+        self.api_key = "AIzaSyBBgVLQ2poP3o-jHyninWmyWP5CmkSnOyM"
+        self.project_id = "store-management-system-5e28a"
         
-        # Find the key file
-        key_path = None
-        possible_paths = [
-            "serviceAccountKey.json",
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "serviceAccountKey.json"),
-            os.path.join(os.path.dirname(sys.argv[0]), "serviceAccountKey.json"),
-        ]
+        # Also try from environment (for GitHub Actions)
+        if os.environ.get('FIREBASE_WEB_API_KEY'):
+            self.api_key = os.environ.get('FIREBASE_WEB_API_KEY')
+        if os.environ.get('FIREBASE_PROJECT_ID'):
+            self.project_id = os.environ.get('FIREBASE_PROJECT_ID')
         
-        for path in possible_paths:
-            if os.path.exists(path):
-                key_path = path
-                break
-        
-        if key_path:
-            cred = credentials.Certificate(key_path)
-            if not firebase_admin._apps:
-                firebase_admin.initialize_app(cred)
-                firestore_db = firestore.client()
-                firebase_initialized = True
-                print(f"✅ Firebase initialized from: {key_path}")
+        if self.api_key and self.project_id:
+            print(f"✅ Firebase REST API ready")
+            print(f"   Project: {self.project_id}")
             return True
         else:
-            print("⚠️ serviceAccountKey.json not found")
+            print("⚠️ Firebase REST API not configured")
             return False
-    except ImportError:
-        print("⚠️ firebase-admin not installed")
-        return False
-    except Exception as e:
-        print(f"Firebase init error: {e}")
-        return False
-
-# Initialize Firebase
-init_firebase()
+    
+    def is_ready(self):
+        return self.api_key is not None and self.project_id is not None
+    
+    def _get_url(self, path):
+        return f"https://firestore.googleapis.com/v1/projects/{self.project_id}/databases/(default)/documents/{path}?key={self.api_key}"
+    
+    def sync_users(self, company_id, users):
+        """Sync users to Firebase"""
+        if not self.is_ready():
+            return False
+        
+        try:
+            for user in users:
+                url = self._get_url(f"companies/{company_id}/users/{user['id']}")
+                
+                document = {
+                    "fields": {
+                        "id": {"integerValue": str(user['id'])},
+                        "name": {"stringValue": user['name']},
+                        "email": {"stringValue": user['email']},
+                        "role": {"stringValue": user['role']},
+                    }
+                }
+                
+                response = requests.patch(url, json=document)
+                if response.status_code not in [200, 201]:
+                    print(f"Error syncing user {user['id']}: {response.text}")
+                    return False
+            
+            print(f"✅ Synced {len(users)} users to Firebase")
+            return True
+        except Exception as e:
+            print(f"Sync error: {e}")
+            return False
+    
+    def get_users(self, company_id):
+        """Get users from Firebase"""
+        if not self.is_ready():
+            return []
+        
+        try:
+            url = self._get_url(f"companies/{company_id}/users")
+            response = requests.get(url)
+            
+            if response.status_code != 200:
+                return []
+            
+            data = response.json()
+            users = []
+            
+            for doc in data.get('documents', []):
+                user = {'id': int(doc['name'].split('/')[-1])}
+                fields = doc.get('fields', {})
+                
+                for key, value in fields.items():
+                    if 'stringValue' in value:
+                        user[key] = value['stringValue']
+                    elif 'integerValue' in value:
+                        user[key] = int(value['integerValue'])
+                
+                users.append(user)
+            
+            print(f"✅ Downloaded {len(users)} users from Firebase")
+            return users
+        except Exception as e:
+            print(f"Get error: {e}")
+            return []
+    
+    def sync_company_data(self, company_id, data):
+        """Sync all company data to Firebase"""
+        if not self.is_ready():
+            return False
+        
+        try:
+            url = self._get_url(f"companies/{company_id}")
+            document = {
+                "fields": {
+                    "company_id": {"integerValue": str(company_id)},
+                    "data": {"stringValue": json.dumps(data)},
+                    "last_sync": {"stringValue": datetime.now().isoformat()}
+                }
+            }
+            response = requests.patch(url, json=document)
+            return response.status_code in [200, 201]
+        except Exception as e:
+            print(f"Sync company data error: {e}")
+            return False
+    
+    def get_company_data(self, company_id):
+        """Get all company data from Firebase"""
+        if not self.is_ready():
+            return None
+        
+        try:
+            url = self._get_url(f"companies/{company_id}")
+            response = requests.get(url)
+            
+            if response.status_code != 200:
+                return None
+            
+            data = response.json()
+            fields = data.get('fields', {})
+            
+            if 'data' in fields and 'stringValue' in fields['data']:
+                return json.loads(fields['data']['stringValue'])
+            return None
+        except Exception as e:
+            print(f"Get company data error: {e}")
+            return None
+        
+# Create Firebase instance
+firebase_api = FirebaseRestAPI()
 
 class CloudSyncManager:
     
     @staticmethod
-    def _get_db_path():
-        """Get database path"""
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "store_management.db")
-    
-    @staticmethod
-    def get_sync_status(company_id):
-        """Get sync status"""
-        try:
-            if firebase_initialized and firestore_db:
-                return {'status': 'cloud', 'last_sync': 'Connected to Firestore'}
-            else:
-                cloud_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_data", f"company_{company_id}.json")
-                if os.path.exists(cloud_file):
-                    with open(cloud_file, 'r') as f:
-                        data = json.load(f)
-                    return {'status': 'local', 'last_sync': data.get('last_sync', 'Never')}
-                return {'status': 'no data', 'last_sync': 'Never'}
-        except:
-            return {'status': 'error', 'last_sync': 'Unknown'}
-    
-    @staticmethod
     def sync_users_to_cloud(company_id):
-        """Sync users to cloud"""
-        global firebase_initialized, firestore_db
-        
+        """Sync users to cloud - EXCLUDE password_hash for security"""
         try:
             # Get local users
             conn = sqlite3.connect("store_management.db")
@@ -176,36 +219,10 @@ class CloudSyncManager:
             
             users_list = [dict(u) for u in users]
             
-            # Use Firebase if available
-            if firebase_initialized and firestore_db:
-                try:
-                    company_ref = firestore_db.collection('companies').document(str(company_id))
-                    batch = firestore_db.batch()
-                    
-                    users_ref = company_ref.collection('users')
-                    docs = users_ref.stream()
-                    existing_ids = {int(doc.id) for doc in docs}
-                    current_ids = set()
-                    
-                    for user in users_list:
-                        user_id = user.get('id')
-                        current_ids.add(user_id)
-                        user_ref = users_ref.document(str(user_id))
-                        batch.set(user_ref, user)
-                    
-                    for existing_id in existing_ids:
-                        if existing_id not in current_ids:
-                            user_ref = users_ref.document(str(existing_id))
-                            batch.delete(user_ref)
-                    
-                    batch.commit()
-                    print(f"✅ Synced {len(users_list)} users to Firestore!")
-                    return True
-                except Exception as e:
-                    print(f"Firebase sync error: {e}")
-                    return False
+            if firebase_api.is_ready() and users_list:
+                return firebase_api.sync_users(company_id, users_list)
             else:
-                print("⚠️ Firebase not available, using local files")
+                print("⚠️ No users to sync or Firebase not ready")
                 return False
         except Exception as e:
             print(f"Sync error: {e}")
@@ -213,211 +230,138 @@ class CloudSyncManager:
     
     @staticmethod
     def download_users_from_cloud(company_id):
-        """Download users from cloud"""
+        """Download users from cloud - SET DEFAULT PASSWORD for new users"""
         try:
-            if firebase_initialized and firestore_db:
-                company_ref = firestore_db.collection('companies').document(str(company_id))
-                users_ref = company_ref.collection('users')
-                docs = users_ref.stream()
+            if not firebase_api.is_ready():
+                return False
+            
+            cloud_users = firebase_api.get_users(company_id)
+            if not cloud_users:
+                return False
+            
+            conn = sqlite3.connect("store_management.db")
+            cursor = conn.cursor()
+            
+            # Get existing local users to avoid overwriting passwords
+            cursor.execute("SELECT id, password_hash FROM users")
+            existing_passwords = {row[0]: row[1] for row in cursor.fetchall()}
+            
+            # Default password hash for cloud-synced users (use a placeholder)
+            # This hash is for "changeme" - force user to change password on next login
+            DEFAULT_PASSWORD_HASH = hashlib.sha256("changeme".encode()).hexdigest()
+            
+            for user in cloud_users:
+                user_id = user.get('id')
+                # Use existing password hash if user already exists locally
+                password_hash = existing_passwords.get(user_id, DEFAULT_PASSWORD_HASH)
                 
-                cloud_users = []
-                for doc in docs:
-                    user = doc.to_dict()
-                    user['id'] = int(doc.id)
-                    cloud_users.append(user)
-                
-                if not cloud_users:
-                    return False
-                
-                db_path = CloudSyncManager._get_db_path()
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                
-                for user in cloud_users:
-                    cursor.execute('''INSERT OR REPLACE INTO users (id, name, email, role, company_id)
-                                    VALUES (?, ?, ?, ?, ?)''',
-                                 (user.get('id'), user.get('name'), user.get('email'), 
-                                  user.get('role'), company_id))
-                
-                conn.commit()
-                conn.close()
-                print(f"✅ Downloaded {len(cloud_users)} users from Firestore")
-                return True
-            else:
-                # Local file fallback
-                cloud_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_data", f"company_{company_id}.json")
-                if not os.path.exists(cloud_file):
-                    return False
-                
-                with open(cloud_file, 'r') as f:
-                    cloud_data = json.load(f)
-                
-                cloud_users = cloud_data.get('users', [])
-                if not cloud_users:
-                    return False
-                
-                db_path = CloudSyncManager._get_db_path()
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                
-                for user in cloud_users:
-                    cursor.execute('''INSERT OR REPLACE INTO users (id, name, email, role, company_id)
-                                    VALUES (?, ?, ?, ?, ?)''',
-                                 (user.get('id'), user.get('name'), user.get('email'), 
-                                  user.get('role'), company_id))
-                
-                conn.commit()
-                conn.close()
-                print(f"✅ Downloaded {len(cloud_users)} users from local file")
-                return True
+                cursor.execute('''INSERT OR REPLACE INTO users 
+                    (id, name, email, password_hash, role, company_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM users WHERE id = ?), datetime('now')))''',
+                    (user_id, user.get('name'), user.get('email'), 
+                     password_hash, user.get('role'), company_id, user_id))
+            
+            conn.commit()
+            conn.close()
+            print(f"✅ Downloaded {len(cloud_users)} users from cloud")
+            return True
         except Exception as e:
             print(f"Download error: {e}")
             return False
     
     @staticmethod
-    def sync_materials_to_cloud(company_id):
-        """Sync materials to cloud"""
+    def full_sync_to_cloud(company_id):
+        """Upload all company data to cloud"""
         try:
-            db_path = CloudSyncManager._get_db_path()
-            conn = sqlite3.connect(db_path)
+            # Sync users
+            user_result = CloudSyncManager.sync_users_to_cloud(company_id)
+            
+            # Sync materials
+            conn = sqlite3.connect("store_management.db")
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM materials WHERE company_id = ? OR company_id IS NULL", (company_id,))
+            cursor.execute("SELECT * FROM materials WHERE company_id = ?", (company_id,))
             materials = cursor.fetchall()
+            cursor.execute("SELECT * FROM accessories WHERE company_id = ?", (company_id,))
+            accessories = cursor.fetchall()
             conn.close()
             
-            materials_list = [dict(m) for m in materials]
+            # Upload to Firebase
+            if firebase_api.is_ready():
+                firebase_api.sync_company_data(company_id, {
+                    'materials': [dict(m) for m in materials],
+                    'accessories': [dict(a) for a in accessories],
+                    'last_sync': datetime.now().isoformat()
+                })
             
-            if firebase_initialized and firestore_db:
-                company_ref = firestore_db.collection('companies').document(str(company_id))
-                batch = firestore_db.batch()
-                
-                materials_ref = company_ref.collection('materials')
-                docs = materials_ref.stream()
-                existing_ids = {int(doc.id) for doc in docs}
-                current_ids = set()
-                
-                for material in materials_list:
-                    material_id = material.get('id')
-                    current_ids.add(material_id)
-                    material_ref = materials_ref.document(str(material_id))
-                    batch.set(material_ref, material)
-                
-                for existing_id in existing_ids:
-                    if existing_id not in current_ids:
-                        material_ref = materials_ref.document(str(existing_id))
-                        batch.delete(material_ref)
-                
-                batch.commit()
-                print(f"✅ Synced {len(materials_list)} materials to Firestore")
-                return True
-            else:
-                cloud_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_data", f"company_{company_id}.json")
-                os.makedirs(os.path.dirname(cloud_file), exist_ok=True)
-                
-                if os.path.exists(cloud_file):
-                    with open(cloud_file, 'r') as f:
-                        cloud_data = json.load(f)
-                else:
-                    cloud_data = {'materials': []}
-                
-                cloud_data['materials'] = materials_list
-                cloud_data['last_sync'] = datetime.now().isoformat()
-                
-                with open(cloud_file, 'w') as f:
-                    json.dump(cloud_data, f, indent=2)
-                
-                print(f"✅ Synced {len(materials_list)} materials to local file")
-                return True
+            return user_result
         except Exception as e:
-            print(f"Sync materials error: {e}")
+            print(f"Full sync error: {e}")
             return False
-    
-    @staticmethod
-    def download_materials_from_cloud(company_id):
-        """Download materials from cloud"""
-        try:
-            if firebase_initialized and firestore_db:
-                company_ref =firestore_db.collection('companies').document(str(company_id))
-                materials_ref = company_ref.collection('materials')
-                docs = materials_ref.stream()
-                
-                cloud_materials = []
-                for doc in docs:
-                    material = doc.to_dict()
-                    material['id'] = int(doc.id)
-                    cloud_materials.append(material)
-                
-                if not cloud_materials:
-                    return False
-                
-                db_path = CloudSyncManager._get_db_path()
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                
-                for material in cloud_materials:
-                    cursor.execute('''INSERT OR REPLACE INTO materials 
-                        (id, name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, company_id, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                        (material.get('id'), material.get('name'), material.get('category_id'),
-                         material.get('quantity'), material.get('quality'), material.get('location_ids'),
-                         material.get('size'), material.get('length'), material.get('colors'),
-                         material.get('notes'), material.get('image_path'), material.get('barcode_value'),
-                         company_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                
-                conn.commit()
-                conn.close()
-                print(f"✅ Downloaded {len(cloud_materials)} materials from Firestore")
-                return True
-            else:
-                cloud_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_data", f"company_{company_id}.json")
-                if not os.path.exists(cloud_file):
-                    return False
-                
-                with open(cloud_file, 'r') as f:
-                    cloud_data = json.load(f)
-                
-                cloud_materials = cloud_data.get('materials', [])
-                if not cloud_materials:
-                    return False
-                
-                db_path = CloudSyncManager._get_db_path()
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                
-                for material in cloud_materials:
-                    cursor.execute('''INSERT OR REPLACE INTO materials 
-                        (id, name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, company_id, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                        (material.get('id'), material.get('name'), material.get('category_id'),
-                         material.get('quantity'), material.get('quality'), material.get('location_ids'),
-                         material.get('size'), material.get('length'), material.get('colors'),
-                         material.get('notes'), material.get('image_path'), material.get('barcode_value'),
-                         company_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                
-                conn.commit()
-                conn.close()
-                print(f"✅ Downloaded {len(cloud_materials)} materials from local file")
-                return True
-        except Exception as e:
-            print(f"Download materials error: {e}")
-            return False
-    
-    @staticmethod
-    def full_sync_to_cloud(company_id):
-        """Full upload to cloud"""
-        success1 = CloudSyncManager.sync_users_to_cloud(company_id)
-        success2 = CloudSyncManager.sync_materials_to_cloud(company_id)
-        return success1 or success2
     
     @staticmethod
     def full_sync_from_cloud(company_id):
-        """Full download from cloud"""
-        success1 = CloudSyncManager.download_users_from_cloud(company_id)
-        success2 = CloudSyncManager.download_materials_from_cloud(company_id)
-        return success1 or success2
-
-print("✅ CloudSyncManager loaded successfully")
+        """Download all company data from cloud"""
+        try:
+            if not firebase_api.is_ready():
+                return False
+            
+            cloud_data = firebase_api.get_company_data(company_id)
+            if not cloud_data:
+                return False
+            
+            conn = sqlite3.connect("store_management.db")
+            cursor = conn.cursor()
+            
+            # Get existing password hashes
+            cursor.execute("SELECT id, password_hash FROM users")
+            existing_passwords = {row[0]: row[1] for row in cursor.fetchall()}
+            DEFAULT_PASSWORD_HASH = hashlib.sha256("changeme".encode()).hexdigest()
+            
+            # Download users
+            users = cloud_data.get('users', [])
+            for user in users:
+                user_id = user.get('id')
+                password_hash = existing_passwords.get(user_id, DEFAULT_PASSWORD_HASH)
+                cursor.execute('''INSERT OR REPLACE INTO users 
+                    (id, name, email, password_hash, role, company_id)
+                    VALUES (?, ?, ?, ?, ?, ?)''',
+                    (user_id, user.get('name'), user.get('email'), 
+                     password_hash, user.get('role'), company_id))
+            
+            # Download materials
+            materials = cloud_data.get('materials', [])
+            for material in materials:
+                cursor.execute('''INSERT OR REPLACE INTO materials 
+                    (id, name, category_id, quantity, quality, location_ids, 
+                     size, length, colors, notes, barcode_value, company_id, 
+                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (material.get('id'), material.get('name'), material.get('category_id'),
+                     material.get('quantity'), material.get('quality'), material.get('location_ids'),
+                     material.get('size'), material.get('length'), material.get('colors'),
+                     material.get('notes'), material.get('barcode_value'), company_id,
+                     material.get('created_at'), material.get('updated_at')))
+            
+            # Download accessories
+            accessories = cloud_data.get('accessories', [])
+            for accessory in accessories:
+                cursor.execute('''INSERT OR REPLACE INTO accessories 
+                    (id, name, category_id, quantity, price, quality, location, 
+                     notes, barcode_value, company_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (accessory.get('id'), accessory.get('name'), accessory.get('category_id'),
+                     accessory.get('quantity'), accessory.get('price'), accessory.get('quality'),
+                     accessory.get('location'), accessory.get('notes'), accessory.get('barcode_value'),
+                     company_id, accessory.get('created_at'), accessory.get('updated_at')))
+            
+            conn.commit()
+            conn.close()
+            print(f"✅ Downloaded full company data for company {company_id}")
+            return True
+        except Exception as e:
+            print(f"Download error: {e}")
+            return False
         
 class StoreApp:
     def __init__(self):
@@ -1623,7 +1567,7 @@ class StoreApp:
         return sync_btn
     
     def manual_sync(self, page: ft.Page):
-        """Manual sync with Firestore - No duplicates"""
+        """Manual sync with cloud"""
         if not self.current_user:
             page.snack_bar = ft.SnackBar(ft.Text("Please login first"), bgcolor=self.warning_color)
             page.snack_bar.open = True
@@ -1633,7 +1577,7 @@ class StoreApp:
         company_id = self.current_user.get('company_id', 1)
         
         page.snack_bar = ft.SnackBar(
-            ft.Text(f"🔄 Syncing company {company_id}..."),
+            ft.Text(f"🔄 Syncing..."),
             bgcolor=self.accent_color,
             duration=2000
         )
@@ -1641,27 +1585,22 @@ class StoreApp:
         page.update()
         
         try:
-           # from cloud_sync_manager import CloudSyncManager
-            
             # Upload to cloud
             upload_result = CloudSyncManager.full_sync_to_cloud(company_id)
-            
             # Download from cloud
             download_result = CloudSyncManager.full_sync_from_cloud(company_id)
             
             if upload_result or download_result:
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✅ Sync completed for company {company_id}!"),
+                    ft.Text(f"✅ Sync completed!"),
                     bgcolor=self.success_color,
                     duration=3000
                 )
                 # Refresh current view
-                if self.current_view == "dashboard":
-                    self.show_dashboard(page)
-                elif self.current_view == "materials":
-                    self.show_materials_screen(page)
-                elif self.current_view == "users":
+                if self.current_view == "users":
                     self.show_users(page)
+                elif self.current_view == "dashboard":
+                    self.show_dashboard(page)
             else:
                 page.snack_bar = ft.SnackBar(
                     ft.Text("ℹ️ No changes detected"),
@@ -1678,37 +1617,26 @@ class StoreApp:
         
         page.snack_bar.open = True
         page.update()
-        
-    def auto_sync_after_change(self, page: ft.Page):
-        """Auto sync after data changes - Upload to cloud"""
-        if self.current_user and self.current_user.get('id', 0) > 0:
-            company_id = self.current_user.get('company_id', 1)
-          # from cloud_sync_manager import CloudSyncManager
-            CloudSyncManager.full_sync_to_cloud(company_id)
-            print(f"✅ Auto-synced after change for company {company_id}")
 
     def auto_sync_on_start(self, page: ft.Page):
-        """Auto sync when app starts - Download from cloud"""
+        """Auto sync when app starts"""
         if self.current_user and self.current_user.get('id', 0) > 0:
             company_id = self.current_user.get('company_id', 1)
-          #  from cloud_sync_manager import CloudSyncManager
-            
             print(f"🔄 Auto-syncing for company ID: {company_id}")
             
-            # Download latest data from cloud (merge without duplicates)
             success = CloudSyncManager.full_sync_from_cloud(company_id)
             
             if success:
                 print(f"✅ Auto-sync completed for company {company_id}")
-                # Refresh current view to show new data
                 if self.current_view == "users":
                     self.show_users(page)
-                elif self.current_view == "materials":
-                    self.show_materials_screen(page)
-                elif self.current_view == "dashboard":
-                    self.show_dashboard(page)
-            else:
-                print(f"ℹ️ No cloud data found for company {company_id}, using local data")
+
+    def auto_sync_after_change(self, page: ft.Page):
+        """Auto sync after data changes"""
+        if self.current_user and self.current_user.get('id', 0) > 0:
+            company_id = self.current_user.get('company_id', 1)
+            CloudSyncManager.full_sync_to_cloud(company_id)
+            print(f"✅ Auto-synced after change for company {company_id}")
     # ============ ZOOM METHODS ============
     def zoom_in(self, page: ft.Page):
         self.zoom_level = min(self.zoom_level + 0.1, 2.0)
@@ -4968,10 +4896,9 @@ class StoreApp:
 
                 # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Complete dashboard - Works on mobile"""
+        """Dashboard with cloud sync button"""
         page.controls.clear()
         
-        # Check if mobile
         is_mobile = page.width < 800 if page.width else False
         
         # Navigation
@@ -4982,38 +4909,19 @@ class StoreApp:
             sidebar = self.create_sidebar(page)
             nav = None
         
-        # Get data safely
-        try:
-            materials = self.dict_list(MaterialManager.get_all())
-            accessories = self.dict_list(AccessoryManager.get_all())
-            users = self.dict_list(UserManager.get_all())
-        except Exception as e:
-            print(f"Error loading data: {e}")
-            materials = []
-            accessories = []
-            users = []
+        # Get data
+        materials = self.dict_list(MaterialManager.get_all())
+        accessories = self.dict_list(AccessoryManager.get_all())
+        users = self.dict_list(UserManager.get_all())
         
         # Calculate statistics
         total_materials = len(materials)
         total_accessories = len(accessories)
         total_items = total_materials + total_accessories
-        total_stock = 0
-        for m in materials:
-            total_stock += m.get('quantity', 0)
-        for a in accessories:
-            total_stock += a.get('quantity', 0)
+        total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
         total_users = len(users)
+        total_low_stock = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
         
-        # Low stock items
-        total_low_stock = 0
-        for m in materials:
-            if m.get('quantity', 0) < 10:
-                total_low_stock += 1
-        for a in accessories:
-            if a.get('quantity', 0) < 10:
-                total_low_stock += 1
-        
-        # Quality counts
         quality_counts = {"New": 0, "Used": 0, "Damaged": 0, "Repaired": 0}
         for m in materials:
             q = m.get('quality', 'Used')
@@ -5026,21 +4934,30 @@ class StoreApp:
         main_column = ft.Column(spacing=15, expand=True)
         
         # Header with sync button
+        sync_button = ft.IconButton(
+            icon=ft.icons.CLOUD_SYNC,
+            icon_size=24,
+            icon_color=self.accent_color,
+            on_click=lambda e: self.manual_sync(page),
+            tooltip="Sync with Cloud",
+        )
+        
         header_row = ft.Row([
             ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color, expand=True),
-            self.add_cloud_sync_button(page),
+            sync_button,
         ])
         main_column.controls.append(header_row)
         main_column.controls.append(ft.Text("Welcome back!", size=14, color="#888888"))
         
         # Stats cards
-        stats_row = ft.Row([
-            self._create_stat_card("📦", str(total_items), "Items"),
-            self._create_stat_card("📊", str(total_stock), "Stock"),
-            self._create_stat_card("⚠️", str(total_low_stock), "Low Stock"),
-            self._create_stat_card("👥", str(total_users), "Users"),
-        ], spacing=8)
-        main_column.controls.append(stats_row)
+        main_column.controls.append(
+            ft.Row([
+                self._create_stat_card("📦", str(total_items), "Items"),
+                self._create_stat_card("📊", str(total_stock), "Stock"),
+                self._create_stat_card("⚠️", str(total_low_stock), "Low Stock"),
+                self._create_stat_card("👥", str(total_users), "Users"),
+            ], spacing=8)
+        )
         
         # Quality Distribution
         main_column.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
@@ -5140,12 +5057,15 @@ class StoreApp:
         main_column.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
         if accessories:
             for a in accessories[:3]:
+                price = a.get('price', 0)
+                price_text = f"${price:.2f}" if price else ""
                 main_column.controls.append(
                     ft.Container(
                         content=ft.Row([
                             ft.Text("🔧", size=18),
                             ft.Text(a.get('name', 'N/A'), size=14, expand=True),
                             ft.Text(f"Qty: {a.get('quantity', 0)}", size=14),
+                            ft.Text(price_text, size=12, color="#4CAF50"),
                             ft.Container(
                                 content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
                                 bgcolor=self.get_quality_color(a.get('quality', 'Used')),
@@ -5181,54 +5101,32 @@ class StoreApp:
             ft.Row([
                 ft.ElevatedButton("🌐 Export HTML", on_click=lambda e: self.export_html_simple(page), expand=True),
                 ft.ElevatedButton("📁 View Exports", on_click=lambda e: self.show_exported_files_simple(page), expand=True),
-                ft.ElevatedButton(
-                                    "🔍 Test Firebase",
-                                    on_click=lambda e: self.test_firebase_connection(page),
-                                    icon=ft.icons.CLOUD_QUEUE,
-                                    style=ft.ButtonStyle(bgcolor="#FF9800"), ),
             ], spacing=8)
         )
         
-                # Add Firebase status indicator
-        try:
-            import firebase_admin
-            import os
-            import base64
-            
-            firebase_key = os.environ.get('FIREBASE_SERVICE_ACCOUNT_KEY')
-            if firebase_key and firebase_admin._apps:
-                firebase_status = ft.Container(
-                    content=ft.Row([
-                        ft.Icon(ft.icons.CLOUD_DONE, size=16, color=self.success_color),
-                        ft.Text("Cloud Connected", size=11, color=self.success_color),
-                    ], spacing=4),
-                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                    bgcolor="#2C2C2C",
-                    border_radius=12,
-                )
-            else:
-                firebase_status = ft.Container(
-                    content=ft.Row([
-                        ft.Icon(ft.icons.CLOUD_OFF, size=16, color=self.warning_color),
-                        ft.Text("Local Mode", size=11, color=self.warning_color),
-                    ], spacing=4),
-                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                    bgcolor="#2C2C2C",
-                    border_radius=12,
-                )
-            
-            # Add to header next to sync button
-            # You'll need to adjust your header row to include this
-        except:
-            pass
+        # Cloud Status
+        if firebase_api.is_ready():
+            cloud_status = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CLOUD_DONE, size=16, color=self.success_color),
+                    ft.Text("Cloud Connected", size=12, color=self.success_color),
+                ], spacing=6),
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                bgcolor="#2C2C2C",
+                border_radius=12,
+            )
+        else:
+            cloud_status = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CLOUD_OFF, size=16, color=self.warning_color),
+                    ft.Text("Local Mode", size=12, color=self.warning_color),
+                ], spacing=6),
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                bgcolor="#2C2C2C",
+                border_radius=12,
+            )
+        main_column.controls.append(cloud_status)
         
-        # Add this button to your dashboard (temporary)
-        test_firebase_btn = ft.ElevatedButton(
-            "🔍 Test Firebase",
-            on_click=lambda e: self.test_firebase_connection(page),
-            icon=ft.icons.CLOUD_QUEUE,
-            style=ft.ButtonStyle(bgcolor="#FF9800"),
-        )
         # Wrap in scrollable container
         scroll_container = ft.Container(
             content=main_column,
@@ -11552,13 +11450,10 @@ class StoreApp:
                 
                 print(f"✅ User '{user_name}' deleted from local database")
                 
-                # IMPORTANT: Upload changes to cloud (this will remove the user from cloud)
-             #   from cloud_sync_manager import CloudSyncManager
-                sync_result = CloudSyncManager.sync_users_to_cloud(company_id)
+                # IMPORTANT: Upload changes to cloud
+                # This will upload the remaining users (excluding the deleted one)
+                sync_result = CloudSyncManager.full_sync_to_cloud(company_id)
                 print(f"Sync to cloud result: {sync_result}")
-                
-                # Also download to confirm
-                CloudSyncManager.download_users_from_cloud(company_id)
                 
                 page.overlay.clear()
                 page.snack_bar = ft.SnackBar(
