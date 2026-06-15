@@ -78,256 +78,60 @@ except:
 class CloudSyncManager:
     
     @staticmethod
-    def _get_cloud_data_file(company_id):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        cloud_dir = os.path.join(base_dir, "cloud_data")
-        if not os.path.exists(cloud_dir):
-            os.makedirs(cloud_dir)
-        return os.path.join(cloud_dir, f"company_{company_id}.json")
-    
-    # ============ USERS SYNC ============
-    @staticmethod
     def sync_users_to_cloud(company_id):
-        """Sync users to cloud"""
+        """Sync users to cloud - uses Firebase if available"""
         try:
-            conn = sqlite3.connect(DB_PATH)
+            # Get local users
+            conn = sqlite3.connect("store_management.db")
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT id, name, email, password_hash, role, company_id, created_at FROM users WHERE company_id = ?", (company_id,))
+            cursor.execute("SELECT id, name, email, role, company_id FROM users WHERE company_id = ?", (company_id,))
             users = cursor.fetchall()
             conn.close()
             
             users_list = [dict(u) for u in users]
             
-            if USE_FIRESTORE:
-                return firestore_sync.sync_users_to_firestore(company_id, users_list)
+            # Use Firebase if initialized
+            if firebase_initialized and db:
+                try:
+                    company_ref = db.collection('companies').document(str(company_id))
+                    batch = db.batch()
+                    
+                    users_ref = company_ref.collection('users')
+                    docs = users_ref.stream()
+                    existing_ids = {int(doc.id) for doc in docs}
+                    
+                    current_ids = set()
+                    
+                    for user in users_list:
+                        user_id = user.get('id')
+                        current_ids.add(user_id)
+                        user_ref = users_ref.document(str(user_id))
+                        batch.set(user_ref, user)
+                    
+                    for existing_id in existing_ids:
+                        if existing_id not in current_ids:
+                            user_ref = users_ref.document(str(existing_id))
+                            batch.delete(user_ref)
+                    
+                    batch.commit()
+                    print(f"✅ Synced {len(users_list)} users to Firestore Cloud!")
+                    return True
+                except Exception as e:
+                    print(f"Firebase sync error: {e}")
+                    return False
             else:
-                # Fallback to local JSON
-                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
-                if os.path.exists(cloud_file):
-                    with open(cloud_file, 'r') as f:
-                        cloud_data = json.load(f)
-                else:
-                    cloud_data = {'company_id': company_id, 'materials': [], 'accessories': [], 'users': []}
-                
-                cloud_data['users'] = users_list
-                cloud_data['last_sync'] = datetime.now().isoformat()
-                
+                # Fallback to local file
+                cloud_file = f"cloud_data/company_{company_id}.json"
+                os.makedirs("cloud_data", exist_ok=True)
+                cloud_data = {'users': users_list, 'last_sync': datetime.now().isoformat()}
                 with open(cloud_file, 'w') as f:
-                    json.dump(cloud_data, f, indent=2)
-                
+                    json.dump(cloud_data, f)
+                print(f"✅ Synced {len(users_list)} users to local file")
                 return True
         except Exception as e:
-            print(f"Sync users error: {e}")
+            print(f"Sync error: {e}")
             return False
-    
-    @staticmethod
-    def download_users_from_cloud(company_id):
-        """Download users from cloud"""
-        try:
-            if USE_FIRESTORE:
-                cloud_users = firestore_sync.get_users_from_firestore(company_id)
-            else:
-                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
-                if not os.path.exists(cloud_file):
-                    return False
-                with open(cloud_file, 'r') as f:
-                    cloud_data = json.load(f)
-                cloud_users = cloud_data.get('users', [])
-            
-            if not cloud_users:
-                return False
-            
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT id FROM users WHERE company_id = ?", (company_id,))
-            local_ids = {row[0] for row in cursor.fetchall()}
-            cloud_ids = {u.get('id') for u in cloud_users}
-            
-            # Delete users not in cloud
-            for user_id in (local_ids - cloud_ids):
-                cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
-            
-            for user in cloud_users:
-                user_id = user.get('id')
-                if user_id in local_ids:
-                    cursor.execute('''UPDATE users SET name = ?, email = ?, role = ? WHERE id = ?''',
-                                 (user.get('name'), user.get('email'), user.get('role'), user_id))
-                else:
-                    import hashlib
-                    default_password = hashlib.sha256("temp123".encode()).hexdigest()
-                    cursor.execute('''INSERT INTO users (id, name, email, password_hash, role, company_id, created_at)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                                 (user_id, user.get('name'), user.get('email'), default_password,
-                                  user.get('role', 'user'), company_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-            
-            conn.commit()
-            conn.close()
-            return True
-        except Exception as e:
-            print(f"Download users error: {e}")
-            return False
-    
-    # ============ MATERIALS SYNC ============
-    @staticmethod
-    def sync_materials_to_cloud(company_id):
-        """Sync materials to cloud"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM materials WHERE company_id = ? OR company_id IS NULL", (company_id,))
-            materials = cursor.fetchall()
-            conn.close()
-            
-            materials_list = [dict(m) for m in materials]
-            
-            if USE_FIRESTORE:
-                return firestore_sync.sync_materials_to_firestore(company_id, materials_list)
-            else:
-                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
-                if os.path.exists(cloud_file):
-                    with open(cloud_file, 'r') as f:
-                        cloud_data = json.load(f)
-                else:
-                    cloud_data = {'company_id': company_id, 'materials': [], 'accessories': [], 'users': []}
-                
-                cloud_data['materials'] = materials_list
-                cloud_data['last_sync'] = datetime.now().isoformat()
-                
-                with open(cloud_file, 'w') as f:
-                    json.dump(cloud_data, f, indent=2)
-                
-                return True
-        except Exception as e:
-            print(f"Sync materials error: {e}")
-            return False
-    
-    @staticmethod
-    def download_materials_from_cloud(company_id):
-        """Download materials from cloud"""
-        try:
-            if USE_FIRESTORE:
-                cloud_materials = firestore_sync.get_materials_from_firestore(company_id)
-            else:
-                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
-                if not os.path.exists(cloud_file):
-                    return False
-                with open(cloud_file, 'r') as f:
-                    cloud_data = json.load(f)
-                cloud_materials = cloud_data.get('materials', [])
-            
-            if not cloud_materials:
-                return False
-            
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            for material in cloud_materials:
-                cursor.execute('''INSERT OR REPLACE INTO materials 
-                    (id, name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, company_id, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                    (material.get('id'), material.get('name'), material.get('category_id'),
-                     material.get('quantity'), material.get('quality'), material.get('location_ids'),
-                     material.get('size'), material.get('length'), material.get('colors'),
-                     material.get('notes'), material.get('image_path'), material.get('barcode_value'),
-                     company_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-            
-            conn.commit()
-            conn.close()
-            return True
-        except Exception as e:
-            print(f"Download materials error: {e}")
-            return False
-    
-    # ============ ACCESSORIES SYNC ============
-    @staticmethod
-    def sync_accessories_to_cloud(company_id):
-        """Sync accessories to cloud"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM accessories WHERE company_id = ? OR company_id IS NULL", (company_id,))
-            accessories = cursor.fetchall()
-            conn.close()
-            
-            accessories_list = [dict(a) for a in accessories]
-            
-            if USE_FIRESTORE:
-                return firestore_sync.sync_accessories_to_firestore(company_id, accessories_list)
-            else:
-                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
-                if os.path.exists(cloud_file):
-                    with open(cloud_file, 'r') as f:
-                        cloud_data = json.load(f)
-                else:
-                    cloud_data = {'company_id': company_id, 'materials': [], 'accessories': [], 'users': []}
-                
-                cloud_data['accessories'] = accessories_list
-                cloud_data['last_sync'] = datetime.now().isoformat()
-                
-                with open(cloud_file, 'w') as f:
-                    json.dump(cloud_data, f, indent=2)
-                
-                return True
-        except Exception as e:
-            print(f"Sync accessories error: {e}")
-            return False
-    
-    @staticmethod
-    def download_accessories_from_cloud(company_id):
-        """Download accessories from cloud"""
-        try:
-            if USE_FIRESTORE:
-                cloud_accessories = firestore_sync.get_accessories_from_firestore(company_id)
-            else:
-                cloud_file = CloudSyncManager._get_cloud_data_file(company_id)
-                if not os.path.exists(cloud_file):
-                    return False
-                with open(cloud_file, 'r') as f:
-                    cloud_data = json.load(f)
-                cloud_accessories = cloud_data.get('accessories', [])
-            
-            if not cloud_accessories:
-                return False
-            
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            for accessory in cloud_accessories:
-                cursor.execute('''INSERT OR REPLACE INTO accessories 
-                    (id, name, category_id, quantity, price, quality, location, notes, image_path, barcode_value, company_id, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                    (accessory.get('id'), accessory.get('name'), accessory.get('category_id'),
-                     accessory.get('quantity'), accessory.get('price'), accessory.get('quality'),
-                     accessory.get('location'), accessory.get('notes'), accessory.get('image_path'),
-                     accessory.get('barcode_value'), company_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-            
-            conn.commit()
-            conn.close()
-            return True
-        except Exception as e:
-            print(f"Download accessories error: {e}")
-            return False
-    
-    # ============ FULL SYNC ============
-    @staticmethod
-    def full_sync_to_cloud(company_id):
-        """Full upload to cloud"""
-        success1 = CloudSyncManager.sync_users_to_cloud(company_id)
-        success2 = CloudSyncManager.sync_materials_to_cloud(company_id)
-        success3 = CloudSyncManager.sync_accessories_to_cloud(company_id)
-        return success1 or success2 or success3
-    
-    @staticmethod
-    def full_sync_from_cloud(company_id):
-        """Full download from cloud"""
-        success1 = CloudSyncManager.download_users_from_cloud(company_id)
-        success2 = CloudSyncManager.download_materials_from_cloud(company_id)
-        success3 = CloudSyncManager.download_accessories_from_cloud(company_id)
-        return success1 or success2 or success3
         
 class StoreApp:
     def __init__(self):
@@ -372,6 +176,55 @@ class StoreApp:
             result.append(row_dict)
         return result
     
+    def get_firebase_key_path():
+        """Find the serviceAccountKey.json file in the APK"""
+        import os
+        import sys
+        
+        # Possible locations in the APK
+        possible_paths = [
+            "serviceAccountKey.json",  # Current directory
+            os.path.join(os.path.dirname(sys.argv[0]), "serviceAccountKey.json"),  # App directory
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "serviceAccountKey.json"),  # Same as script
+            "/data/data/com.flet.store_management_app/files/serviceAccountKey.json",  # Android data path
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        return None
+
+    # Initialize Firebase at module level
+    firebase_initialized = False
+    db = None
+
+    def init_firebase():
+        """Initialize Firebase if key file exists"""
+        global firebase_initialized, db
+        
+        try:
+            key_path = get_firebase_key_path()
+            if key_path:
+                import firebase_admin
+                from firebase_admin import credentials, firestore
+                
+                cred = credentials.Certificate(key_path)
+                if not firebase_admin._apps:
+                    firebase_admin.initialize_app(cred)
+                    db = firestore.client()
+                    firebase_initialized = True
+                    print(f"✅ Firebase initialized from: {key_path}")
+                return True
+            else:
+                print("⚠️ serviceAccountKey.json not found, using local sync")
+                return False
+        except Exception as e:
+            print(f"Firebase init error: {e}")
+            return False
+
+    # Call this at the start of your app
+    init_firebase()
+
     def test_firebase_connection(self, page: ft.Page):
         """Test if Firebase is actually connected and working"""
         
