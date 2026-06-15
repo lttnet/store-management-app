@@ -75,14 +75,84 @@ except:
     USE_FIRESTORE = False
     print("⚠️ Firestore not available, using local files")
 
+# ========== COMPLETE CLOUD SYNC MANAGER ==========
+
+# Firebase globals
+firebase_initialized = False
+db = None
+
+def get_firebase_key_path():
+    """Find the serviceAccountKey.json file"""
+    import sys
+    
+    possible_paths = [
+        "serviceAccountKey.json",
+        os.path.join(os.path.dirname(sys.argv[0]), "serviceAccountKey.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "serviceAccountKey.json"),
+        "/data/data/com.flet.store_management_app/files/serviceAccountKey.json",
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    return None
+
+def init_firebase():
+    """Initialize Firebase if key file exists"""
+    global firebase_initialized, db
+    
+    try:
+        key_path = get_firebase_key_path()
+        if key_path:
+            import firebase_admin
+            from firebase_admin import credentials, firestore
+            
+            cred = credentials.Certificate(key_path)
+            if not firebase_admin._apps:
+                firebase_admin.initialize_app(cred)
+                db = firestore.client()
+                firebase_initialized = True
+                print(f"✅ Firebase initialized from: {key_path}")
+            return True
+        else:
+            print("⚠️ serviceAccountKey.json not found, using local sync")
+            return False
+    except Exception as e:
+        print(f"Firebase init error: {e}")
+        return False
+
+# Initialize Firebase
+init_firebase()
+
 class CloudSyncManager:
     
     @staticmethod
-    def sync_users_to_cloud(company_id):
-        """Sync users to cloud - uses Firebase if available"""
+    def _get_db_path():
+        """Get database path"""
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "store_management.db")
+    
+    @staticmethod
+    def get_sync_status(company_id):
+        """Get sync status"""
         try:
-            # Get local users
-            conn = sqlite3.connect("store_management.db")
+            if firebase_initialized and db:
+                return {'status': 'cloud', 'last_sync': 'Connected to Firestore'}
+            else:
+                cloud_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_data", f"company_{company_id}.json")
+                if os.path.exists(cloud_file):
+                    with open(cloud_file, 'r') as f:
+                        data = json.load(f)
+                    return {'status': 'local', 'last_sync': data.get('last_sync', 'Never')}
+                return {'status': 'no data', 'last_sync': 'Never'}
+        except:
+            return {'status': 'error', 'last_sync': 'Unknown'}
+    
+    @staticmethod
+    def sync_users_to_cloud(company_id):
+        """Sync users to cloud"""
+        try:
+            db_path = CloudSyncManager._get_db_path()
+            conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("SELECT id, name, email, role, company_id FROM users WHERE company_id = ?", (company_id,))
@@ -91,7 +161,6 @@ class CloudSyncManager:
             
             users_list = [dict(u) for u in users]
             
-            # Use Firebase if initialized
             if firebase_initialized and db:
                 try:
                     company_ref = db.collection('companies').document(str(company_id))
@@ -100,7 +169,6 @@ class CloudSyncManager:
                     users_ref = company_ref.collection('users')
                     docs = users_ref.stream()
                     existing_ids = {int(doc.id) for doc in docs}
-                    
                     current_ids = set()
                     
                     for user in users_list:
@@ -115,23 +183,242 @@ class CloudSyncManager:
                             batch.delete(user_ref)
                     
                     batch.commit()
-                    print(f"✅ Synced {len(users_list)} users to Firestore Cloud!")
+                    print(f"✅ Synced {len(users_list)} users to Firestore")
                     return True
                 except Exception as e:
                     print(f"Firebase sync error: {e}")
                     return False
             else:
-                # Fallback to local file
-                cloud_file = f"cloud_data/company_{company_id}.json"
-                os.makedirs("cloud_data", exist_ok=True)
-                cloud_data = {'users': users_list, 'last_sync': datetime.now().isoformat()}
+                # Local file fallback
+                cloud_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_data")
+                os.makedirs(cloud_dir, exist_ok=True)
+                cloud_file = os.path.join(cloud_dir, f"company_{company_id}.json")
+                
+                if os.path.exists(cloud_file):
+                    with open(cloud_file, 'r') as f:
+                        cloud_data = json.load(f)
+                else:
+                    cloud_data = {'users': []}
+                
+                cloud_data['users'] = users_list
+                cloud_data['last_sync'] = datetime.now().isoformat()
+                
                 with open(cloud_file, 'w') as f:
-                    json.dump(cloud_data, f)
+                    json.dump(cloud_data, f, indent=2)
+                
                 print(f"✅ Synced {len(users_list)} users to local file")
                 return True
         except Exception as e:
             print(f"Sync error: {e}")
             return False
+    
+    @staticmethod
+    def download_users_from_cloud(company_id):
+        """Download users from cloud"""
+        try:
+            if firebase_initialized and db:
+                company_ref = db.collection('companies').document(str(company_id))
+                users_ref = company_ref.collection('users')
+                docs = users_ref.stream()
+                
+                cloud_users = []
+                for doc in docs:
+                    user = doc.to_dict()
+                    user['id'] = int(doc.id)
+                    cloud_users.append(user)
+                
+                if not cloud_users:
+                    return False
+                
+                db_path = CloudSyncManager._get_db_path()
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                
+                for user in cloud_users:
+                    cursor.execute('''INSERT OR REPLACE INTO users (id, name, email, role, company_id)
+                                    VALUES (?, ?, ?, ?, ?)''',
+                                 (user.get('id'), user.get('name'), user.get('email'), 
+                                  user.get('role'), company_id))
+                
+                conn.commit()
+                conn.close()
+                print(f"✅ Downloaded {len(cloud_users)} users from Firestore")
+                return True
+            else:
+                # Local file fallback
+                cloud_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_data", f"company_{company_id}.json")
+                if not os.path.exists(cloud_file):
+                    return False
+                
+                with open(cloud_file, 'r') as f:
+                    cloud_data = json.load(f)
+                
+                cloud_users = cloud_data.get('users', [])
+                if not cloud_users:
+                    return False
+                
+                db_path = CloudSyncManager._get_db_path()
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                
+                for user in cloud_users:
+                    cursor.execute('''INSERT OR REPLACE INTO users (id, name, email, role, company_id)
+                                    VALUES (?, ?, ?, ?, ?)''',
+                                 (user.get('id'), user.get('name'), user.get('email'), 
+                                  user.get('role'), company_id))
+                
+                conn.commit()
+                conn.close()
+                print(f"✅ Downloaded {len(cloud_users)} users from local file")
+                return True
+        except Exception as e:
+            print(f"Download error: {e}")
+            return False
+    
+    @staticmethod
+    def sync_materials_to_cloud(company_id):
+        """Sync materials to cloud"""
+        try:
+            db_path = CloudSyncManager._get_db_path()
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM materials WHERE company_id = ? OR company_id IS NULL", (company_id,))
+            materials = cursor.fetchall()
+            conn.close()
+            
+            materials_list = [dict(m) for m in materials]
+            
+            if firebase_initialized and db:
+                company_ref = db.collection('companies').document(str(company_id))
+                batch = db.batch()
+                
+                materials_ref = company_ref.collection('materials')
+                docs = materials_ref.stream()
+                existing_ids = {int(doc.id) for doc in docs}
+                current_ids = set()
+                
+                for material in materials_list:
+                    material_id = material.get('id')
+                    current_ids.add(material_id)
+                    material_ref = materials_ref.document(str(material_id))
+                    batch.set(material_ref, material)
+                
+                for existing_id in existing_ids:
+                    if existing_id not in current_ids:
+                        material_ref = materials_ref.document(str(existing_id))
+                        batch.delete(material_ref)
+                
+                batch.commit()
+                print(f"✅ Synced {len(materials_list)} materials to Firestore")
+                return True
+            else:
+                cloud_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_data", f"company_{company_id}.json")
+                os.makedirs(os.path.dirname(cloud_file), exist_ok=True)
+                
+                if os.path.exists(cloud_file):
+                    with open(cloud_file, 'r') as f:
+                        cloud_data = json.load(f)
+                else:
+                    cloud_data = {'materials': []}
+                
+                cloud_data['materials'] = materials_list
+                cloud_data['last_sync'] = datetime.now().isoformat()
+                
+                with open(cloud_file, 'w') as f:
+                    json.dump(cloud_data, f, indent=2)
+                
+                print(f"✅ Synced {len(materials_list)} materials to local file")
+                return True
+        except Exception as e:
+            print(f"Sync materials error: {e}")
+            return False
+    
+    @staticmethod
+    def download_materials_from_cloud(company_id):
+        """Download materials from cloud"""
+        try:
+            if firebase_initialized and db:
+                company_ref = db.collection('companies').document(str(company_id))
+                materials_ref = company_ref.collection('materials')
+                docs = materials_ref.stream()
+                
+                cloud_materials = []
+                for doc in docs:
+                    material = doc.to_dict()
+                    material['id'] = int(doc.id)
+                    cloud_materials.append(material)
+                
+                if not cloud_materials:
+                    return False
+                
+                db_path = CloudSyncManager._get_db_path()
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                
+                for material in cloud_materials:
+                    cursor.execute('''INSERT OR REPLACE INTO materials 
+                        (id, name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, company_id, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                        (material.get('id'), material.get('name'), material.get('category_id'),
+                         material.get('quantity'), material.get('quality'), material.get('location_ids'),
+                         material.get('size'), material.get('length'), material.get('colors'),
+                         material.get('notes'), material.get('image_path'), material.get('barcode_value'),
+                         company_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                
+                conn.commit()
+                conn.close()
+                print(f"✅ Downloaded {len(cloud_materials)} materials from Firestore")
+                return True
+            else:
+                cloud_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_data", f"company_{company_id}.json")
+                if not os.path.exists(cloud_file):
+                    return False
+                
+                with open(cloud_file, 'r') as f:
+                    cloud_data = json.load(f)
+                
+                cloud_materials = cloud_data.get('materials', [])
+                if not cloud_materials:
+                    return False
+                
+                db_path = CloudSyncManager._get_db_path()
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                
+                for material in cloud_materials:
+                    cursor.execute('''INSERT OR REPLACE INTO materials 
+                        (id, name, category_id, quantity, quality, location_ids, size, length, colors, notes, image_path, barcode_value, company_id, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                        (material.get('id'), material.get('name'), material.get('category_id'),
+                         material.get('quantity'), material.get('quality'), material.get('location_ids'),
+                         material.get('size'), material.get('length'), material.get('colors'),
+                         material.get('notes'), material.get('image_path'), material.get('barcode_value'),
+                         company_id, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                
+                conn.commit()
+                conn.close()
+                print(f"✅ Downloaded {len(cloud_materials)} materials from local file")
+                return True
+        except Exception as e:
+            print(f"Download materials error: {e}")
+            return False
+    
+    @staticmethod
+    def full_sync_to_cloud(company_id):
+        """Full upload to cloud"""
+        success1 = CloudSyncManager.sync_users_to_cloud(company_id)
+        success2 = CloudSyncManager.sync_materials_to_cloud(company_id)
+        return success1 or success2
+    
+    @staticmethod
+    def full_sync_from_cloud(company_id):
+        """Full download from cloud"""
+        success1 = CloudSyncManager.download_users_from_cloud(company_id)
+        success2 = CloudSyncManager.download_materials_from_cloud(company_id)
+        return success1 or success2
+
+print("✅ CloudSyncManager loaded successfully")
         
 class StoreApp:
     def __init__(self):
@@ -175,143 +462,71 @@ class StoreApp:
                 row_dict[key] = row[key]
             result.append(row_dict)
         return result
-    
-    def get_firebase_key_path():
-        """Find the serviceAccountKey.json file in the APK"""
-        import os
-        import sys
-        
-        # Possible locations in the APK
-        possible_paths = [
-            "serviceAccountKey.json",  # Current directory
-            os.path.join(os.path.dirname(sys.argv[0]), "serviceAccountKey.json"),  # App directory
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "serviceAccountKey.json"),  # Same as script
-            "/data/data/com.flet.store_management_app/files/serviceAccountKey.json",  # Android data path
-        ]
-        
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-        return None
-
-    # Initialize Firebase at module level
-    firebase_initialized = False
-    db = None
-
-    def init_firebase():
-        """Initialize Firebase if key file exists"""
-        global firebase_initialized, db
-        
-        try:
-            key_path = get_firebase_key_path()
-            if key_path:
-                import firebase_admin
-                from firebase_admin import credentials, firestore
-                
-                cred = credentials.Certificate(key_path)
-                if not firebase_admin._apps:
-                    firebase_admin.initialize_app(cred)
-                    db = firestore.client()
-                    firebase_initialized = True
-                    print(f"✅ Firebase initialized from: {key_path}")
-                return True
-            else:
-                print("⚠️ serviceAccountKey.json not found, using local sync")
-                return False
-        except Exception as e:
-            print(f"Firebase init error: {e}")
-            return False
-
-    # Call this at the start of your app
-    init_firebase()
 
     def test_firebase_connection(self, page: ft.Page):
         """Test if Firebase is actually connected and working"""
         
         import os
-        import base64
-        import json
+        import sys
         
         messages = []
         
-        # Step 1: Check if environment variable exists
-        firebase_key = os.environ.get('FIREBASE_SERVICE_ACCOUNT_KEY')
-        if firebase_key:
-            messages.append("✅ FIREBASE_SERVICE_ACCOUNT_KEY found in environment")
-            messages.append(f"   Length: {len(firebase_key)} characters")
-        else:
-            messages.append("❌ FIREBASE_SERVICE_ACCOUNT_KEY NOT found in environment")
-            messages.append("   (This is normal for local development)")
-        
-        # Step 2: Try to decode the key
-        if firebase_key:
-            try:
-                decoded = base64.b64decode(firebase_key).decode('utf-8')
-                cred_dict = json.loads(decoded)
-                messages.append("✅ Successfully decoded and parsed JSON")
-                messages.append(f"   Project ID: {cred_dict.get('project_id', 'Unknown')}")
-            except Exception as e:
-                messages.append(f"❌ Failed to decode: {str(e)[:50]}")
-        
-        # Step 3: Try to initialize Firebase
+        # Step 1: Check if Firebase is initialized
         try:
             import firebase_admin
-            from firebase_admin import credentials, firestore
-            
-            if firebase_key:
-                decoded = base64.b64decode(firebase_key).decode('utf-8')
-                cred_dict = json.loads(decoded)
-                cred = credentials.Certificate(cred_dict)
-                
-                # Check if already initialized
-                if not firebase_admin._apps:
-                    firebase_admin.initialize_app(cred)
-                    messages.append("✅ Firebase initialized successfully")
-                else:
-                    messages.append("✅ Firebase already initialized")
-                
-                # Test Firestore connection
-                db = firestore.client()
-                
-                # Try to write a test document
-                test_ref = db.collection('test_connection').document('test')
-                test_ref.set({'status': 'connected', 'timestamp': firestore.SERVER_TIMESTAMP})
-                messages.append("✅ Test write to Firestore successful")
-                
-                # Try to read it back
-                doc = test_ref.get()
-                if doc.exists:
-                    messages.append("✅ Test read from Firestore successful")
-                
-                # Clean up
-                test_ref.delete()
-                messages.append("✅ Firebase is WORKING correctly!")
-                
+            if firebase_admin._apps:
+                messages.append("✅ Firebase is INITIALIZED")
+                messages.append(f"   Apps: {len(firebase_admin._apps)}")
             else:
-                messages.append("⚠️ No Firebase key available")
-                messages.append("   App will use local cloud storage")
-                
+                messages.append("❌ Firebase NOT initialized")
         except ImportError:
             messages.append("⚠️ firebase-admin not installed")
-            messages.append("   App will use local cloud storage")
         except Exception as e:
-            messages.append(f"❌ Firebase error: {str(e)[:80]}")
+            messages.append(f"⚠️ Firebase check error: {str(e)[:50]}")
         
-        # Show results in a dialog
+        # Step 2: Check if key file exists
+        key_paths = [
+            "serviceAccountKey.json",
+            os.path.join(os.path.dirname(sys.argv[0]), "serviceAccountKey.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "serviceAccountKey.json"),
+        ]
+        
+        key_found = False
+        for path in key_paths:
+            if os.path.exists(path):
+                messages.append(f"✅ Key file found: {path}")
+                key_found = True
+                break
+        
+        if not key_found:
+            messages.append("❌ serviceAccountKey.json NOT found")
+        
+        # Step 3: Check cloud data
+        try:
+           # from cloud_sync_manager import CloudSyncManager
+            company_id = self.current_user.get('company_id', 1) if self.current_user else 1
+            status = CloudSyncManager.get_sync_status(company_id)
+            messages.append(f"📁 Cloud status: {status.get('status', 'Unknown')}")
+            messages.append(f"   Last sync: {status.get('last_sync', 'Never')}")
+        except Exception as e:
+            messages.append(f"⚠️ Cloud status check: {str(e)[:50]}")
+        
+        # Step 4: Show result
         result_text = ft.Column([
             ft.Text("🔍 Firebase Connection Test", size=18, weight=ft.FontWeight.BOLD),
             ft.Divider(),
             ft.Column([ft.Text(msg, size=11, selectable=True) for msg in messages], spacing=5),
             ft.Divider(),
-            ft.Text("💡 If Firebase is connected, users will sync across devices", size=10, color="#888888"),
+            ft.Text("💡 To use real cloud sync:", size=12, weight=ft.FontWeight.BOLD),
+            ft.Text("1. Place serviceAccountKey.json in project folder", size=10, color="#888888"),
+            ft.Text("2. Or add as GitHub Secret when building APK", size=10, color="#888888"),
         ], spacing=10)
         
         dialog = ft.AlertDialog(
-            title=ft.Text("Firebase Test Results", size=18, weight=ft.FontWeight.BOLD),
+            title=ft.Text("Firebase Test", size=18, weight=ft.FontWeight.BOLD),
             content=ft.Container(content=result_text, width=450, height=450, padding=20),
             actions=[
                 ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False)),
-                ft.ElevatedButton("Test Sync Now", on_click=lambda e: self.manual_sync(page)),
             ],
         )
         
