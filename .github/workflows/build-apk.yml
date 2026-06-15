@@ -40,11 +40,13 @@ jobs:
           echo "✅ serviceAccountKey.json created"
           ls -la serviceAccountKey.json
       
-      - name: Install dependencies
+      - name: Install dependencies from requirements.txt
         run: |
-          pip install flet==0.21.2
-          pip install firebase-admin  # <-- ADD THIS LINE
-          pip install requests
+          pip install -r requirements.txt
+      
+      - name: Verify firebase-admin installation
+        run: |
+          python -c "import firebase_admin; print(f'✅ firebase-admin version: {firebase_admin.__version__}')"
       
       - name: Build APK
         id: build
