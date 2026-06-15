@@ -32,26 +32,14 @@ jobs:
           flutter-version: '3.19.6'
           channel: 'stable'
       
-      - name: Decode Firebase Service Account Key
+      - name: Create Firebase Key File from Secret
+        env:
+          FIREBASE_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
         run: |
-          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}" | base64 -d > serviceAccountKey.json
-          echo "✅ Firebase key created"
-      
-      - name: Create firestore_sync.py
-        run: |
-          cat > firestore_sync.py << 'EOF'
-          # firestore_sync.py content here
-          # (paste your firestore_sync.py content)
-          EOF
-          echo "✅ firestore_sync.py created"
-      
-      - name: Create cloud_sync_manager.py
-        run: |
-          cat > cloud_sync_manager.py << 'EOF'
-          # cloud_sync_manager.py content here
-          # (paste your cloud_sync_manager.py content)
-          EOF
-          echo "✅ cloud_sync_manager.py created"
+          # Decode and save the key file
+          echo "$FIREBASE_KEY" | base64 -d > serviceAccountKey.json
+          echo "✅ serviceAccountKey.json created"
+          ls -la serviceAccountKey.json
       
       - name: Install dependencies
         run: |
