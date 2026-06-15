@@ -27,6 +27,7 @@ from managers.user_manager import UserManager
 
 
 import os
+import json
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -63,9 +64,6 @@ class ScaleHelper:
         scaled = int(original_size * self.scale)
         return max(scaled, 8)
 # cloud_sync_manager.py - Complete with materials and accessories
-import sqlite3
-from datetime import datetime
-import json
 
 # Import Firestore sync
 try:
@@ -79,7 +77,7 @@ except:
 
 # Firebase globals
 firebase_initialized = False
-db = None
+firestore_db = None
 
 def get_firebase_key_path():
     """Find the serviceAccountKey.json file"""
@@ -98,25 +96,40 @@ def get_firebase_key_path():
     return None
 
 def init_firebase():
-    """Initialize Firebase if key file exists"""
-    global firebase_initialized, db
+    global firebase_initialized, firestore_db
     
     try:
-        key_path = get_firebase_key_path()
+        # Check if firebase-admin is installed
+        import firebase_admin
+        from firebase_admin import credentials, firestore
+        
+        # Find the key file
+        key_path = None
+        possible_paths = [
+            "serviceAccountKey.json",
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "serviceAccountKey.json"),
+            os.path.join(os.path.dirname(sys.argv[0]), "serviceAccountKey.json"),
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                key_path = path
+                break
+        
         if key_path:
-            import firebase_admin
-            from firebase_admin import credentials, firestore
-            
             cred = credentials.Certificate(key_path)
             if not firebase_admin._apps:
                 firebase_admin.initialize_app(cred)
-                db = firestore.client()
+                firestore_db = firestore.client()
                 firebase_initialized = True
                 print(f"✅ Firebase initialized from: {key_path}")
             return True
         else:
-            print("⚠️ serviceAccountKey.json not found, using local sync")
+            print("⚠️ serviceAccountKey.json not found")
             return False
+    except ImportError:
+        print("⚠️ firebase-admin not installed")
+        return False
     except Exception as e:
         print(f"Firebase init error: {e}")
         return False
@@ -135,7 +148,7 @@ class CloudSyncManager:
     def get_sync_status(company_id):
         """Get sync status"""
         try:
-            if firebase_initialized and db:
+            if firebase_initialized and firestore_db:
                 return {'status': 'cloud', 'last_sync': 'Connected to Firestore'}
             else:
                 cloud_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_data", f"company_{company_id}.json")
@@ -150,9 +163,11 @@ class CloudSyncManager:
     @staticmethod
     def sync_users_to_cloud(company_id):
         """Sync users to cloud"""
+        global firebase_initialized, firestore_db
+        
         try:
-            db_path = CloudSyncManager._get_db_path()
-            conn = sqlite3.connect(db_path)
+            # Get local users
+            conn = sqlite3.connect("store_management.db")
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("SELECT id, name, email, role, company_id FROM users WHERE company_id = ?", (company_id,))
@@ -161,10 +176,11 @@ class CloudSyncManager:
             
             users_list = [dict(u) for u in users]
             
-            if firebase_initialized and db:
+            # Use Firebase if available
+            if firebase_initialized and firestore_db:
                 try:
-                    company_ref = db.collection('companies').document(str(company_id))
-                    batch = db.batch()
+                    company_ref = firestore_db.collection('companies').document(str(company_id))
+                    batch = firestore_db.batch()
                     
                     users_ref = company_ref.collection('users')
                     docs = users_ref.stream()
@@ -183,31 +199,14 @@ class CloudSyncManager:
                             batch.delete(user_ref)
                     
                     batch.commit()
-                    print(f"✅ Synced {len(users_list)} users to Firestore")
+                    print(f"✅ Synced {len(users_list)} users to Firestore!")
                     return True
                 except Exception as e:
                     print(f"Firebase sync error: {e}")
                     return False
             else:
-                # Local file fallback
-                cloud_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud_data")
-                os.makedirs(cloud_dir, exist_ok=True)
-                cloud_file = os.path.join(cloud_dir, f"company_{company_id}.json")
-                
-                if os.path.exists(cloud_file):
-                    with open(cloud_file, 'r') as f:
-                        cloud_data = json.load(f)
-                else:
-                    cloud_data = {'users': []}
-                
-                cloud_data['users'] = users_list
-                cloud_data['last_sync'] = datetime.now().isoformat()
-                
-                with open(cloud_file, 'w') as f:
-                    json.dump(cloud_data, f, indent=2)
-                
-                print(f"✅ Synced {len(users_list)} users to local file")
-                return True
+                print("⚠️ Firebase not available, using local files")
+                return False
         except Exception as e:
             print(f"Sync error: {e}")
             return False
@@ -216,8 +215,8 @@ class CloudSyncManager:
     def download_users_from_cloud(company_id):
         """Download users from cloud"""
         try:
-            if firebase_initialized and db:
-                company_ref = db.collection('companies').document(str(company_id))
+            if firebase_initialized and firestore_db:
+                company_ref = firestore_db.collection('companies').document(str(company_id))
                 users_ref = company_ref.collection('users')
                 docs = users_ref.stream()
                 
@@ -289,9 +288,9 @@ class CloudSyncManager:
             
             materials_list = [dict(m) for m in materials]
             
-            if firebase_initialized and db:
-                company_ref = db.collection('companies').document(str(company_id))
-                batch = db.batch()
+            if firebase_initialized and firestore_db:
+                company_ref = firestore_db.collection('companies').document(str(company_id))
+                batch = firestore_db.batch()
                 
                 materials_ref = company_ref.collection('materials')
                 docs = materials_ref.stream()
@@ -338,8 +337,8 @@ class CloudSyncManager:
     def download_materials_from_cloud(company_id):
         """Download materials from cloud"""
         try:
-            if firebase_initialized and db:
-                company_ref = db.collection('companies').document(str(company_id))
+            if firebase_initialized and firestore_db:
+                company_ref =firestore_db.collection('companies').document(str(company_id))
                 materials_ref = company_ref.collection('materials')
                 docs = materials_ref.stream()
                 
