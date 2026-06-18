@@ -26,6 +26,7 @@ from managers.material_manager import MaterialManager
 from managers.accessory_manager import AccessoryManager
 from managers.user_manager import UserManager
 
+from demo_manager import DemoManager  # <-- ADD THIS LINE
 import requests
 import os
 import json
@@ -64,7 +65,7 @@ class ScaleHelper:
         """Get scaled font size (minimum 8px)"""
         scaled = int(original_size * self.scale)
         return max(scaled, 8)
-
+    
 class FirebaseRestAPI:
     def __init__(self):
         self.api_key = None
@@ -72,15 +73,16 @@ class FirebaseRestAPI:
         self._load_config()
     
     def _load_config(self):
-        # Your Firebase credentials
-        self.api_key = "AIzaSyBBgVLQ2poP3o-jHyninWmyWP5CmkSnOyM"
-        self.project_id = "store-management-system-5e28a"
-        
-        # Also try from environment (for GitHub Actions)
+        # First try GitHub Secrets (for GitHub Actions)
         if os.environ.get('FIREBASE_WEB_API_KEY'):
             self.api_key = os.environ.get('FIREBASE_WEB_API_KEY')
-        if os.environ.get('FIREBASE_PROJECT_ID'):
             self.project_id = os.environ.get('FIREBASE_PROJECT_ID')
+            print("✅ Using Firebase credentials from environment variables")
+            return
+        
+        # Your Firebase credentials (as fallback)
+        self.api_key = "AIzaSyBBgVLQ2poP3o-jHyninWmyWP5CmkSnOyM"
+        self.project_id = "store-management-system-5e28a"
         
         if self.api_key and self.project_id:
             print(f"✅ Firebase REST API ready")
@@ -94,33 +96,47 @@ class FirebaseRestAPI:
         return self.api_key is not None and self.project_id is not None
     
     def _get_url(self, path):
-        return f"https://firestore.googleapis.com/v1/projects/{self.project_id}/databases/(default)/documents/{path}?key={self.api_key}"
+        return f"https://firestore.googleapis.com/v1/projects/{self.project_id}/databases/(default)/documents/{path}"
+    
+    def _get_url_with_key(self, path):
+        return f"{self._get_url(path)}?key={self.api_key}"
     
     def sync_users(self, company_id, users):
-        """Sync users to Firebase"""
+        """Sync users to Firebase - FIXED VERSION"""
         if not self.is_ready():
+            print("Firebase not ready")
             return False
         
+        success_count = 0
         try:
             for user in users:
-                url = self._get_url(f"companies/{company_id}/users/{user['id']}")
+                url = self._get_url_with_key(f"companies/{company_id}/users/{user['id']}")
                 
+                # Format data correctly for Firestore REST API
                 document = {
                     "fields": {
                         "id": {"integerValue": str(user['id'])},
                         "name": {"stringValue": user['name']},
                         "email": {"stringValue": user['email']},
                         "role": {"stringValue": user['role']},
+                        "company_id": {"integerValue": str(user.get('company_id', company_id))},
+                        "synced_at": {"stringValue": datetime.now().isoformat()}
                     }
                 }
                 
+                # Use PATCH to create/update document
                 response = requests.patch(url, json=document)
-                if response.status_code not in [200, 201]:
-                    print(f"Error syncing user {user['id']}: {response.text}")
-                    return False
+                
+                if response.status_code in [200, 201]:
+                    success_count += 1
+                    print(f"✅ Synced user {user['id']}: {user['name']}")
+                else:
+                    print(f"❌ Failed to sync user {user['id']}: {response.status_code}")
+                    print(f"   Response: {response.text[:200]}")
             
-            print(f"✅ Synced {len(users)} users to Firebase")
-            return True
+            print(f"✅ Successfully synced {success_count}/{len(users)} users to Firebase")
+            return success_count > 0
+            
         except Exception as e:
             print(f"Sync error: {e}")
             return False
@@ -131,74 +147,120 @@ class FirebaseRestAPI:
             return []
         
         try:
-            url = self._get_url(f"companies/{company_id}/users")
+            url = self._get_url_with_key(f"companies/{company_id}/users")
             response = requests.get(url)
             
             if response.status_code != 200:
+                print(f"Failed to get users: {response.status_code}")
                 return []
             
             data = response.json()
             users = []
             
             for doc in data.get('documents', []):
-                user = {'id': int(doc['name'].split('/')[-1])}
+                # Extract ID from document path
+                doc_id = doc['name'].split('/')[-1]
                 fields = doc.get('fields', {})
                 
-                for key, value in fields.items():
-                    if 'stringValue' in value:
-                        user[key] = value['stringValue']
-                    elif 'integerValue' in value:
-                        user[key] = int(value['integerValue'])
-                
+                user = {
+                    'id': int(doc_id),
+                    'name': fields.get('name', {}).get('stringValue', ''),
+                    'email': fields.get('email', {}).get('stringValue', ''),
+                    'role': fields.get('role', {}).get('stringValue', ''),
+                    'company_id': int(fields.get('company_id', {}).get('integerValue', company_id))
+                }
                 users.append(user)
             
             print(f"✅ Downloaded {len(users)} users from Firebase")
             return users
+            
         except Exception as e:
-            print(f"Get error: {e}")
+            print(f"Get users error: {e}")
             return []
     
-    def sync_company_data(self, company_id, data):
-        """Sync all company data to Firebase"""
+    def delete_user(self, company_id, user_id):
+        """Delete a user from Firebase"""
         if not self.is_ready():
             return False
         
         try:
-            url = self._get_url(f"companies/{company_id}")
-            document = {
-                "fields": {
-                    "company_id": {"integerValue": str(company_id)},
-                    "data": {"stringValue": json.dumps(data)},
-                    "last_sync": {"stringValue": datetime.now().isoformat()}
-                }
-            }
-            response = requests.patch(url, json=document)
-            return response.status_code in [200, 201]
+            url = self._get_url_with_key(f"companies/{company_id}/users/{user_id}")
+            response = requests.delete(url)
+            
+            if response.status_code in [200, 204]:
+                print(f"✅ Deleted user {user_id} from Firebase")
+                return True
+            else:
+                print(f"❌ Failed to delete user {user_id}: {response.status_code}")
+                return False
+                
         except Exception as e:
-            print(f"Sync company data error: {e}")
+            print(f"Delete user error: {e}")
             return False
     
-    def get_company_data(self, company_id):
-        """Get all company data from Firebase"""
+    def sync_materials(self, company_id, materials):
+        """Sync materials to Firebase"""
         if not self.is_ready():
-            return None
+            return False
         
+        success_count = 0
         try:
-            url = self._get_url(f"companies/{company_id}")
-            response = requests.get(url)
+            for material in materials:
+                url = self._get_url_with_key(f"companies/{company_id}/materials/{material['id']}")
+                
+                document = {
+                    "fields": {
+                        "id": {"integerValue": str(material['id'])},
+                        "name": {"stringValue": material.get('name', '')},
+                        "quantity": {"integerValue": str(material.get('quantity', 0))},
+                        "quality": {"stringValue": material.get('quality', 'New')},
+                        "location": {"stringValue": material.get('location_ids', '')},
+                        "synced_at": {"stringValue": datetime.now().isoformat()}
+                    }
+                }
+                
+                response = requests.patch(url, json=document)
+                if response.status_code in [200, 201]:
+                    success_count += 1
             
-            if response.status_code != 200:
-                return None
+            print(f"✅ Synced {success_count}/{len(materials)} materials to Firebase")
+            return success_count > 0
             
-            data = response.json()
-            fields = data.get('fields', {})
-            
-            if 'data' in fields and 'stringValue' in fields['data']:
-                return json.loads(fields['data']['stringValue'])
-            return None
         except Exception as e:
-            print(f"Get company data error: {e}")
-            return None
+            print(f"Sync materials error: {e}")
+            return False
+    
+    def sync_accessories(self, company_id, accessories):
+        """Sync accessories to Firebase"""
+        if not self.is_ready():
+            return False
+        
+        success_count = 0
+        try:
+            for accessory in accessories:
+                url = self._get_url_with_key(f"companies/{company_id}/accessories/{accessory['id']}")
+                
+                document = {
+                    "fields": {
+                        "id": {"integerValue": str(accessory['id'])},
+                        "name": {"stringValue": accessory.get('name', '')},
+                        "quantity": {"integerValue": str(accessory.get('quantity', 0))},
+                        "quality": {"stringValue": accessory.get('quality', 'New')},
+                        "location": {"stringValue": accessory.get('location', '')},
+                        "synced_at": {"stringValue": datetime.now().isoformat()}
+                    }
+                }
+                
+                response = requests.patch(url, json=document)
+                if response.status_code in [200, 201]:
+                    success_count += 1
+            
+            print(f"✅ Synced {success_count}/{len(accessories)} accessories to Firebase")
+            return success_count > 0
+            
+        except Exception as e:
+            print(f"Sync accessories error: {e}")
+            return False
         
 # Create Firebase instance
 firebase_api = FirebaseRestAPI()
@@ -207,9 +269,8 @@ class CloudSyncManager:
     
     @staticmethod
     def sync_users_to_cloud(company_id):
-        """Sync users to cloud - EXCLUDE password_hash for security"""
+        """Sync users to cloud"""
         try:
-            # Get local users
             conn = sqlite3.connect("store_management.db")
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -219,18 +280,24 @@ class CloudSyncManager:
             
             users_list = [dict(u) for u in users]
             
-            if firebase_api.is_ready() and users_list:
-                return firebase_api.sync_users(company_id, users_list)
-            else:
-                print("⚠️ No users to sync or Firebase not ready")
+            if not users_list:
+                print("No users to sync")
                 return False
+            
+            if firebase_api.is_ready():
+                result = firebase_api.sync_users(company_id, users_list)
+                return result
+            else:
+                print("Firebase not ready")
+                return False
+                
         except Exception as e:
-            print(f"Sync error: {e}")
+            print(f"Sync users error: {e}")
             return False
     
     @staticmethod
     def download_users_from_cloud(company_id):
-        """Download users from cloud - SET DEFAULT PASSWORD for new users"""
+        """Download users from cloud - preserve existing passwords"""
         try:
             if not firebase_api.is_ready():
                 return False
@@ -242,36 +309,45 @@ class CloudSyncManager:
             conn = sqlite3.connect("store_management.db")
             cursor = conn.cursor()
             
-            # Get existing local users to avoid overwriting passwords
+            # Get existing password hashes
             cursor.execute("SELECT id, password_hash FROM users")
-            existing_passwords = {row[0]: row[1] for row in cursor.fetchall()}
-            
-            # Default password hash for cloud-synced users (use a placeholder)
-            # This hash is for "changeme" - force user to change password on next login
-            DEFAULT_PASSWORD_HASH = hashlib.sha256("changeme".encode()).hexdigest()
+            existing = {row[0]: row[1] for row in cursor.fetchall()}
             
             for user in cloud_users:
-                user_id = user.get('id')
-                # Use existing password hash if user already exists locally
-                password_hash = existing_passwords.get(user_id, DEFAULT_PASSWORD_HASH)
+                user_id = user['id']
+                password_hash = existing.get(user_id, hashlib.sha256("changeme".encode()).hexdigest())
                 
                 cursor.execute('''INSERT OR REPLACE INTO users 
-                    (id, name, email, password_hash, role, company_id, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM users WHERE id = ?), datetime('now')))''',
-                    (user_id, user.get('name'), user.get('email'), 
-                     password_hash, user.get('role'), company_id, user_id))
+                    (id, name, email, password_hash, role, company_id)
+                    VALUES (?, ?, ?, ?, ?, ?)''',
+                    (user_id, user['name'], user['email'], password_hash, user['role'], company_id))
             
             conn.commit()
             conn.close()
             print(f"✅ Downloaded {len(cloud_users)} users from cloud")
             return True
+            
         except Exception as e:
             print(f"Download error: {e}")
             return False
     
     @staticmethod
+    def delete_user_from_cloud(company_id, user_id):
+        """Delete a user from cloud"""
+        try:
+            if not firebase_api.is_ready():
+                return False
+            
+            result = firebase_api.delete_user(company_id, user_id)
+            return result
+            
+        except Exception as e:
+            print(f"Delete from cloud error: {e}")
+            return False
+    
+    @staticmethod
     def full_sync_to_cloud(company_id):
-        """Upload all company data to cloud"""
+        """Sync all data to cloud"""
         try:
             # Sync users
             user_result = CloudSyncManager.sync_users_to_cloud(company_id)
@@ -286,83 +362,250 @@ class CloudSyncManager:
             accessories = cursor.fetchall()
             conn.close()
             
-            # Upload to Firebase
             if firebase_api.is_ready():
-                firebase_api.sync_company_data(company_id, {
-                    'materials': [dict(m) for m in materials],
-                    'accessories': [dict(a) for a in accessories],
-                    'last_sync': datetime.now().isoformat()
-                })
+                firebase_api.sync_materials(company_id, [dict(m) for m in materials])
+                firebase_api.sync_accessories(company_id, [dict(a) for a in accessories])
             
             return user_result
+            
         except Exception as e:
             print(f"Full sync error: {e}")
             return False
     
     @staticmethod
     def full_sync_from_cloud(company_id):
-        """Download all company data from cloud"""
+        """Download all data from cloud"""
+        try:
+            # Download users
+            user_result = CloudSyncManager.download_users_from_cloud(company_id)
+            return user_result
+            
+        except Exception as e:
+            print(f"Full download error: {e}")
+            return False
+    
+    @staticmethod
+    def get_sync_status(company_id):
+        """Get sync status between local and cloud"""
+        try:
+            conn = sqlite3.connect("store_management.db")
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM users WHERE company_id = ?", (company_id,))
+            local_count = cursor.fetchone()[0]
+            conn.close()
+            
+            if not firebase_api.is_ready():
+                return {'status': 'offline', 'local_count': local_count, 'cloud_count': 0}
+            
+            cloud_users = firebase_api.get_users(company_id)
+            cloud_count = len(cloud_users)
+            
+            return {
+                'status': 'synced' if local_count == cloud_count else 'out_of_sync',
+                'local_count': local_count,
+                'cloud_count': cloud_count,
+                'last_sync': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            print(f"Sync status error: {e}")
+            return {'status': 'error', 'error': str(e)}
+class CompanyCloudSyncManager:
+    """Manages cloud sync for all users in a company"""
+    
+    @staticmethod
+    def get_cloud_sync_status(company_id):
+        """Get sync status for a company"""
         try:
             if not firebase_api.is_ready():
+                return {'status': 'offline', 'message': 'Cloud not configured'}
+            
+            # Get local counts
+            conn = sqlite3.connect("store_management.db")
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM users WHERE company_id = ?", (company_id,))
+            local_users = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM materials WHERE company_id = ?", (company_id,))
+            local_materials = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM accessories WHERE company_id = ?", (company_id,))
+            local_accessories = cursor.fetchone()[0]
+            conn.close()
+            
+            # Try to get cloud counts
+            try:
+                url = firebase_api._get_url_with_key(f"companies/{company_id}/data")
+                response = requests.get(url)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    fields = data.get('fields', {})
+                    cloud_users = int(fields.get('users_count', {}).get('integerValue', 0))
+                    cloud_materials = int(fields.get('materials_count', {}).get('integerValue', 0))
+                    cloud_accessories = int(fields.get('accessories_count', {}).get('integerValue', 0))
+                    last_sync = fields.get('last_sync', {}).get('stringValue', 'Never')
+                    
+                    return {
+                        'status': 'synced' if (local_users == cloud_users and local_materials == cloud_materials and local_accessories == cloud_accessories) else 'out_of_sync',
+                        'local': {'users': local_users, 'materials': local_materials, 'accessories': local_accessories},
+                        'cloud': {'users': cloud_users, 'materials': cloud_materials, 'accessories': cloud_accessories},
+                        'last_sync': last_sync
+                    }
+            except:
+                pass
+            
+            return {
+                'status': 'no_cloud_data',
+                'local': {'users': local_users, 'materials': local_materials, 'accessories': local_accessories},
+                'cloud': {'users': 0, 'materials': 0, 'accessories': 0},
+                'last_sync': 'Never'
+            }
+                
+        except Exception as e:
+            print(f"Sync status error: {e}")
+            return {'status': 'error', 'message': str(e)}
+    
+    @staticmethod
+    def sync_company_data_to_cloud(company_id):
+        """Sync ALL company data to cloud"""
+        if not firebase_api.is_ready():
+            print("Firebase not ready")
+            return False
+        
+        try:
+            # Get all data for this company
+            conn = sqlite3.connect("store_management.db")
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT id, name, email, role FROM users WHERE company_id = ?", (company_id,))
+            users = cursor.fetchall()
+            
+            cursor.execute("SELECT * FROM materials WHERE company_id = ?", (company_id,))
+            materials = cursor.fetchall()
+            
+            cursor.execute("SELECT * FROM accessories WHERE company_id = ?", (company_id,))
+            accessories = cursor.fetchall()
+            conn.close()
+            
+            # Prepare data package
+            company_data = {
+                'company_id': company_id,
+                'users': [dict(u) for u in users],
+                'materials': [dict(m) for m in materials],
+                'accessories': [dict(a) for a in accessories],
+                'last_sync': datetime.now().isoformat(),
+                'version': '2.0.0'
+            }
+            
+            # Upload to Firebase
+            url = firebase_api._get_url_with_key(f"companies/{company_id}/data")
+            
+            document = {
+                "fields": {
+                    "company_id": {"integerValue": str(company_id)},
+                    "data": {"stringValue": json.dumps(company_data)},
+                    "last_sync": {"stringValue": datetime.now().isoformat()},
+                    "users_count": {"integerValue": str(len(users))},
+                    "materials_count": {"integerValue": str(len(materials))},
+                    "accessories_count": {"integerValue": str(len(accessories))}
+                }
+            }
+            
+            response = requests.patch(url, json=document)
+            
+            if response.status_code in [200, 201]:
+                print(f"✅ Synced company {company_id} to cloud")
+                return True
+            else:
+                print(f"❌ Failed to sync company: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"Sync company data error: {e}")
+            return False
+    
+    @staticmethod
+    def download_company_data_from_cloud(company_id):
+        """Download ALL company data from cloud"""
+        if not firebase_api.is_ready():
+            print("Firebase not ready")
+            return False
+        
+        try:
+            url = firebase_api._get_url_with_key(f"companies/{company_id}/data")
+            response = requests.get(url)
+            
+            if response.status_code != 200:
+                print(f"Failed to download company data: {response.status_code}")
                 return False
             
-            cloud_data = firebase_api.get_company_data(company_id)
-            if not cloud_data:
+            data = response.json()
+            fields = data.get('fields', {})
+            
+            if 'data' not in fields:
+                print("No data found in cloud for this company")
                 return False
+            
+            company_data = json.loads(fields['data']['stringValue'])
             
             conn = sqlite3.connect("store_management.db")
             cursor = conn.cursor()
             
-            # Get existing password hashes
+            # Get existing password hashes (to preserve passwords)
             cursor.execute("SELECT id, password_hash FROM users")
             existing_passwords = {row[0]: row[1] for row in cursor.fetchall()}
             DEFAULT_PASSWORD_HASH = hashlib.sha256("changeme".encode()).hexdigest()
             
-            # Download users
-            users = cloud_data.get('users', [])
-            for user in users:
+            # Sync users
+            cloud_users = company_data.get('users', [])
+            for user in cloud_users:
                 user_id = user.get('id')
                 password_hash = existing_passwords.get(user_id, DEFAULT_PASSWORD_HASH)
+                
                 cursor.execute('''INSERT OR REPLACE INTO users 
                     (id, name, email, password_hash, role, company_id)
                     VALUES (?, ?, ?, ?, ?, ?)''',
                     (user_id, user.get('name'), user.get('email'), 
                      password_hash, user.get('role'), company_id))
             
-            # Download materials
-            materials = cloud_data.get('materials', [])
-            for material in materials:
+            # Sync materials
+            cloud_materials = company_data.get('materials', [])
+            for material in cloud_materials:
                 cursor.execute('''INSERT OR REPLACE INTO materials 
                     (id, name, category_id, quantity, quality, location_ids, 
                      size, length, colors, notes, barcode_value, company_id, 
                      created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                     (material.get('id'), material.get('name'), material.get('category_id'),
-                     material.get('quantity'), material.get('quality'), material.get('location_ids'),
+                     material.get('quantity', 0), material.get('quality', 'New'), 
+                     material.get('location_ids', ''),
                      material.get('size'), material.get('length'), material.get('colors'),
                      material.get('notes'), material.get('barcode_value'), company_id,
                      material.get('created_at'), material.get('updated_at')))
             
-            # Download accessories
-            accessories = cloud_data.get('accessories', [])
-            for accessory in accessories:
+            # Sync accessories
+            cloud_accessories = company_data.get('accessories', [])
+            for accessory in cloud_accessories:
                 cursor.execute('''INSERT OR REPLACE INTO accessories 
                     (id, name, category_id, quantity, price, quality, location, 
                      notes, barcode_value, company_id, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                     (accessory.get('id'), accessory.get('name'), accessory.get('category_id'),
-                     accessory.get('quantity'), accessory.get('price'), accessory.get('quality'),
-                     accessory.get('location'), accessory.get('notes'), accessory.get('barcode_value'),
-                     company_id, accessory.get('created_at'), accessory.get('updated_at')))
+                     accessory.get('quantity', 0), accessory.get('price', 0), 
+                     accessory.get('quality', 'New'), accessory.get('location', ''),
+                     accessory.get('notes'), accessory.get('barcode_value'), company_id,
+                     accessory.get('created_at'), accessory.get('updated_at')))
             
             conn.commit()
             conn.close()
-            print(f"✅ Downloaded full company data for company {company_id}")
+            
+            print(f"✅ Downloaded company {company_id} data from cloud")
             return True
+            
         except Exception as e:
-            print(f"Download error: {e}")
+            print(f"Download company data error: {e}")
             return False
-        
+              
 class StoreApp:
     def __init__(self):
         self.current_user = None
@@ -405,7 +648,93 @@ class StoreApp:
                 row_dict[key] = row[key]
             result.append(row_dict)
         return result
+    
+    def debug_cloud_sync(self, page: ft.Page):
+        """Debug cloud sync status"""
+        company_id = self.current_user.get('company_id', 1) if self.current_user else 1
+        
+        # Get local users
+        import sqlite3
+        from database import DB_PATH
+        
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, email, role FROM users WHERE company_id = ?", (company_id,))
+        local_users = cursor.fetchall()
+        conn.close()
+        
+        # Get cloud users
+        cloud_users = []
+        cloud_connected = False
+        
+        if firebase_api.is_ready():
+            cloud_users = firebase_api.get_users(company_id)
+            cloud_connected = True
+        
+        # Build debug message
+        message = f"Company ID: {company_id}\n"
+        message += f"Cloud Connected: {cloud_connected}\n"
+        message += f"Firebase Ready: {firebase_api.is_ready()}\n"
+        message += f"API Key: {firebase_api.api_key[:20]}...\n\n"
+        
+        message += f"=== LOCAL USERS ({len(local_users)}) ===\n"
+        for u in local_users:
+            message += f"  ID:{u[0]} - {u[1]} ({u[2]}) - {u[3]}\n"
+        
+        message += f"\n=== CLOUD USERS ({len(cloud_users)}) ===\n"
+        for u in cloud_users:
+            message += f"  ID:{u.get('id')} - {u.get('name')} ({u.get('email')}) - {u.get('role')}\n"
+        
+        if len(local_users) != len(cloud_users):
+            message += f"\n⚠️ MISMATCH: Local={len(local_users)}, Cloud={len(cloud_users)}"
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Cloud Sync Debug", size=18, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                content=ft.Text(message, size=11, font_family="monospace", selectable=True),
+                width=450,
+                height=450,
+                padding=20,
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.ElevatedButton("Force Resync", on_click=lambda e: self.force_full_sync(page)),
+            ],
+        )
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
 
+    def force_full_sync(self, page: ft.Page):
+        """Force full sync to cloud"""
+        company_id = self.current_user.get('company_id', 1) if self.current_user else 1
+        
+        page.dialog.open = False
+        
+        page.snack_bar = ft.SnackBar(
+            ft.Text("🔄 Syncing to cloud..."),
+            bgcolor=self.accent_color,
+            duration=2000
+        )
+        page.snack_bar.open = True
+        page.update()
+        
+        result = CloudSyncManager.full_sync_to_cloud(company_id)
+        
+        if result:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("✅ Full sync completed!"),
+                bgcolor=self.success_color,
+                duration=3000
+            )
+        else:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("⚠️ Sync completed with errors. Check console."),
+                bgcolor=self.warning_color,
+                duration=3000
+            )
+        page.snack_bar.open = True
+        page.update()
     def test_firebase_connection(self, page: ft.Page):
         """Test if Firebase is actually connected and working"""
         
@@ -2030,7 +2359,7 @@ class StoreApp:
         page.update()
 
     def show_register_dialog(self, page: ft.Page):
-        """Register new user dialog - Simplified"""
+        """Register new user with invite code support"""
         import sqlite3
         import hashlib
         from database import DB_PATH
@@ -2040,6 +2369,16 @@ class StoreApp:
         email_field = ft.TextField(label="Email", width=300, bgcolor=self.card_color)
         password_field = ft.TextField(label="Password", password=True, width=300, bgcolor=self.card_color)
         confirm_field = ft.TextField(label="Confirm Password", password=True, width=300, bgcolor=self.card_color)
+        
+        # ===== ADD INVITE CODE FIELD =====
+        invite_field = ft.TextField(
+            label="Company Invite Code (optional)", 
+            hint_text="Ask your admin for the code",
+            width=300, 
+            bgcolor=self.card_color,
+            prefix_icon=ft.icons.GROUP,
+        )
+        
         status_text = ft.Text("", size=12)
         
         def close_dialog():
@@ -2051,6 +2390,7 @@ class StoreApp:
             email = email_field.value.strip()
             password = password_field.value
             confirm = confirm_field.value
+            invite_code = invite_field.value.strip().upper()
             
             if not name or not email or not password:
                 status_text.value = "❌ Please fill all fields"
@@ -2081,12 +2421,34 @@ class StoreApp:
                 conn.close()
                 return
             
+            # Determine company_id from invite code
+            company_id = 1  # Default to demo company
+            if invite_code and invite_code.startswith('JOIN-'):
+                try:
+                    parts = invite_code.split('-')
+                    if len(parts) >= 2:
+                        company_id = int(parts[1])
+                        # Verify company exists
+                        cursor.execute("SELECT id FROM companies WHERE id = ?", (company_id,))
+                        if not cursor.fetchone():
+                            status_text.value = "❌ Invalid invite code! Please check with your admin."
+                            status_text.color = self.danger_color
+                            page.update()
+                            conn.close()
+                            return
+                except:
+                    status_text.value = "❌ Invalid invite code format!"
+                    status_text.color = self.danger_color
+                    page.update()
+                    conn.close()
+                    return
+            
             hashed_password = hashlib.sha256(password.encode()).hexdigest()
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             cursor.execute("""
-                INSERT INTO users (name, email, password_hash, role, created_at)
-                VALUES (?, ?, ?, ?, ?)
-            """, (name, email, hashed_password, 'user', current_time))
+                INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (name, email, hashed_password, 'user', company_id, current_time))
             
             conn.commit()
             conn.close()
@@ -2113,10 +2475,12 @@ class StoreApp:
                     email_field,
                     password_field,
                     confirm_field,
+                    invite_field,  # <-- ADD THIS
                     status_text,
+                    ft.Text("💡 Ask your admin for the company invite code", size=10, color="#888888"),
                 ], spacing=8),
                 width=380,
-                height=420,
+                height=480,
                 padding=20,
             ),
             actions=[
@@ -2200,9 +2564,125 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
+    
+    def show_company_invite(self, page: ft.Page):
+        """Show company invite code - No domain needed!"""
+        company_id = self.current_user.get('company_id', 1) if self.current_user else 1
+        company_name = self.current_user.get('company_name', 'My Store')
+        
+        # Generate a simple invite code
+        invite_code = f"JOIN-{company_id}-{company_name[:4].upper()}"
+        
+        def copy_code(e):
+            page.set_clipboard(invite_code)
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✓ Invite code copied: {invite_code}"),
+                bgcolor=self.success_color,
+                duration=2000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text("👥 Invite Users", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: setattr(page.dialog, 'open', False)),
+            ]),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text(f"Company: {company_name}", size=16, weight=ft.FontWeight.BOLD),
+                    ft.Divider(),
+                    ft.Text("Share this code with your team:", size=13),
+                    ft.Container(
+                        content=ft.Text(invite_code, size=20, weight=ft.FontWeight.BOLD, color=self.accent_color, selectable=True),
+                        padding=15,
+                        bgcolor="#2C2C2C",
+                        border_radius=8,
+                        alignment=ft.alignment.center,
+                    ),
+                    ft.Text("When new users sign up, they enter this code to join your company.", size=11, color="#888888"),
+                    ft.Row([
+                        ft.ElevatedButton(
+                            "📋 Copy Code",
+                            on_click=copy_code,
+                            icon=ft.icons.CONTENT_COPY,
+                            expand=True,
+                        ),
+                        ft.ElevatedButton(
+                            "📱 Share via WhatsApp",
+                            on_click=lambda e: page.launch_url(f"whatsapp://send?text=Join our inventory app! Use code: {invite_code}"),
+                            icon=ft.icons.CHAT,
+                            expand=True,
+                        ),
+                    ], spacing=10),
+                    ft.ElevatedButton(
+                        "📧 Share via Email",
+                        on_click=lambda e: page.launch_url(f"mailto:?subject=Join our inventory app&body=Join our company {company_name} using this invite code: {invite_code}"),
+                        icon=ft.icons.EMAIL,
+                        expand=True,
+                    ),
+                    ft.Divider(),
+                    ft.Text("How to join:", size=12, weight=ft.FontWeight.BOLD),
+                    ft.Text("1. Open the app and click 'Create Account'", size=10, color="#888888"),
+                    ft.Text("2. Enter your details", size=10, color="#888888"),
+                    ft.Text("3. Paste the invite code above", size=10, color="#888888"),
+                    ft.Text("4. Complete registration and start using the app!", size=10, color="#888888"),
+                ], spacing=12),
+                width=400,
+                height=500,
+                padding=20,
+            ),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+
+    def show_purchase_dialog(self, page: ft.Page):
+        """Show purchase dialog for demo users"""
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("📱 Purchase Full Version", size=18, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Thank you for trying our app!", size=14, weight=ft.FontWeight.BOLD),
+                    ft.Divider(),
+                    ft.Text("To continue using the app with full features:", size=13),
+                    ft.Container(height=10),
+                    ft.Text("💎 Full Version includes:", size=14, weight=ft.FontWeight.BOLD),
+                    ft.Text("• Unlimited items and categories", size=12),
+                    ft.Text("• Multi-user support (unlimited users)", size=12),
+                    ft.Text("• Cloud sync across all devices", size=12),
+                    ft.Text("• Priority support", size=12),
+                    ft.Container(height=10),
+                    ft.Text("💰 One-time payment: $49.99", size=16, weight=ft.FontWeight.BOLD, color=self.success_color),
+                    ft.Container(height=10),
+                    ft.Text("📧 To purchase, contact us at:", size=12),
+                    ft.Text("support@storemanagement.com", size=12, color=self.accent_color, selectable=True),
+                    ft.Container(height=10),
+                    ft.Text("Or visit our website:", size=12),
+                    ft.Text("www.storemanagement.com", size=12, color=self.accent_color, selectable=True),
+                ], spacing=8),
+                width=400,
+                height=450,
+                padding=20,
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.FilledButton(
+                    "📧 Email Us",
+                    on_click=lambda e: page.launch_url("mailto:support@storemanagement.com?subject=I want to purchase the full version"),
+                    style=ft.ButtonStyle(bgcolor=self.accent_color),
+                ),
+            ],
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
 
     def show_login(self, page: ft.Page):
-        """Simplified login screen - No trial check, works immediately"""
+        """Simplified login screen with Demo button"""
         page.controls.clear()
         
         field_width = 280
@@ -2237,10 +2717,8 @@ class StoreApp:
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
                 
-                # Check if users table exists
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
                 if not cursor.fetchone():
-                    print("Users table doesn't exist yet")
                     conn.close()
                     return
                 
@@ -2250,10 +2728,16 @@ class StoreApp:
                 if count == 0:
                     hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
                     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Create company first
+                    cursor.execute("INSERT INTO companies (name, created_at) VALUES (?, ?)", 
+                                ('Default Company', current_time))
+                    company_id = cursor.lastrowid
+                    
                     cursor.execute("""
-                        INSERT INTO users (name, email, password_hash, role, created_at)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, ('Administrator', 'admin@store.com', hashed_password, 'admin', current_time))
+                        INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id, current_time))
                     conn.commit()
                     print("✅ Created default admin: admin@store.com / admin123")
                     
@@ -2294,18 +2778,42 @@ class StoreApp:
                     self.current_user = user_dict
                     
                     loading_indicator.visible = False
-                    page.snack_bar = ft.SnackBar(
-                        ft.Text(f"✓ Welcome {user_dict.get('name', 'User')}!"),
-                        bgcolor=self.success_color,
-                        duration=3000
-                    )
+                    
+                    # Check demo status for company 1
+                    if company_id == 1:
+                        days_left = DemoManager.get_demo_days_left(company_id)
+                        if days_left == 0:
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text("⚠️ Your 30-day trial has expired! Please contact support."),
+                                bgcolor=self.danger_color,
+                                duration=5000
+                            )
+                            page.snack_bar.open = True
+                            page.update()
+                            return
+                        elif days_left <= 5:
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text(f"⚠️ Your trial ends in {days_left} days! Purchase to continue."),
+                                bgcolor=self.warning_color,
+                                duration=4000
+                            )
+                        else:
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text(f"✓ Welcome! Trial: {days_left} days left."),
+                                bgcolor=self.success_color,
+                                duration=3000
+                            )
+                    else:
+                        page.snack_bar = ft.SnackBar(
+                            ft.Text(f"✓ Welcome {user_dict.get('name', 'User')}!"),
+                            bgcolor=self.success_color,
+                            duration=3000
+                        )
+                    
                     page.snack_bar.open = True
                     page.update()
                     
-                    # Sync cloud data
                     self.auto_sync_on_start(page)
-                    
-                    # Navigate to dashboard
                     self.show_dashboard(page)
                 else:
                     loading_indicator.visible = False
@@ -2320,14 +2828,22 @@ class StoreApp:
                 page.update()
                 print(f"Login error: {ex}")
         
+        def on_demo_login(e):
+            """Auto-login with demo credentials"""
+            email_field.value = "demo@store.com"
+            password_field.value = "demo123"
+            page.update()
+            on_login(e)
+        
         def on_register(e):
             self.show_register_dialog(page)
         
         def on_forgot_password(e):
             self.show_forgot_password_dialog(page)
         
-        # Create default admin
+        # Create default admin and demo data
         create_default_admin()
+        DemoManager.create_demo_company()  # <-- Create demo data if not exists
         
         logo_exists = os.path.exists(logo_path)
         logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=60)
@@ -2354,8 +2870,28 @@ class StoreApp:
                 ft.TextButton("Create Account", on_click=on_register, style=ft.ButtonStyle(color=self.success_color)),
                 ft.TextButton("Forgot Password?", on_click=on_forgot_password, style=ft.ButtonStyle(color="#888888")),
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
+            ft.Divider(height=10, color="#3C3C3C"),
+            
+            # ===== DEMO SECTION =====
+            ft.Text("🚀 Try Demo", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
+            ft.Row([
+                ft.ElevatedButton(
+                    "▶️ Demo Login",
+                    on_click=on_demo_login,
+                    icon=ft.icons.PLAY_ARROW,
+                    style=ft.ButtonStyle(bgcolor="#4CAF50", color="white"),
+                    expand=True,
+                ),
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Row([
+                ft.Text("Email: demo@store.com", size=10, color="#888888"),
+                ft.Text("Password: demo123", size=10, color="#888888"),
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
+            # ===== END DEMO SECTION =====
+            
             ft.Container(height=10),
             ft.Text("💡 Default admin: admin@store.com / admin123", size=10, color="#888888", selectable=True),
+            ft.Text("💡 Demo credentials: demo@store.com / demo123", size=10, color="#888888", selectable=True),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
         
         login_card = ft.Container(content=main_layout, padding=40, bgcolor=None, border_radius=20, width=500)
@@ -4894,274 +5430,353 @@ class StoreApp:
             page.snack_bar.open = True
             page.update()
 
-                # ============ DASHBOARD ============
+                        # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Dashboard with cloud sync button"""
-        page.controls.clear()
-        
-        is_mobile = page.width < 800 if page.width else False
-        
-        # Navigation
-        if is_mobile:
-            nav = self.create_bottom_nav(page)
-            sidebar = None
-        else:
-            sidebar = self.create_sidebar(page)
-            nav = None
-        
-        # Get data
-        materials = self.dict_list(MaterialManager.get_all())
-        accessories = self.dict_list(AccessoryManager.get_all())
-        users = self.dict_list(UserManager.get_all())
-        
-        # Calculate statistics
-        total_materials = len(materials)
-        total_accessories = len(accessories)
-        total_items = total_materials + total_accessories
-        total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
-        total_users = len(users)
-        total_low_stock = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
-        
-        quality_counts = {"New": 0, "Used": 0, "Damaged": 0, "Repaired": 0}
-        for m in materials:
-            q = m.get('quality', 'Used')
-            quality_counts[q] = quality_counts.get(q, 0) + 1
-        for a in accessories:
-            q = a.get('quality', 'Used')
-            quality_counts[q] = quality_counts.get(q, 0) + 1
-        
-        # Create main column
-        main_column = ft.Column(spacing=15, expand=True)
-        
-        # Header with sync button
-        sync_button = ft.IconButton(
-            icon=ft.icons.CLOUD_SYNC,
-            icon_size=24,
-            icon_color=self.accent_color,
-            on_click=lambda e: self.manual_sync(page),
-            tooltip="Sync with Cloud",
-        )
-        
-        header_row = ft.Row([
-            ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color, expand=True),
-            sync_button,
-        ])
-        main_column.controls.append(header_row)
-        main_column.controls.append(ft.Text("Welcome back!", size=14, color="#888888"))
-        
-        # Stats cards
-        main_column.controls.append(
-            ft.Row([
-                self._create_stat_card("📦", str(total_items), "Items"),
-                self._create_stat_card("📊", str(total_stock), "Stock"),
-                self._create_stat_card("⚠️", str(total_low_stock), "Low Stock"),
-                self._create_stat_card("👥", str(total_users), "Users"),
+        """Dashboard with full error handling"""
+        try:
+            print("🔵 show_dashboard started")
+            page.controls.clear()
+            
+            is_mobile = page.width < 800 if page.width else False
+            print(f"📱 is_mobile: {is_mobile}")
+            
+            # Navigation
+            try:
+                if is_mobile:
+                    nav = self.create_bottom_nav(page)
+                    sidebar = None
+                else:
+                    sidebar = self.create_sidebar(page)
+                    nav = None
+                print("✅ Navigation created")
+            except Exception as nav_error:
+                print(f"❌ Navigation error: {nav_error}")
+                nav = None
+                sidebar = None
+            
+            # Get data with error handling
+            try:
+                materials = self.dict_list(MaterialManager.get_all())
+                accessories = self.dict_list(AccessoryManager.get_all())
+                users = self.dict_list(UserManager.get_all())
+                print(f"📦 Data loaded: {len(materials)} materials, {len(accessories)} accessories, {len(users)} users")
+            except Exception as data_error:
+                print(f"❌ Data error: {data_error}")
+                materials = []
+                accessories = []
+                users = []
+            
+            # Check demo status
+            company_id = self.current_user.get('company_id', 1) if self.current_user else 1
+            is_demo = company_id == 1
+            days_left = DemoManager.get_demo_days_left(company_id) if is_demo else None
+            print(f"🏢 Company: {company_id}, Demo: {is_demo}, Days left: {days_left}")
+            
+            # Get company info
+            company_info = self.get_company_info()
+            company_name = company_info.get('company_name', 'Store Management System')
+            
+            # Calculate statistics
+            total_materials = len(materials)
+            total_accessories = len(accessories)
+            total_items = total_materials + total_accessories
+            total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
+            total_users = len(users)
+            total_low_stock = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
+            
+            # Quality distribution
+            quality_counts = {"New": 0, "Used": 0, "Damaged": 0, "Repaired": 0}
+            for m in materials:
+                q = m.get('quality', 'Used')
+                quality_counts[q] = quality_counts.get(q, 0) + 1
+            for a in accessories:
+                q = a.get('quality', 'Used')
+                quality_counts[q] = quality_counts.get(q, 0) + 1
+            
+            # Get recent items
+            recent_materials = sorted(materials, key=lambda x: x.get('created_at', ''), reverse=True)[:3]
+            recent_accessories = sorted(accessories, key=lambda x: x.get('created_at', ''), reverse=True)[:3]
+            
+            # Font sizes
+            if is_mobile:
+                font_title = 24
+                font_normal = 16
+                font_small = 14
+                padding_size = 12
+            else:
+                font_title = 28
+                font_normal = 18
+                font_small = 14
+                padding_size = 20
+            
+            # =============================================
+            # BUILD UI - Main Column
+            # =============================================
+            main_column = ft.Column(spacing=15, expand=True)
+            
+            # 1. DEMO BANNER
+            if is_demo and days_left is not None:
+                if days_left <= 5:
+                    banner_color = self.danger_color
+                    banner_text = f"⚠️ Trial ends in {days_left} days!"
+                    button_text = "Purchase Now"
+                    button_color = "#FF9800"
+                else:
+                    banner_color = self.success_color
+                    banner_text = f"🚀 Free Trial: {days_left} days remaining"
+                    button_text = "Upgrade Now"
+                    button_color = "#4CAF50"
+                
+                banner = ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.icons.INFO_OUTLINE, color="white", size=20),
+                        ft.Text(banner_text, color="white", size=12, expand=True),
+                        ft.ElevatedButton(
+                            button_text,
+                            on_click=lambda e: self.show_purchase_dialog(page),
+                            style=ft.ButtonStyle(bgcolor=button_color, color="white", padding=10),
+                        ),
+                    ], spacing=10),
+                    padding=10,
+                    bgcolor=banner_color,
+                    border_radius=10,
+                )
+                main_column.controls.append(banner)
+            
+            # 2. HEADER
+            header_row = ft.Row([
+                ft.Column([
+                    ft.Text("Dashboard", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
+                    ft.Text(f"{company_name} • {self.current_user.get('name', 'User')}", size=12, color="#888888"),
+                ], spacing=2),
+                ft.Container(expand=True),
+                ft.IconButton(
+                    icon=ft.icons.CLOUD_SYNC,
+                    icon_size=24,
+                    icon_color=self.accent_color,
+                    on_click=lambda e: self.manual_sync(page),
+                    tooltip="Sync with Cloud",
+                ),
+                ft.IconButton(
+                    icon=ft.icons.REFRESH,
+                    icon_size=24,
+                    icon_color="#888888",
+                    on_click=lambda e: self.show_dashboard(page),
+                    tooltip="Refresh",
+                ),
+            ])
+            main_column.controls.append(header_row)
+            main_column.controls.append(ft.Container(height=5))
+            
+            # 3. STATS CARDS
+            stats_row = ft.Row([
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("📦", size=20),
+                        ft.Text(str(total_items), size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Items", size=10, color="#CCCCCC"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                    padding=10,
+                    bgcolor=self.accent_color,
+                    border_radius=10,
+                    expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("📊", size=20),
+                        ft.Text(str(total_stock), size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Stock", size=10, color="#CCCCCC"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                    padding=10,
+                    bgcolor=self.success_color,
+                    border_radius=10,
+                    expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("⚠️", size=20),
+                        ft.Text(str(total_low_stock), size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Low Stock", size=10, color="#CCCCCC"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                    padding=10,
+                    bgcolor=self.danger_color if total_low_stock > 0 else self.card_color,
+                    border_radius=10,
+                    expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("👥", size=20),
+                        ft.Text(str(total_users), size=24, weight=ft.FontWeight.BOLD),
+                        ft.Text("Users", size=10, color="#CCCCCC"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+                    padding=10,
+                    bgcolor="#9C27B0",
+                    border_radius=10,
+                    expand=True,
+                ),
             ], spacing=8)
-        )
-        
-        # Quality Distribution
-        main_column.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
-        
-        quality_row1 = ft.Row([
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#4CAF50"),
-                    ft.Text(f"New: {quality_counts.get('New', 0)}", size=14, color=self.text_color),
-                ], spacing=8),
-                padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                bgcolor=self.card_color,
-                border_radius=8,
-                expand=True,
-            ),
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#FF9800"),
-                    ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=14, color=self.text_color),
-                ], spacing=8),
-                padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                bgcolor=self.card_color,
-                border_radius=8,
-                expand=True,
-            ),
-        ], spacing=8)
-        main_column.controls.append(quality_row1)
-        
-        quality_row2 = ft.Row([
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#F44336"),
-                    ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=14, color=self.text_color),
-                ], spacing=8),
-                padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                bgcolor=self.card_color,
-                border_radius=8,
-                expand=True,
-            ),
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#2196F3"),
-                    ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=14, color=self.text_color),
-                ], spacing=8),
-                padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                bgcolor=self.card_color,
-                border_radius=8,
-                expand=True,
-            ),
-        ], spacing=8)
-        main_column.controls.append(quality_row2)
-        
-        # Stock Health
-        if total_stock > 0:
-            healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100))
-            healthy_percentage = max(0, min(healthy_percentage, 100))
-        else:
-            healthy_percentage = 100
-        
-        main_column.controls.append(ft.Text("💪 Stock Health", size=16, weight=ft.FontWeight.BOLD))
-        main_column.controls.append(
-            ft.Container(
-                content=ft.Column([
-                    ft.Text(f"{healthy_percentage}%", size=24, weight=ft.FontWeight.BOLD, color=self.success_color),
-                    ft.ProgressBar(value=healthy_percentage/100, color=self.success_color, bgcolor="#3C3C3C", height=6),
-                    ft.Text(f"Low Stock: {total_low_stock} items", size=12, color=self.warning_color),
-                ], spacing=5),
-                padding=12, bgcolor=self.card_color, border_radius=10,
+            main_column.controls.append(stats_row)
+            main_column.controls.append(ft.Container(height=5))
+            
+            # 4. QUICK ACTIONS
+            main_column.controls.append(ft.Text("⚡ Quick Actions", size=font_normal, weight=ft.FontWeight.BOLD))
+            main_column.controls.append(
+                ft.Row([
+                    ft.ElevatedButton("📦 Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
+                    ft.ElevatedButton("🔧 Add Part", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
+                ], spacing=8)
             )
-        )
-        
-        # Recent Materials
-        main_column.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
-        if materials:
-            for m in materials[:3]:
+            main_column.controls.append(
+                ft.Row([
+                    ft.ElevatedButton("📷 Scan", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
+                    ft.ElevatedButton("📊 Inventory", on_click=lambda e: self.show_inventory(page), expand=True),
+                ], spacing=8)
+            )
+            main_column.controls.append(
+                ft.Row([
+                    ft.ElevatedButton("👥 Users", on_click=lambda e: self.show_users(page), expand=True),
+                    ft.ElevatedButton("⚙️ Settings", on_click=lambda e: self.show_settings(page), expand=True),
+                ], spacing=8)
+            )
+            main_column.controls.append(ft.Container(height=5))
+            
+            # 5. INVITE TEAM (Demo only)
+            if is_demo:
+                main_column.controls.append(
+                    ft.Row([
+                        ft.ElevatedButton(
+                            "👥 Invite Team Members",
+                            on_click=lambda e: self.show_company_invite(page),
+                            expand=True,
+                            style=ft.ButtonStyle(bgcolor="#9C27B0", color="white"),
+                        ),
+                    ], spacing=8)
+                )
+                main_column.controls.append(ft.Container(height=5))
+            
+            # 6. RECENT MATERIALS
+            main_column.controls.append(ft.Text("📦 Recent Materials", size=font_normal, weight=ft.FontWeight.BOLD))
+            if recent_materials:
+                for m in recent_materials:
+                    main_column.controls.append(
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Text("📦", size=18),
+                                ft.Column([
+                                    ft.Text(m.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD),
+                                    ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=font_small - 2, color="#888888"),
+                                ], spacing=2, expand=True),
+                                ft.Text(f"Qty: {m.get('quantity', 0)}", size=font_small),
+                            ]),
+                            padding=10,
+                            bgcolor="#2C2C2C",
+                            border_radius=8,
+                            margin=ft.margin.only(bottom=5),
+                        )
+                    )
+                main_column.controls.append(ft.TextButton("View All Materials", on_click=lambda e: self.show_materials_screen(page)))
+                main_column.controls.append(ft.Container(height=5))
+            else:
                 main_column.controls.append(
                     ft.Container(
-                        content=ft.Row([
-                            ft.Text("📦", size=18),
-                            ft.Text(m.get('name', 'N/A'), size=14, expand=True),
-                            ft.Text(f"Qty: {m.get('quantity', 0)}", size=14),
-                            ft.Container(
-                                content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
-                                bgcolor=self.get_quality_color(m.get('quality', 'Used')),
-                                border_radius=8,
-                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
-                            ),
-                        ]),
-                        padding=10, bgcolor="#2C2C2C", border_radius=8,
+                        content=ft.Text("No materials yet. Add one!", size=12, color="#888888"),
+                        padding=10,
+                        bgcolor="#2C2C2C",
+                        border_radius=8,
                     )
                 )
-            main_column.controls.append(ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)))
-        else:
-            main_column.controls.append(ft.Text("No materials", size=12, color="#888888"))
-        
-        # Recent Accessories
-        main_column.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
-        if accessories:
-            for a in accessories[:3]:
-                price = a.get('price', 0)
-                price_text = f"${price:.2f}" if price else ""
+                main_column.controls.append(ft.Container(height=5))
+            
+            # 7. RECENT ACCESSORIES
+            main_column.controls.append(ft.Text("🔧 Recent Accessories", size=font_normal, weight=ft.FontWeight.BOLD))
+            if recent_accessories:
+                for a in recent_accessories:
+                    main_column.controls.append(
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Text("🔧", size=18),
+                                ft.Column([
+                                    ft.Text(a.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD),
+                                    ft.Text(f"📍 {a.get('location', 'N/A')}", size=font_small - 2, color="#888888"),
+                                ], spacing=2, expand=True),
+                                ft.Text(f"Qty: {a.get('quantity', 0)}", size=font_small),
+                            ]),
+                            padding=10,
+                            bgcolor="#2C2C2C",
+                            border_radius=8,
+                            margin=ft.margin.only(bottom=5),
+                        )
+                    )
+                main_column.controls.append(ft.TextButton("View All Accessories", on_click=lambda e: self.show_accessories(page)))
+                main_column.controls.append(ft.Container(height=5))
+            else:
                 main_column.controls.append(
                     ft.Container(
-                        content=ft.Row([
-                            ft.Text("🔧", size=18),
-                            ft.Text(a.get('name', 'N/A'), size=14, expand=True),
-                            ft.Text(f"Qty: {a.get('quantity', 0)}", size=14),
-                            ft.Text(price_text, size=12, color="#4CAF50"),
-                            ft.Container(
-                                content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
-                                bgcolor=self.get_quality_color(a.get('quality', 'Used')),
-                                border_radius=8,
-                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
-                            ),
-                        ]),
-                        padding=10, bgcolor="#2C2C2C", border_radius=8,
+                        content=ft.Text("No accessories yet. Add one!", size=12, color="#888888"),
+                        padding=10,
+                        bgcolor="#2C2C2C",
+                        border_radius=8,
                     )
                 )
-            main_column.controls.append(ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)))
-        else:
-            main_column.controls.append(ft.Text("No accessories", size=12, color="#888888"))
-        
-        # Quick Actions
-        main_column.controls.append(ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD))
-        main_column.controls.append(
-            ft.Row([
-                ft.ElevatedButton("Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
-                ft.ElevatedButton("Add Part", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
-            ], spacing=8)
-        )
-        main_column.controls.append(
-            ft.Row([
-                ft.ElevatedButton("Scan", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
-                ft.ElevatedButton("Export Data", on_click=lambda e: self.export_all_data_simple(page), expand=True),
-            ], spacing=8)
-        )
-        
-        # Import/Export
-        main_column.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
-        main_column.controls.append(
-            ft.Row([
-                ft.ElevatedButton("🌐 Export HTML", on_click=lambda e: self.export_html_simple(page), expand=True),
-                ft.ElevatedButton("📁 View Exports", on_click=lambda e: self.show_exported_files_simple(page), expand=True),
-            ], spacing=8)
-        )
-        
-        # Cloud Status
-        if firebase_api.is_ready():
-            cloud_status = ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CLOUD_DONE, size=16, color=self.success_color),
-                    ft.Text("Cloud Connected", size=12, color=self.success_color),
-                ], spacing=6),
-                padding=ft.padding.symmetric(horizontal=12, vertical=6),
-                bgcolor="#2C2C2C",
-                border_radius=12,
+                main_column.controls.append(ft.Container(height=5))
+            
+            # 8. FOOTER
+            main_column.controls.append(ft.Divider())
+            main_column.controls.append(
+                ft.Row([
+                    ft.Text(f"🏢 {company_name}", size=11, color="#888888"),
+                    ft.Container(expand=True),
+                    ft.Text("v2.0.0", size=11, color="#888888"),
+                ])
             )
-        else:
-            cloud_status = ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CLOUD_OFF, size=16, color=self.warning_color),
-                    ft.Text("Local Mode", size=12, color=self.warning_color),
-                ], spacing=6),
-                padding=ft.padding.symmetric(horizontal=12, vertical=6),
-                bgcolor="#2C2C2C",
-                border_radius=12,
+            
+            # Bottom spacing
+            if is_mobile:
+                main_column.controls.append(ft.Container(height=70))
+            else:
+                main_column.controls.append(ft.Container(height=20))
+            
+            # =============================================
+            # WRAP AND RENDER
+            # =============================================
+            main_container = ft.Container(
+                content=ft.Column([main_column], scroll=ft.ScrollMode.AUTO, expand=True),
+                expand=True,
+                padding=padding_size,
             )
-        main_column.controls.append(cloud_status)
-        
-        # Wrap in scrollable container
-        scroll_container = ft.Container(
-            content=main_column,
-            expand=True,
-            padding=15,
-        )
-        
-        scrollable = ft.Container(
-            content=ft.Column([scroll_container], scroll=ft.ScrollMode.AUTO, expand=True),
-            expand=True,
-        )
-        
-        # Layout
-        if is_mobile and nav:
-            page.add(ft.Column([scrollable, nav], spacing=0, expand=True))
-        else:
-            page.add(ft.Row([sidebar, scrollable], spacing=0, expand=True))
-        
-        self.current_view = "dashboard"
-        page.update()
+            
+            if is_mobile and nav:
+                page.add(ft.Column([main_container, nav], spacing=0, expand=True))
+            else:
+                page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
+            
+            self.current_view = "dashboard"
+            page.update()
+            print("✅ Dashboard rendered successfully!")
+            
+        except Exception as e:
+            print(f"❌ CRITICAL ERROR in show_dashboard: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Emergency fallback
+            try:
+                page.controls.clear()
+                page.add(
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Text("⚠️ Dashboard Error", size=24, color="red"),
+                            ft.Text(str(e), size=12, color="white"),
+                            ft.ElevatedButton("Go to Login", on_click=lambda e: self.show_login(page)),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15),
+                        alignment=ft.alignment.center,
+                        expand=True,
+                    )
+                )
+                page.update()
+            except:
+                pass
 
-    def _create_stat_card(self, icon, value, label):
-        """Create a statistics card"""
-        return ft.Container(
-            content=ft.Column([
-                ft.Text(icon, size=20),
-                ft.Text(value, size=24, weight=ft.FontWeight.BOLD),
-                ft.Text(label, size=10, color="#CCCCCC"),
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
-            padding=10,
-            bgcolor=self.accent_color,
-            border_radius=10,
-            expand=True,
-        )
-    
     def show_exported_files_simple(self, page: ft.Page):
         """Show exported files with instructions to find them"""
         import os
@@ -11047,16 +11662,31 @@ class StoreApp:
         scroll_content.controls.append(search_field)
         scroll_content.controls.append(ft.Container(height=15))
         
-        debug_sync_btn = ft.ElevatedButton(
-            "🔍 Check Cloud Sync",
-            on_click=lambda e: self.check_cloud_users_direct(page),
-            icon=ft.icons.CLOUD_QUEUE,
-            style=ft.ButtonStyle(bgcolor="#FF9800"),
-        )
-        scroll_content.controls.append(debug_sync_btn)
-        scroll_content.controls.append(ft.Container(height=30))
-
-        # Users list container
+        # Debug buttons
+        debug_row = ft.Row([
+            ft.ElevatedButton(
+                "🐛 Debug Cloud Sync",
+                on_click=lambda e: self.debug_cloud_sync(page),
+                icon=ft.icons.BUG_REPORT,
+                style=ft.ButtonStyle(bgcolor="#9C27B0"),
+            ),
+            ft.ElevatedButton(
+                "🔄 Force Full Sync",
+                on_click=lambda e: self.force_full_sync(page),
+                icon=ft.icons.SYNC,
+                style=ft.ButtonStyle(bgcolor=self.accent_color),
+            ),
+            ft.ElevatedButton(
+                "🔍 Check Cloud Sync",
+                on_click=lambda e: self.check_cloud_users_direct(page),
+                icon=ft.icons.CLOUD_QUEUE,
+                style=ft.ButtonStyle(bgcolor="#FF9800"),
+            ),
+        ], spacing=10)
+        scroll_content.controls.append(debug_row)
+        scroll_content.controls.append(ft.Container(height=15))
+        
+        # ========== DEFINE users_container HERE (BEFORE using it) ==========
         users_container = ft.Column(spacing=10)
         scroll_content.controls.append(users_container)
         scroll_content.controls.append(ft.Container(height=80))
@@ -11450,14 +12080,17 @@ class StoreApp:
                 
                 print(f"✅ User '{user_name}' deleted from local database")
                 
-                # IMPORTANT: Upload changes to cloud
-                # This will upload the remaining users (excluding the deleted one)
-                sync_result = CloudSyncManager.full_sync_to_cloud(company_id)
+                # IMPORTANT: Delete from cloud
+                cloud_result = CloudSyncManager.delete_user_from_cloud(company_id, user_id)
+                print(f"Delete from cloud result: {cloud_result}")
+                
+                # Then sync remaining users to ensure cloud is up to date
+                sync_result = CloudSyncManager.sync_users_to_cloud(company_id)
                 print(f"Sync to cloud result: {sync_result}")
                 
                 page.overlay.clear()
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✓ User '{user_name}' deleted and synced to cloud!"),
+                    ft.Text(f"✓ User '{user_name}' deleted from local and cloud!"),
                     bgcolor=self.success_color,
                     duration=3000
                 )
@@ -11487,6 +12120,7 @@ class StoreApp:
                         ft.Text(f"'{user_name}'?", size=16, weight=ft.FontWeight.BOLD, color=self.danger_color),
                         ft.Container(height=10),
                         ft.Text("This action cannot be undone.", size=12, color="#888888"),
+                        ft.Text("User will also be removed from cloud.", size=12, color=self.warning_color),
                         ft.Container(height=10),
                         ft.Divider(),
                         ft.Row([
