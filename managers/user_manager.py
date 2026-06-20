@@ -1,136 +1,173 @@
 # managers/user_manager.py
+
 import sqlite3
 import hashlib
-import sys
-import os
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import DB_PATH
+from datetime import datetime
 
 class UserManager:
     
-    @classmethod
-    def get_connection(cls):
-        """Get database connection with row_factory"""
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        return conn
-    
-    @classmethod
-    def _row_to_dict(cls, row):
-        """Convert sqlite3.Row to dictionary"""
-        if row is None:
-            return None
-        return {key: row[key] for key in row.keys()}
-    
-    @classmethod
-    def authenticate(cls, email, password):
-        """Authenticate user by email and password"""
-        conn = cls.get_connection()
-        cursor = conn.cursor()
-        
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        cursor.execute("SELECT * FROM users WHERE email = ? AND password_hash = ?", (email, password_hash))
-        row = cursor.fetchone()
-        conn.close()
-        
-        return cls._row_to_dict(row)
-    
-    @classmethod
-    def get_by_id(cls, user_id):
-        """Get user by ID"""
-        conn = cls.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-        row = cursor.fetchone()
-        conn.close()
-        return cls._row_to_dict(row)
-    
-    @classmethod
-    def get_by_email(cls, email):
-        """Get user by email"""
-        conn = cls.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
-        row = cursor.fetchone()
-        conn.close()
-        return cls._row_to_dict(row)
-    
-    @classmethod
-    def get_all(cls):
-        """Get all users"""
-        conn = cls.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users ORDER BY created_at DESC")
-        rows = cursor.fetchall()
-        conn.close()
-        
-        users = []
-        for row in rows:
-            users.append(cls._row_to_dict(row))
-        return users
-    
-    @classmethod
-    def create(cls, name, email, password, role='user'):
-        """Create a new user"""
-        conn = cls.get_connection()
-        cursor = conn.cursor()
-        
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        
+    @staticmethod
+    def create(name, email, password, role='user', company_id=1):
+        """Create a new user with auto-sync"""
         try:
-            cursor.execute("""
-                INSERT INTO users (name, email, password_hash, role)
-                VALUES (?, ?, ?, ?)
-            """, (name, email, password_hash, role))
-            conn.commit()
-            return cursor.lastrowid
-        except sqlite3.IntegrityError:
-            return None
-        finally:
-            conn.close()
-    
-    @classmethod
-    def update(cls, user_id, data):
-        """Update user information"""
-        conn = cls.get_connection()
-        cursor = conn.cursor()
-        
-        try:
-            set_clause = []
-            values = []
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
             
-            allowed_fields = ['name', 'email', 'role', 'is_premium', 'premium_plan', 
-                             'license_key', 'license_expiry', 'trial_mode', 'trial_end_date', 'avatar_path']
-            
-            for field in allowed_fields:
-                if field in data:
-                    set_clause.append(f"{field} = ?")
-                    values.append(data[field])
-            
-            if not set_clause:
+            # Check if email exists
+            cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+            if cursor.fetchone():
+                conn.close()
                 return False
             
-            set_clause.append("updated_at = CURRENT_TIMESTAMP")
+            hashed_password = hashlib.sha256(password.encode()).hexdigest()
+            cursor.execute('''
+                INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (name, email, hashed_password, role, company_id,
+                  datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            conn.commit()
+            conn.close()
+            
+            # ===== AUTO-SYNC AFTER CREATE =====
+            UserManager._auto_sync_users(company_id)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error creating user: {e}")
+            return False
+    
+    @staticmethod
+    def update(user_id, data):
+        """Update a user with auto-sync"""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Get company_id before update
+            cursor.execute("SELECT company_id FROM users WHERE id = ?", (user_id,))
+            result = cursor.fetchone()
+            company_id = result[0] if result else 1
+            
+            # Build update query
+            fields = []
+            values = []
+            
+            for key, value in data.items():
+                if key != 'id' and key != 'company_id':
+                    fields.append(f"{key} = ?")
+                    values.append(value)
+            
             values.append(user_id)
             
-            query = f"UPDATE users SET {', '.join(set_clause)} WHERE id = ?"
+            query = f"UPDATE users SET {', '.join(fields)} WHERE id = ?"
             cursor.execute(query, values)
+            
             conn.commit()
-            return cursor.rowcount > 0
+            conn.close()
+            
+            # ===== AUTO-SYNC AFTER UPDATE =====
+            UserManager._auto_sync_users(company_id)
+            
+            return True
+            
         except Exception as e:
             print(f"Error updating user: {e}")
             return False
-        finally:
-            conn.close()
     
-    @classmethod
-    def delete(cls, email):
-        """Delete user by email"""
-        conn = cls.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM users WHERE email = ?", (email,))
-        conn.commit()
-        success = cursor.rowcount > 0
-        conn.close()
-        return success
+    @staticmethod
+    def delete(user_id):
+        """Delete a user with auto-sync"""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Get company_id before delete
+            cursor.execute("SELECT company_id FROM users WHERE id = ?", (user_id,))
+            result = cursor.fetchone()
+            company_id = result[0] if result else 1
+            
+            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+            conn.close()
+            
+            # ===== AUTO-SYNC AFTER DELETE =====
+            UserManager._auto_sync_users(company_id)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error deleting user: {e}")
+            return False
+    
+    @staticmethod
+    def _auto_sync_users(company_id):
+        """Internal method to auto-sync users to cloud"""
+        try:
+            from main import CloudSyncManager
+            import threading
+            threading.Thread(
+                target=CloudSyncManager.sync_users_full_to_cloud,
+                args=(company_id,),
+                daemon=True
+            ).start()
+            print(f"🔄 Auto-sync triggered for users (company: {company_id})")
+        except Exception as e:
+            print(f"Auto-sync error: {e}")
+    
+    @staticmethod
+    def authenticate(email, password):
+        """Authenticate a user"""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            hashed_password = hashlib.sha256(password.encode()).hexdigest()
+            cursor.execute(
+                "SELECT * FROM users WHERE email = ? AND password_hash = ?",
+                (email, hashed_password)
+            )
+            user = cursor.fetchone()
+            conn.close()
+            
+            return user
+            
+        except Exception as e:
+            print(f"Authentication error: {e}")
+            return None
+    
+    @staticmethod
+    def get_all():
+        """Get all users"""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users ORDER BY name")
+            users = cursor.fetchall()
+            conn.close()
+            return users
+            
+        except Exception as e:
+            print(f"Error getting users: {e}")
+            return []
+    
+    @staticmethod
+    def get_by_id(user_id):
+        """Get a user by ID"""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            user = cursor.fetchone()
+            conn.close()
+            return user
+            
+        except Exception as e:
+            print(f"Error getting user: {e}")
+            return None
+        
