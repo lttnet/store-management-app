@@ -1926,6 +1926,46 @@ class StoreApp:
             "Damaged": "#FF5252",
             "Repaired": "#1976D2",
         }
+        
+    def migrate_add_login_code(self):
+        """Add login_code column to users table"""
+        import sqlite3
+        from database import DB_PATH
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Check if column exists
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            if 'login_code' not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN login_code TEXT")
+                print("✅ Added login_code column to users")
+            
+            if 'code_used' not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN code_used INTEGER DEFAULT 0")
+                print("✅ Added code_used column to users")
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Migration error: {e}")
+            return False
+    
+    def generate_login_code(self, user_id, company_id):
+        """Generate unique login code for user"""
+        import hashlib
+        from datetime import datetime
+        
+        # Create unique code based on user, company, and timestamp
+        raw = f"LOGIN-{user_id}-{company_id}-{datetime.now().isoformat()}"
+        hash_obj = hashlib.sha256(raw.encode())
+        code = hash_obj.hexdigest()[:8].upper()
+        
+        return f"LOGIN-{code}"
 
     def cleanup_deleted_materials(self, page: ft.Page):
         """Force sync to remove deleted materials from cloud"""
@@ -4568,35 +4608,191 @@ class StoreApp:
         dialog.open = True
         page.update()
 
+    def login_with_code(self, page, email, login_code, status_text, loading_indicator,
+                        new_password_field, confirm_password_field):
+        """Login user using code - first time sets password"""
+        
+        import sqlite3
+        import hashlib
+        from database import DB_PATH
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Find user by email and login code
+            cursor.execute("""
+                SELECT id, name, email, role, company_id, login_code, code_used 
+                FROM users 
+                WHERE email = ? AND login_code = ?
+            """, (email, login_code))
+            
+            user = cursor.fetchone()
+            
+            if not user:
+                loading_indicator.visible = False
+                status_text.value = "❌ Invalid email or login code!"
+                status_text.color = self.danger_color
+                page.update()
+                conn.close()
+                return
+            
+            user_id, name, user_email, role, company_id, code, code_used = user
+            
+            # Check if code is already used
+            if code_used == 1:
+                # Code already used, they should login with password
+                loading_indicator.visible = False
+                status_text.value = "❌ This code has already been used. Please login with password."
+                status_text.color = self.danger_color
+                page.update()
+                conn.close()
+                return
+            
+            # Show password setup fields
+            new_password_field.visible = True
+            confirm_password_field.visible = True
+            loading_indicator.visible = False
+            status_text.value = "✅ Code verified! Set your password:"
+            status_text.color = self.success_color
+            page.update()
+            conn.close()
+            
+            # Store user info for password setup
+            self.pending_user = {
+                'id': user_id,
+                'name': name,
+                'email': user_email,
+                'role': role,
+                'company_id': company_id,
+                'login_code': login_code
+            }
+            
+            # Change login button to "Set Password"
+            def set_password(e):
+                self.set_user_password(page, self.pending_user, 
+                                    new_password_field, confirm_password_field,
+                                    status_text, loading_indicator)
+            
+            # Update button
+            for control in page.controls:
+                if isinstance(control, ft.Container):
+                    for child in control.content.controls:
+                        if isinstance(child, ft.Row):
+                            for btn in child.controls:
+                                if isinstance(btn, ft.FilledButton) and btn.text == "Login with Code":
+                                    btn.text = "Set Password"
+                                    btn.on_click = set_password
+                                    break
+            
+            page.update()
+            
+        except Exception as e:
+            loading_indicator.visible = False
+            status_text.value = f"❌ Error: {str(e)[:50]}"
+            status_text.color = self.danger_color
+            page.update()
+            print(f"Login with code error: {e}")
+    def set_user_password(self, page, user_data, new_password_field, confirm_password_field,
+                        status_text, loading_indicator):
+        """Set password for first-time user"""
+        
+        import sqlite3
+        import hashlib
+        from database import DB_PATH
+        
+        new_password = new_password_field.value
+        confirm_password = confirm_password_field.value
+        
+        if not new_password:
+            status_text.value = "❌ Please enter a password!"
+            status_text.color = self.danger_color
+            page.update()
+            return
+        
+        if new_password != confirm_password:
+            status_text.value = "❌ Passwords do not match!"
+            status_text.color = self.danger_color
+            page.update()
+            return
+        
+        if len(new_password) < 4:
+            status_text.value = "❌ Password must be at least 4 characters!"
+            status_text.color = self.danger_color
+            page.update()
+            return
+        
+        loading_indicator.visible = True
+        status_text.value = "🔄 Setting password..."
+        status_text.color = self.accent_color
+        page.update()
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Update password and mark code as used
+            hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
+            cursor.execute("""
+                UPDATE users 
+                SET password_hash = ?, code_used = 1 
+                WHERE id = ?
+            """, (hashed_password, user_data['id']))
+            
+            conn.commit()
+            conn.close()
+            
+            # ===== SYNC TO CLOUD =====
+            def sync_user():
+                try:
+                    CloudSyncManager.sync_users_full_to_cloud(user_data['company_id'])
+                    print(f"✅ User '{user_data['name']}' password updated and synced")
+                except Exception as e:
+                    print(f"Sync error: {e}")
+            
+            import threading
+            threading.Thread(target=sync_user, daemon=True).start()
+            
+            loading_indicator.visible = False
+            
+            # Login user
+            self.current_user = {
+                'id': user_data['id'],
+                'name': user_data['name'],
+                'email': user_data['email'],
+                'role': user_data['role'],
+                'company_id': user_data['company_id']
+            }
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✅ Welcome {user_data['name']}! Password set."),
+                bgcolor=self.success_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            # Auto-sync
+            self.auto_sync_on_start(page)
+            
+            # Navigate to dashboard
+            self.show_dashboard(page)
+            
+        except Exception as e:
+            loading_indicator.visible = False
+            status_text.value = f"❌ Error setting password: {str(e)[:50]}"
+            status_text.color = self.danger_color
+            page.update()
+            print(f"Set password error: {e}")
+
     def show_login(self, page: ft.Page):
-        """Login screen with Demo button - COMPLETE VERSION"""
+        """Login screen with Code Login option - COMPLETE FIXED VERSION"""
         page.controls.clear()
+        self.page_ref = page
         
-        # Ensure demo users exist
-        self.ensure_demo_users()
-        
-        field_width = 280
-        
-        email_field = ft.TextField(
-            label="Email", 
-            hint_text="your@email.com", 
-            width=field_width, 
-            bgcolor="#2C2C2C", 
-            border_color=self.accent_color,
-            text_size=14,
-        )
-        password_field = ft.TextField(
-            label="Password", 
-            hint_text="••••••••", 
-            password=True, 
-            can_reveal_password=True, 
-            width=field_width, 
-            bgcolor="#2C2C2C", 
-            border_color=self.accent_color,
-            text_size=14,
-        )
-        status_text = ft.Text("", color="red", size=12)
-        loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
+        # ============================================================
+        # STEP 1: Define Helper Functions FIRST
+        # ============================================================
         
         def create_default_admin():
             """Create default admin if no users exist"""
@@ -4635,8 +4831,10 @@ class StoreApp:
                         ''')
                     
                     # Create default company
-                    cursor.execute("INSERT INTO companies (name, created_at) VALUES (?, ?)", 
-                                ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    cursor.execute(
+                        "INSERT INTO companies (name, created_at) VALUES (?, ?)",
+                        ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                    )
                     company_id = cursor.lastrowid
                     
                     # Create admin user
@@ -4661,15 +4859,284 @@ class StoreApp:
                     except:
                         pass
                 conn.close()
+                return True
+                
             except Exception as e:
                 print(f"Error creating default admin: {e}")
                 import traceback
                 traceback.print_exc()
+                return False
         
-        def authenticate_user(email, password):
-            """Authenticate user and handle login"""
+        def ensure_demo_users():
+            """Ensure demo users exist in database"""
+            import sqlite3
+            import hashlib
+            from database import DB_PATH
+            from datetime import datetime
+            
             try:
-                user = UserManager.authenticate(email, password)
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                
+                # Check if users table exists
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+                if not cursor.fetchone():
+                    print("Users table doesn't exist, initializing database...")
+                    conn.close()
+                    init_database()
+                    conn = sqlite3.connect(DB_PATH)
+                    cursor = conn.cursor()
+                
+                # Check if companies table exists
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
+                if not cursor.fetchone():
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS companies (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL,
+                            created_at TEXT
+                        )
+                    ''')
+                
+                # Check if demo company exists
+                cursor.execute("SELECT id FROM companies WHERE name = 'Demo Company'")
+                company = cursor.fetchone()
+                
+                if company:
+                    company_id = company[0]
+                else:
+                    cursor.execute(
+                        "INSERT INTO companies (name, created_at) VALUES (?, ?)",
+                        ('Demo Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                    )
+                    company_id = cursor.lastrowid
+                
+                # Check if demo users exist
+                demo_emails = ['demo@store.com', 'manager@store.com', 'user@store.com']
+                existing_users = 0
+                
+                for email in demo_emails:
+                    cursor.execute("SELECT COUNT(*) FROM users WHERE email = ?", (email,))
+                    count = cursor.fetchone()[0]
+                    if count > 0:
+                        existing_users += 1
+                
+                if existing_users < 3:
+                    print(f"⚠️ Found {existing_users}/3 demo users. Recreating...")
+                    
+                    # Delete existing demo users
+                    for email in demo_emails:
+                        cursor.execute("DELETE FROM users WHERE email = ?", (email,))
+                    
+                    # Create demo users
+                    demo_users = [
+                        ('Demo Admin', 'demo@store.com', 'demo123', 'admin'),
+                        ('Demo Manager', 'manager@store.com', 'demo123', 'manager'),
+                        ('Demo User', 'user@store.com', 'demo123', 'user'),
+                    ]
+                    
+                    for name, email, password, role in demo_users:
+                        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+                        cursor.execute('''
+                            INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        ''', (name, email, hashed_password, role, company_id, 
+                            datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    
+                    conn.commit()
+                    print("✅ Demo users recreated successfully!")
+                else:
+                    print("✅ All 3 demo users exist")
+                
+                conn.close()
+                return True
+                
+            except Exception as e:
+                print(f"Error ensuring demo users: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
+        
+        def login_with_code(email, login_code):
+            """Login user using code - first time sets password"""
+            import sqlite3
+            from database import DB_PATH
+            
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                
+                # Find user by email and login code
+                cursor.execute("""
+                    SELECT id, name, email, role, company_id, login_code, code_used 
+                    FROM users 
+                    WHERE email = ? AND login_code = ?
+                """, (email, login_code))
+                
+                user = cursor.fetchone()
+                
+                if not user:
+                    loading_indicator.visible = False
+                    status_text.value = "❌ Invalid email or login code!"
+                    status_text.color = self.danger_color
+                    page.update()
+                    conn.close()
+                    return False
+                
+                user_id, name, user_email, role, company_id, code, code_used = user
+                
+                # Check if code is already used
+                if code_used == 1:
+                    loading_indicator.visible = False
+                    status_text.value = "❌ This code has already been used. Please login with password."
+                    status_text.color = self.danger_color
+                    page.update()
+                    conn.close()
+                    return False
+                
+                # Show password setup fields
+                new_password_field.visible = True
+                confirm_password_field.visible = True
+                loading_indicator.visible = False
+                status_text.value = "✅ Code verified! Set your password:"
+                status_text.color = self.success_color
+                page.update()
+                conn.close()
+                
+                # Store user info for password setup
+                self.pending_user = {
+                    'id': user_id,
+                    'name': name,
+                    'email': user_email,
+                    'role': role,
+                    'company_id': company_id,
+                    'login_code': login_code
+                }
+                
+                # Change login button to "Set Password"
+                login_btn.text = "Set Password"
+                login_btn.on_click = lambda e: set_password()
+                page.update()
+                return True
+                
+            except Exception as e:
+                loading_indicator.visible = False
+                status_text.value = f"❌ Error: {str(e)[:50]}"
+                status_text.color = self.danger_color
+                page.update()
+                print(f"Login with code error: {e}")
+                return False
+        
+        def set_password():
+            """Set password for first-time user"""
+            import sqlite3
+            import hashlib
+            from database import DB_PATH
+            
+            new_password = new_password_field.value
+            confirm_password = confirm_password_field.value
+            
+            if not new_password:
+                status_text.value = "❌ Please enter a password!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            if new_password != confirm_password:
+                status_text.value = "❌ Passwords do not match!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            if len(new_password) < 4:
+                status_text.value = "❌ Password must be at least 4 characters!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            loading_indicator.visible = True
+            status_text.value = "🔄 Setting password..."
+            status_text.color = self.accent_color
+            page.update()
+            
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                
+                # Update password and mark code as used
+                hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
+                cursor.execute("""
+                    UPDATE users 
+                    SET password_hash = ?, code_used = 1 
+                    WHERE id = ?
+                """, (hashed_password, self.pending_user['id']))
+                
+                conn.commit()
+                conn.close()
+                
+                # ===== SYNC TO CLOUD =====
+                def sync_user():
+                    try:
+                        CloudSyncManager.sync_users_full_to_cloud(self.pending_user['company_id'])
+                        print(f"✅ User '{self.pending_user['name']}' password updated and synced")
+                    except Exception as e:
+                        print(f"Sync error: {e}")
+                
+                import threading
+                threading.Thread(target=sync_user, daemon=True).start()
+                
+                loading_indicator.visible = False
+                
+                # Login user
+                self.current_user = {
+                    'id': self.pending_user['id'],
+                    'name': self.pending_user['name'],
+                    'email': self.pending_user['email'],
+                    'role': self.pending_user['role'],
+                    'company_id': self.pending_user['company_id']
+                }
+                
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"✅ Welcome {self.pending_user['name']}! Password set."),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+                page.snack_bar.open = True
+                page.update()
+                
+                # Auto-sync
+                self.auto_sync_on_start(page)
+                
+                # Navigate to dashboard
+                self.show_dashboard(page)
+                
+            except Exception as e:
+                loading_indicator.visible = False
+                status_text.value = f"❌ Error setting password: {str(e)[:50]}"
+                status_text.color = self.danger_color
+                page.update()
+                print(f"Set password error: {e}")
+        
+        def login_with_password(email, password):
+            """Login with email and password"""
+            import hashlib
+            
+            try:
+                hashed_password = hashlib.sha256(password.encode()).hexdigest()
+                
+                import sqlite3
+                from database import DB_PATH
+                
+                conn = sqlite3.connect(DB_PATH)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                cursor.execute(
+                    "SELECT * FROM users WHERE email = ? AND password_hash = ?",
+                    (email, hashed_password)
+                )
+                user = cursor.fetchone()
+                conn.close()
                 
                 if user:
                     user_dict = dict(user)
@@ -4680,7 +5147,7 @@ class StoreApp:
                     
                     loading_indicator.visible = False
                     
-                    # Check demo status for company 1
+                    # Check demo status
                     if company_id == 1:
                         days_left = DemoManager.get_demo_days_left(company_id)
                         if days_left == 0:
@@ -4689,9 +5156,6 @@ class StoreApp:
                                 bgcolor=self.danger_color,
                                 duration=5000
                             )
-                            page.snack_bar.open = True
-                            page.update()
-                            return False
                         elif days_left <= 5:
                             page.snack_bar = ft.SnackBar(
                                 ft.Text(f"⚠️ Your trial ends in {days_left} days! Purchase to continue."),
@@ -4727,51 +5191,165 @@ class StoreApp:
                     page.update()
                     return False
                     
-            except Exception as ex:
+            except Exception as e:
                 loading_indicator.visible = False
-                status_text.value = f"Error: {str(ex)[:50]}"
+                status_text.value = f"Error: {str(e)[:50]}"
                 status_text.color = self.danger_color
                 page.update()
-                print(f"Login error: {ex}")
-                import traceback
-                traceback.print_exc()
+                print(f"Login error: {e}")
                 return False
+        
+        # ============================================================
+        # STEP 2: Create UI Elements
+        # ============================================================
+        
+        field_width = 280
+        
+        email_field = ft.TextField(
+            label="Email", 
+            hint_text="your@email.com", 
+            width=field_width, 
+            bgcolor="#2C2C2C", 
+            border_color=self.accent_color,
+            text_size=14,
+        )
+        password_field = ft.TextField(
+            label="Password", 
+            hint_text="••••••••", 
+            password=True, 
+            can_reveal_password=True, 
+            width=field_width, 
+            bgcolor="#2C2C2C", 
+            border_color=self.accent_color,
+            text_size=14,
+        )
+        
+        login_code_field = ft.TextField(
+            label="Login Code", 
+            hint_text="Enter code from admin (e.g., LOGIN-XXXXXX)", 
+            width=field_width, 
+            bgcolor="#2C2C2C", 
+            border_color=self.accent_color,
+            text_size=14,
+            prefix_icon=ft.icons.VERIFIED,
+        )
+        
+        new_password_field = ft.TextField(
+            label="Set Password (first time)", 
+            hint_text="Choose your password", 
+            password=True, 
+            can_reveal_password=True, 
+            width=field_width, 
+            bgcolor="#2C2C2C", 
+            border_color=self.accent_color,
+            text_size=14,
+            visible=False,
+        )
+        confirm_password_field = ft.TextField(
+            label="Confirm Password", 
+            hint_text="Re-enter password", 
+            password=True, 
+            can_reveal_password=True, 
+            width=field_width, 
+            bgcolor="#2C2C2C", 
+            border_color=self.accent_color,
+            text_size=14,
+            visible=False,
+        )
+        
+        status_text = ft.Text("", color="red", size=12)
+        loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
+        
+        # ============================================================
+        # STEP 3: Define Login Mode and Handlers
+        # ============================================================
+        
+        login_mode = "code"  # "code" or "password"
+        
+        def toggle_login_mode(e):
+            nonlocal login_mode
+            if login_mode == "code":
+                login_mode = "password"
+                login_mode_btn.text = "🔑 Use Login Code"
+                login_code_field.visible = False
+                password_field.visible = True
+                new_password_field.visible = False
+                confirm_password_field.visible = False
+                login_btn.text = "Login with Password"
+            else:
+                login_mode = "code"
+                login_mode_btn.text = "🔐 Use Password"
+                login_code_field.visible = True
+                password_field.visible = False
+                new_password_field.visible = False
+                confirm_password_field.visible = False
+                login_btn.text = "Login with Code"
+            page.update()
         
         def on_login(e):
             email = email_field.value.strip()
-            password = password_field.value
             
-            if not email or not password:
-                status_text.value = "Please enter email and password!"
+            if not email:
+                status_text.value = "Please enter email!"
                 status_text.color = self.danger_color
                 page.update()
                 return
             
-            loading_indicator.visible = True
-            status_text.value = "🔄 Authenticating..."
-            status_text.color = self.accent_color
-            page.update()
-            
-            # Run authentication in background to not block UI
-            import threading
-            def do_auth():
-                authenticate_user(email, password)
-            
-            threading.Thread(target=do_auth, daemon=True).start()
+            if login_mode == "code":
+                login_code = login_code_field.value.strip().upper()
+                
+                if not login_code:
+                    status_text.value = "Please enter login code!"
+                    status_text.color = self.danger_color
+                    page.update()
+                    return
+                
+                if not login_code.startswith('LOGIN-'):
+                    status_text.value = "Invalid login code format!"
+                    status_text.color = self.danger_color
+                    page.update()
+                    return
+                
+                loading_indicator.visible = True
+                status_text.value = "🔄 Verifying code..."
+                status_text.color = self.accent_color
+                page.update()
+                
+                # Try to login with code
+                login_with_code(email, login_code)
+            else:
+                password = password_field.value
+                
+                if not password:
+                    status_text.value = "Please enter password!"
+                    status_text.color = self.danger_color
+                    page.update()
+                    return
+                
+                loading_indicator.visible = True
+                status_text.value = "🔄 Authenticating..."
+                status_text.color = self.accent_color
+                page.update()
+                
+                login_with_password(email, password)
         
         def on_demo_login(e):
             """Auto-login with demo credentials"""
-            # Ensure demo users exist first
-            self.ensure_demo_users()
+            ensure_demo_users()
             
-            # Set credentials
             email_field.value = "demo@store.com"
             password_field.value = "demo123"
+            login_mode = "password"
+            login_code_field.visible = False
+            password_field.visible = True
+            new_password_field.visible = False
+            confirm_password_field.visible = False
+            login_btn.text = "Login with Password"
+            login_mode_btn.text = "🔑 Use Login Code"
             status_text.value = "🔄 Logging in with demo account..."
             status_text.color = self.accent_color
             page.update()
             
-            # Trigger login
             on_login(e)
         
         def on_register(e):
@@ -4780,15 +5358,37 @@ class StoreApp:
         def on_forgot_password(e):
             self.show_forgot_password_dialog(page)
         
+        # ============================================================
+        # STEP 4: Initialize Database and Build UI
+        # ============================================================
+        
         # Create default admin and demo data
         create_default_admin()
-        self.ensure_demo_users()
+        ensure_demo_users()
         
         # Load logo
         logo_exists = os.path.exists(logo_path)
         logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=60)
         
-        # ===== MAIN LOGIN LAYOUT =====
+        # Login mode toggle button
+        login_mode_btn = ft.TextButton(
+            "🔐 Use Password",
+            on_click=toggle_login_mode,
+            style=ft.ButtonStyle(color=self.accent_color),
+        )
+        
+        # Login button
+        login_btn = ft.FilledButton(
+            "Login with Code", 
+            width=180, 
+            height=45, 
+            on_click=on_login,
+            style=ft.ButtonStyle(
+                bgcolor=self.accent_color,
+                color="white",
+            ),
+        )
+        
         main_layout = ft.Column([
             ft.Text("Welcome", size=28, weight=ft.FontWeight.BOLD, color=self.text_color),
             ft.Text("Sign in to manage your inventory", size=13, color="#AAAAAA"),
@@ -4796,37 +5396,34 @@ class StoreApp:
             ft.Container(width=50, height=2, bgcolor=self.accent_color, border_radius=1),
             ft.Container(height=20),
             
-            # Email field
             email_field,
             ft.Container(height=15),
             
-            # Password field
             password_field,
-            ft.Container(height=15),
+            ft.Container(height=10),
             
-            # Status and loading
+            login_code_field,
+            ft.Container(height=10),
+            
+            new_password_field,
+            ft.Container(height=5),
+            confirm_password_field,
+            ft.Container(height=10),
+            
             ft.Row([status_text, loading_indicator], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
             ft.Container(height=10),
             
-            # Sign In button with logo
             ft.Row([
                 logo,
                 ft.Container(width=20),
-                ft.FilledButton(
-                    "Sign In", 
-                    width=140, 
-                    height=45, 
-                    on_click=on_login,
-                    style=ft.ButtonStyle(
-                        bgcolor=self.accent_color,
-                        color="white",
-                    ),
-                ),
+                login_btn,
             ], alignment=ft.MainAxisAlignment.CENTER),
+            
+            ft.Container(height=5),
+            login_mode_btn,
             
             ft.Divider(height=20, color="#3C3C3C"),
             
-            # Register and Forgot Password
             ft.Row([
                 ft.TextButton("Create Account", on_click=on_register, style=ft.ButtonStyle(color=self.success_color)),
                 ft.TextButton("Forgot Password?", on_click=on_forgot_password, style=ft.ButtonStyle(color="#888888")),
@@ -4834,18 +5431,13 @@ class StoreApp:
             
             ft.Divider(height=10, color="#3C3C3C"),
             
-            # ===== DEMO SECTION =====
             ft.Text("🚀 Try Demo", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
             ft.Row([
                 ft.ElevatedButton(
                     "▶️ Demo Login",
                     on_click=on_demo_login,
                     icon=ft.icons.PLAY_ARROW,
-                    style=ft.ButtonStyle(
-                        bgcolor="#4CAF50", 
-                        color="white",
-                        padding=10,
-                    ),
+                    style=ft.ButtonStyle(bgcolor="#4CAF50", color="white", padding=10),
                     expand=True,
                 ),
             ], alignment=ft.MainAxisAlignment.CENTER),
@@ -4853,14 +5445,12 @@ class StoreApp:
                 ft.Text("Email: demo@store.com", size=10, color="#888888"),
                 ft.Text("Password: demo123", size=10, color="#888888"),
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
-            # ===== END DEMO SECTION =====
             
             ft.Container(height=10),
             ft.Text("💡 Default admin: admin@store.com / admin123", size=10, color="#888888", selectable=True),
             ft.Text("💡 Demo credentials: demo@store.com / demo123", size=10, color="#888888", selectable=True),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
         
-        # Login card
         login_card = ft.Container(
             content=main_layout, 
             padding=40, 
@@ -4869,20 +5459,17 @@ class StoreApp:
             width=500,
         )
         
-        # Center the login card
         centered_login = ft.Container(
             content=login_card, 
             alignment=ft.alignment.center, 
             expand=True,
         )
         
-        # Background image if exists
         bg_image = ft.Image(
             src=background_path, 
             fit=ft.ImageFit.COVER
         ) if os.path.exists(background_path) else None
         
-        # Layout with or without background
         if bg_image:
             page.add(ft.Stack([bg_image, centered_login], expand=True))
         else:
@@ -4890,7 +5477,71 @@ class StoreApp:
         
         self.current_view = "login"
         page.update()
+    def create_default_admin(self):
+        """Create default admin if no users exist"""
+        import sqlite3
+        import hashlib
+        from database import DB_PATH
+        from datetime import datetime
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Check if users table exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if not cursor.fetchone():
+                print("Users table doesn't exist, initializing database...")
+                conn.close()
+                init_database()
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+            
+            # Check if any users exist
+            cursor.execute("SELECT COUNT(*) FROM users")
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                # Check if companies table exists
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
+                if not cursor.fetchone():
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS companies (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL,
+                            created_at TEXT
+                        )
+                    ''')
+                
+                # Create default company
+                cursor.execute(
+                    "INSERT INTO companies (name, created_at) VALUES (?, ?)",
+                    ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                )
+                company_id = cursor.lastrowid
+                
+                # Create admin user
+                hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
+                cursor.execute("""
+                    INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id,
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                conn.commit()
+                print("✅ Created default admin: admin@store.com / admin123")
+                
+                return True
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"Error creating default admin: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
+    
+    
     def animate_card_update(self, container, old_cards, new_cards):
         """Smoothly animate card updates"""
         
@@ -14971,9 +15622,100 @@ class StoreApp:
         
         # Add prefix for readability
         return f"INV-{code}"
+    
+    def show_login_code_dialog(self, page: ft.Page, login_code, email, name, company_id):
+        """Show login code dialog after user creation"""
+        
+        def copy_code(e):
+            page.set_clipboard(login_code)
+            page.snack_bar = ft.SnackBar(
+                ft.Text("✓ Login code copied!"),
+                bgcolor=self.success_color,
+                duration=2000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
+        def copy_all(e):
+            message = f"""🏢 Company: {self.current_user.get('company_name', 'My Store')}
+    👤 User: {name}
+    📧 Email: {email}
+    🔑 Login Code: {login_code}
+
+    How to login:
+    1. Download the Store Management App
+    2. Enter your Email
+    3. Enter the Login Code above
+    4. Choose your password
+    5. Start using the app!"""
+            
+            page.set_clipboard(message)
+            page.snack_bar = ft.SnackBar(
+                ft.Text("✓ All info copied!"),
+                bgcolor=self.success_color,
+                duration=2000
+            )
+            page.snack_bar.open = True
+            page.update()
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text("✅ User Created", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ]),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text(f"User: {name}", size=14, weight=ft.FontWeight.BOLD),
+                    ft.Text(f"Email: {email}", size=13, color="#888888"),
+                    ft.Divider(),
+                    ft.Text("🔑 Login Code:", size=13, weight=ft.FontWeight.BOLD),
+                    ft.Container(
+                        content=ft.Text(login_code, size=22, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                        padding=15,
+                        bgcolor="#2C2C2C",
+                        border_radius=8,
+                        alignment=ft.alignment.center,
+                    ),
+                    ft.Text("Share this code with the user", size=11, color="#888888"),
+                    ft.Row([
+                        ft.ElevatedButton(
+                            "📋 Copy Code",
+                            on_click=copy_code,
+                            icon=ft.icons.CONTENT_COPY,
+                            expand=True,
+                        ),
+                        ft.ElevatedButton(
+                            "📋 Copy All",
+                            on_click=copy_all,
+                            icon=ft.icons.CONTENT_COPY,
+                            expand=True,
+                            style=ft.ButtonStyle(bgcolor=self.accent_color),
+                        ),
+                    ], spacing=10),
+                    ft.Divider(),
+                    ft.Text("How to login:", size=12, weight=ft.FontWeight.BOLD),
+                    ft.Text("1. Download the Store Management App", size=10, color="#888888"),
+                    ft.Text("2. Click 'Login with Code' on the login screen", size=10, color="#888888"),
+                    ft.Text("3. Enter your email and the code above", size=10, color="#888888"),
+                    ft.Text("4. Set your password", size=10, color="#888888"),
+                    ft.Text("5. Start using the app!", size=10, color="#888888"),
+                ], spacing=10),
+                width=450,
+                height=520,
+                padding=20,
+            ),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
 
     def open_add_user_modal(self, page: ft.Page):
-        """Open modal for adding new user with invite code display"""
+        """Admin creates user with login code - NO registration needed"""
         
         name_field = ft.TextField(
             label="Full Name *", 
@@ -15022,51 +15764,69 @@ class StoreApp:
                 page.update()
                 return
             
-            # Get company_id from current user
             company_id = self.current_user.get('company_id', 1) if self.current_user else 1
             
-            # Generate a temporary password
+            # Generate login code
             import random
             import string
-            temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+            import hashlib
+            from datetime import datetime
             
-            # Create user
-            result = UserManager.create(
-                name=name,
-                email=email,
-                password=temp_password,
-                role=role,
-                company_id=company_id
+            # Create user with temporary password (will be reset by user)
+            temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+            hashed_password = hashlib.sha256(temp_password.encode()).hexdigest()
+            
+            # Generate unique login code
+            login_code = self.generate_login_code(
+                int(datetime.now().timestamp()), 
+                company_id
             )
             
-            if result:
-                # Generate invite code
-                invite_code = self.generate_invite_code(result, company_id)
-                
-                # ===== SYNC TO CLOUD =====
-                def sync_user():
-                    try:
-                        CloudSyncManager.sync_users_full_to_cloud(company_id)
-                        print(f"✅ User '{name}' synced to cloud")
-                    except Exception as e:
-                        print(f"Sync error: {e}")
-                
-                import threading
-                threading.Thread(target=sync_user, daemon=True).start()
-                
-                page.overlay.clear()
-                
-                # Show invite code dialog
-                self.show_invite_code_dialog(page, invite_code, email, name, temp_password)
-                
-                page.update()
-                
-                # Refresh users
-                self.show_users(page)
-            else:
-                status_text.value = "❌ Error: Email already exists!"
+            import sqlite3
+            from database import DB_PATH
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Check if email exists
+            cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+            if cursor.fetchone():
+                status_text.value = "❌ Email already exists!"
                 status_text.color = self.danger_color
                 page.update()
+                conn.close()
+                return
+            
+            # Create user with login code
+            cursor.execute('''
+                INSERT INTO users 
+                (name, email, password_hash, role, company_id, login_code, code_used, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (name, email, hashed_password, role, company_id, 
+                login_code, 0, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            user_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            
+            # ===== SYNC TO CLOUD =====
+            def sync_user():
+                try:
+                    CloudSyncManager.sync_users_full_to_cloud(company_id)
+                    print(f"✅ User '{name}' synced to cloud")
+                except Exception as e:
+                    print(f"Sync error: {e}")
+            
+            import threading
+            threading.Thread(target=sync_user, daemon=True).start()
+            
+            page.overlay.clear()
+            
+            # Show login code dialog
+            self.show_login_code_dialog(page, login_code, email, name, company_id)
+            
+            page.update()
+            self.show_users(page)
         
         modal = ft.Container(
             content=ft.Card(
@@ -15079,6 +15839,7 @@ class StoreApp:
                             email_field,
                             role_field,
                             status_text,
+                            ft.Text("User will receive a unique login code", size=11, color="#888888"),
                         ], spacing=12),
                         ft.Divider(),
                         ft.Row([
@@ -15706,25 +16467,46 @@ class StoreApp:
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
             
-            # Check if demo users exist
-            cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'demo@store.com'")
-            count = cursor.fetchone()[0]
-            
-            if count == 0:
-                print("Demo users not found, creating them...")
-                
-                # Create demo company if needed
-                cursor.execute("SELECT id FROM companies WHERE name = 'Demo Company'")
-                company = cursor.fetchone()
-                
-                if company:
-                    company_id = company[0]
-                else:
-                    cursor.execute(
-                        "INSERT INTO companies (name, created_at) VALUES (?, ?)",
-                        ('Demo Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            # Check if companies table exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
+            if not cursor.fetchone():
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS companies (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        created_at TEXT
                     )
-                    company_id = cursor.lastrowid
+                ''')
+            
+            # Check if demo company exists
+            cursor.execute("SELECT id FROM companies WHERE name = 'Demo Company'")
+            company = cursor.fetchone()
+            
+            if company:
+                company_id = company[0]
+            else:
+                cursor.execute(
+                    "INSERT INTO companies (name, created_at) VALUES (?, ?)",
+                    ('Demo Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                )
+                company_id = cursor.lastrowid
+            
+            # Check if demo users exist
+            demo_emails = ['demo@store.com', 'manager@store.com', 'user@store.com']
+            existing_users = 0
+            
+            for email in demo_emails:
+                cursor.execute("SELECT COUNT(*) FROM users WHERE email = ?", (email,))
+                count = cursor.fetchone()[0]
+                if count > 0:
+                    existing_users += 1
+            
+            if existing_users < 3:
+                print(f"⚠️ Found {existing_users}/3 demo users. Recreating...")
+                
+                # Delete existing demo users
+                for email in demo_emails:
+                    cursor.execute("DELETE FROM users WHERE email = ?", (email,))
                 
                 # Create demo users
                 demo_users = [
@@ -15742,14 +16524,18 @@ class StoreApp:
                         datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
                 
                 conn.commit()
-                print("✅ Demo users created successfully!")
+                print("✅ Demo users recreated successfully!")
+            else:
+                print("✅ All 3 demo users exist")
             
             conn.close()
+            return True
             
         except Exception as e:
             print(f"Error ensuring demo users: {e}")
             import traceback
             traceback.print_exc()
+            return False
 
     def recreate_demo_users(self, page: ft.Page):
         """Recreate demo users if they're missing"""
