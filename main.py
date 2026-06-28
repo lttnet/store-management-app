@@ -15579,7 +15579,9 @@ class StoreApp:
         return f"INV-{code}"
     
     def show_login_code_dialog(self, page: ft.Page, login_code, email, name, company_id):
-        """Show login code dialog after user creation"""
+        """Show login code dialog - MOBILE FRIENDLY VERSION"""
+        
+        is_mobile = page.width < 800 if page.width else False
         
         def copy_code(e):
             page.set_clipboard(login_code)
@@ -15601,7 +15603,7 @@ class StoreApp:
     1. Download the Store Management App
     2. Enter your Email
     3. Enter the Login Code above
-    4. Choose your password
+    4. Set your password
     5. Start using the app!"""
             
             page.set_clipboard(message)
@@ -15617,51 +15619,114 @@ class StoreApp:
             page.dialog.open = False
             page.update()
         
-        dialog = ft.AlertDialog(
-            title=ft.Row([
-                ft.Text("✅ User Created", size=18, weight=ft.FontWeight.BOLD, expand=True),
+        # ===== MOBILE-FRIENDLY SIZES =====
+        if is_mobile:
+            dialog_width = page.width - 20 if page.width else 340
+            code_font_size = 18
+            title_size = 16
+            padding_size = 12
+        else:
+            dialog_width = 450
+            code_font_size = 22
+            title_size = 18
+            padding_size = 20
+        
+        # ===== DIALOG CONTENT =====
+        content = ft.Column([
+            # Header
+            ft.Row([
+                ft.Text("✅ User Created", size=title_size, weight=ft.FontWeight.BOLD, expand=True),
                 ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
             ]),
+            
+            ft.Divider(),
+            
+            # User info
+            ft.Text(f"User: {name}", size=14, weight=ft.FontWeight.BOLD),
+            ft.Text(f"Email: {email}", size=12, color="#888888"),
+            
+            ft.Divider(),
+            
+            # Login Code (highlighted)
+            ft.Text("🔑 Login Code:", size=13, weight=ft.FontWeight.BOLD),
+            ft.Container(
+                content=ft.Text(login_code, size=code_font_size, weight=ft.FontWeight.BOLD, color=self.accent_color),
+                padding=12,
+                bgcolor="#2C2C2C",
+                border_radius=8,
+                alignment=ft.alignment.center,
+            ),
+            
+            ft.Text("Share this code with the user", size=10, color="#888888"),
+            
+            # Buttons
+            ft.Row([
+                ft.ElevatedButton(
+                    "📋 Copy Code",
+                    on_click=copy_code,
+                    icon=ft.icons.CONTENT_COPY,
+                    expand=True,
+                    style=ft.ButtonStyle(padding=10),
+                ),
+                ft.ElevatedButton(
+                    "📋 Copy All",
+                    on_click=copy_all,
+                    icon=ft.icons.CONTENT_COPY,
+                    expand=True,
+                    style=ft.ButtonStyle(bgcolor=self.accent_color, padding=10),
+                ),
+            ], spacing=8),
+            
+            ft.Divider(),
+            
+            # Instructions
+            ft.Text("📱 How to login:", size=12, weight=ft.FontWeight.BOLD),
+            ft.Text("1. Open the app", size=10, color="#888888"),
+            ft.Text("2. Enter your email", size=10, color="#888888"),
+            ft.Text("3. Enter the login code above", size=10, color="#888888"),
+            ft.Text("4. Set your password", size=10, color="#888888"),
+            
+            # Share buttons (mobile-friendly)
+            ft.Row([
+                ft.IconButton(
+                    icon=ft.icons.CHAT,
+                    icon_size=28,
+                    icon_color="#25D366",
+                    on_click=lambda e: page.launch_url(f"https://wa.me/?text=Join%20our%20company!%20Login%20Code:%20{login_code}%20Email:%20{email}"),
+                    tooltip="Share on WhatsApp",
+                ),
+                ft.IconButton(
+                    icon=ft.icons.EMAIL,
+                    icon_size=28,
+                    icon_color="#D44638",
+                    on_click=lambda e: page.launch_url(f"mailto:{email}?subject=Invite%20to%20company&body=Login%20Code:%20{login_code}"),
+                    tooltip="Share via Email",
+                ),
+                ft.IconButton(
+                    icon=ft.icons.MESSAGE,
+                    icon_size=28,
+                    icon_color="#34B7F1",
+                    on_click=lambda e: page.launch_url(f"sms:?body=Join%20our%20company!%20Login%20Code:%20{login_code}"),
+                    tooltip="Share via SMS",
+                ),
+                ft.IconButton(
+                    icon=ft.icons.CONTENT_COPY,
+                    icon_size=28,
+                    icon_color=self.accent_color,
+                    on_click=copy_code,
+                    tooltip="Copy Code",
+                ),
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=15),
+        ], spacing=8, scroll=ft.ScrollMode.AUTO if is_mobile else None)
+        
+        # ===== CREATE DIALOG =====
+        dialog = ft.AlertDialog(
+            title=ft.Text(""),
             content=ft.Container(
-                content=ft.Column([
-                    ft.Text(f"User: {name}", size=14, weight=ft.FontWeight.BOLD),
-                    ft.Text(f"Email: {email}", size=13, color="#888888"),
-                    ft.Divider(),
-                    ft.Text("🔑 Login Code:", size=13, weight=ft.FontWeight.BOLD),
-                    ft.Container(
-                        content=ft.Text(login_code, size=22, weight=ft.FontWeight.BOLD, color=self.accent_color),
-                        padding=15,
-                        bgcolor="#2C2C2C",
-                        border_radius=8,
-                        alignment=ft.alignment.center,
-                    ),
-                    ft.Text("Share this code with the user", size=11, color="#888888"),
-                    ft.Row([
-                        ft.ElevatedButton(
-                            "📋 Copy Code",
-                            on_click=copy_code,
-                            icon=ft.icons.CONTENT_COPY,
-                            expand=True,
-                        ),
-                        ft.ElevatedButton(
-                            "📋 Copy All",
-                            on_click=copy_all,
-                            icon=ft.icons.CONTENT_COPY,
-                            expand=True,
-                            style=ft.ButtonStyle(bgcolor=self.accent_color),
-                        ),
-                    ], spacing=10),
-                    ft.Divider(),
-                    ft.Text("How to login:", size=12, weight=ft.FontWeight.BOLD),
-                    ft.Text("1. Download the Store Management App", size=10, color="#888888"),
-                    ft.Text("2. Click 'Login with Code' on the login screen", size=10, color="#888888"),
-                    ft.Text("3. Enter your email and the code above", size=10, color="#888888"),
-                    ft.Text("4. Set your password", size=10, color="#888888"),
-                    ft.Text("5. Start using the app!", size=10, color="#888888"),
-                ], spacing=10),
-                width=450,
-                height=520,
-                padding=20,
+                content=content,
+                width=dialog_width,
+                height=500 if is_mobile else 520,
+                padding=padding_size,
             ),
         )
         
@@ -15707,7 +15772,6 @@ class StoreApp:
             email = email_field.value.strip()
             role = role_field.value
             
-            # Validation
             if not name:
                 status_text.value = "❌ Please enter name!"
                 status_text.color = self.danger_color
@@ -15722,7 +15786,6 @@ class StoreApp:
             
             company_id = self.current_user.get('company_id', 1) if self.current_user else 1
             
-            # Generate random password
             import random
             import string
             import hashlib
@@ -15753,34 +15816,27 @@ class StoreApp:
                     conn.close()
                     return
                 
-                # ===== CHECK IF COLUMNS EXIST =====
+                # Check if columns exist
                 cursor.execute("PRAGMA table_info(users)")
                 columns = [col[1] for col in cursor.fetchall()]
                 has_login_code = 'login_code' in columns
                 has_code_used = 'code_used' in columns
                 
-                print(f"📋 Columns: {columns}")
-                print(f"Has login_code: {has_login_code}, Has code_used: {has_code_used}")
-                
-                # ===== INSERT USER =====
+                # Insert user
                 if has_login_code and has_code_used:
-                    # Insert with login code columns
                     cursor.execute('''
                         INSERT INTO users 
                         (name, email, password_hash, role, company_id, login_code, code_used, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (name, email, hashed_password, role, company_id, 
                         login_code, 0, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                    print(f"✅ User created with login_code: {login_code}")
                 else:
-                    # Fallback: insert without login code
                     cursor.execute('''
                         INSERT INTO users 
                         (name, email, password_hash, role, company_id, created_at)
                         VALUES (?, ?, ?, ?, ?, ?)
                     ''', (name, email, hashed_password, role, company_id, 
                         datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                    print(f"✅ User created without login_code")
                 
                 user_id = cursor.lastrowid
                 conn.commit()
@@ -15797,11 +15853,18 @@ class StoreApp:
                 import threading
                 threading.Thread(target=sync_user, daemon=True).start()
                 
+                # ===== CLOSE MODAL =====
                 page.overlay.clear()
                 
-                # Show success with login code (if available)
+                # ===== SHOW LOGIN CODE DIALOG =====
                 if has_login_code and has_code_used:
-                    self.show_login_code_dialog(page, login_code, email, name, company_id)
+                    # Use a small delay to ensure modal is closed
+                    def show_dialog():
+                        import time
+                        time.sleep(0.3)
+                        self.show_login_code_dialog(page, login_code, email, name, company_id)
+                    
+                    threading.Thread(target=show_dialog, daemon=True).start()
                 else:
                     page.snack_bar = ft.SnackBar(
                         ft.Text(f"✅ User '{name}' created successfully!"),
