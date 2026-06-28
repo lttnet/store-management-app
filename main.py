@@ -1967,51 +1967,6 @@ class StoreApp:
         
         return f"LOGIN-{code}"
 
-    def cleanup_deleted_materials(self, page: ft.Page):
-        """Force sync to remove deleted materials from cloud"""
-        company_id = self.current_user.get('company_id', 1) if self.current_user else 1
-        
-        loading = LoadingOverlay(page)
-        loading.show("🧹 Cleaning up deleted materials...")
-        
-        def do_cleanup():
-            try:
-                # Upload materials (this will delete cloud items not in local)
-                result = CloudSyncManager.full_sync_materials_to_cloud(company_id)
-                
-                loading.hide()
-                
-                if result:
-                    page.snack_bar = ft.SnackBar(
-                        ft.Text("✅ Cleanup complete! Deleted materials removed from cloud."),
-                        bgcolor=self.success_color,
-                        duration=3000
-                    )
-                else:
-                    page.snack_bar = ft.SnackBar(
-                        ft.Text("⚠️ Cleanup had issues. Check logs."),
-                        bgcolor=self.warning_color,
-                        duration=3000
-                    )
-                page.snack_bar.open = True
-                page.update()
-                
-                self.show_materials_screen(page)
-                
-            except Exception as e:
-                loading.hide()
-                print(f"Cleanup error: {e}")
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"❌ Cleanup error: {str(e)[:50]}"),
-                    bgcolor=self.danger_color,
-                    duration=3000
-                )
-                page.snack_bar.open = True
-                page.update()
-        
-        import threading
-        threading.Thread(target=do_cleanup, daemon=True).start()
-
     def test_upload_material(self, page: ft.Page, material_id):
         """Test upload a single material to debug"""
         company_id = self.current_user.get('company_id', 1) if self.current_user else 1
@@ -15715,7 +15670,7 @@ class StoreApp:
         page.update()
 
     def open_add_user_modal(self, page: ft.Page):
-        """Admin creates user with login code - NO registration needed"""
+        """Open modal for adding new user - FIXED VERSION"""
         
         name_field = ft.TextField(
             label="Full Name *", 
@@ -15752,6 +15707,7 @@ class StoreApp:
             email = email_field.value.strip()
             role = role_field.value
             
+            # Validation
             if not name:
                 status_text.value = "❌ Please enter name!"
                 status_text.color = self.danger_color
@@ -15766,17 +15722,16 @@ class StoreApp:
             
             company_id = self.current_user.get('company_id', 1) if self.current_user else 1
             
-            # Generate login code
+            # Generate random password
             import random
             import string
             import hashlib
             from datetime import datetime
             
-            # Create user with temporary password (will be reset by user)
             temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
             hashed_password = hashlib.sha256(temp_password.encode()).hexdigest()
             
-            # Generate unique login code
+            # Generate login code
             login_code = self.generate_login_code(
                 int(datetime.now().timestamp()), 
                 company_id
@@ -15785,48 +15740,87 @@ class StoreApp:
             import sqlite3
             from database import DB_PATH
             
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            # Check if email exists
-            cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-            if cursor.fetchone():
-                status_text.value = "❌ Email already exists!"
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                
+                # Check if email exists
+                cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+                if cursor.fetchone():
+                    status_text.value = "❌ Email already exists!"
+                    status_text.color = self.danger_color
+                    page.update()
+                    conn.close()
+                    return
+                
+                # ===== CHECK IF COLUMNS EXIST =====
+                cursor.execute("PRAGMA table_info(users)")
+                columns = [col[1] for col in cursor.fetchall()]
+                has_login_code = 'login_code' in columns
+                has_code_used = 'code_used' in columns
+                
+                print(f"📋 Columns: {columns}")
+                print(f"Has login_code: {has_login_code}, Has code_used: {has_code_used}")
+                
+                # ===== INSERT USER =====
+                if has_login_code and has_code_used:
+                    # Insert with login code columns
+                    cursor.execute('''
+                        INSERT INTO users 
+                        (name, email, password_hash, role, company_id, login_code, code_used, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (name, email, hashed_password, role, company_id, 
+                        login_code, 0, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    print(f"✅ User created with login_code: {login_code}")
+                else:
+                    # Fallback: insert without login code
+                    cursor.execute('''
+                        INSERT INTO users 
+                        (name, email, password_hash, role, company_id, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (name, email, hashed_password, role, company_id, 
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    print(f"✅ User created without login_code")
+                
+                user_id = cursor.lastrowid
+                conn.commit()
+                conn.close()
+                
+                # ===== SYNC TO CLOUD =====
+                def sync_user():
+                    try:
+                        CloudSyncManager.sync_users_full_to_cloud(company_id)
+                        print(f"✅ User '{name}' synced to cloud")
+                    except Exception as e:
+                        print(f"Sync error: {e}")
+                
+                import threading
+                threading.Thread(target=sync_user, daemon=True).start()
+                
+                page.overlay.clear()
+                
+                # Show success with login code (if available)
+                if has_login_code and has_code_used:
+                    self.show_login_code_dialog(page, login_code, email, name, company_id)
+                else:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✅ User '{name}' created successfully!"),
+                        bgcolor=self.success_color,
+                        duration=3000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+                
+                # Refresh users list
+                self.show_users(page)
+                
+            except Exception as e:
+                print(f"❌ Error creating user: {e}")
+                import traceback
+                traceback.print_exc()
+                status_text.value = f"❌ Error: {str(e)[:50]}"
                 status_text.color = self.danger_color
                 page.update()
-                conn.close()
-                return
-            
-            # Create user with login code
-            cursor.execute('''
-                INSERT INTO users 
-                (name, email, password_hash, role, company_id, login_code, code_used, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (name, email, hashed_password, role, company_id, 
-                login_code, 0, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-            
-            user_id = cursor.lastrowid
-            conn.commit()
-            conn.close()
-            
-            # ===== SYNC TO CLOUD =====
-            def sync_user():
-                try:
-                    CloudSyncManager.sync_users_full_to_cloud(company_id)
-                    print(f"✅ User '{name}' synced to cloud")
-                except Exception as e:
-                    print(f"Sync error: {e}")
-            
-            import threading
-            threading.Thread(target=sync_user, daemon=True).start()
-            
-            page.overlay.clear()
-            
-            # Show login code dialog
-            self.show_login_code_dialog(page, login_code, email, name, company_id)
-            
-            page.update()
-            self.show_users(page)
         
         modal = ft.Container(
             content=ft.Card(
@@ -15839,7 +15833,6 @@ class StoreApp:
                             email_field,
                             role_field,
                             status_text,
-                            ft.Text("User will receive a unique login code", size=11, color="#888888"),
                         ], spacing=12),
                         ft.Divider(),
                         ft.Row([
