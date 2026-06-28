@@ -1,98 +1,67 @@
-# firebase_config.py - Mock only, no Firebase installation needed
+# firebase_config.py - Add this new file
+
 import os
 import json
-from datetime import datetime
+from firebase_admin import credentials, auth, initialize_app
 
-class MockFirestore:
-    """Mock Firestore - saves data locally as JSON file"""
+class FirebaseAuth:
+    """Firebase Authentication for Google Sign-In"""
     
     def __init__(self):
-        self.data = {}
-        self.sync_file = "mock_cloud_data.json"
-        self._load_data()
-        print(f"📁 Mock cloud storage: {self.sync_file}")
+        self.app = None
+        self._initialize_firebase()
     
-    def _load_data(self):
-        if os.path.exists(self.sync_file):
-            try:
-                with open(self.sync_file, 'r') as f:
-                    self.data = json.load(f)
-            except:
-                self.data = {'companies': {}}
-        else:
-            self.data = {'companies': {}}
+    def _initialize_firebase(self):
+        """Initialize Firebase Admin SDK"""
+        try:
+            # Try to get credentials from environment (GitHub Actions)
+            if os.environ.get('FIREBASE_CREDENTIALS'):
+                cred_dict = json.loads(os.environ.get('FIREBASE_CREDENTIALS'))
+                cred = credentials.Certificate(cred_dict)
+                self.app = initialize_app(cred)
+                print("✅ Firebase initialized from environment")
+                return
+            
+            # Fallback: use service account file
+            cred_path = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
+            if os.path.exists(cred_path):
+                cred = credentials.Certificate(cred_path)
+                self.app = initialize_app(cred)
+                print("✅ Firebase initialized from serviceAccountKey.json")
+                return
+            
+            print("⚠️ Firebase credentials not found")
+            
+        except Exception as e:
+            print(f"Firebase initialization error: {e}")
     
-    def _save_data(self):
-        with open(self.sync_file, 'w') as f:
-            json.dump(self.data, f, indent=2)
+    def verify_google_token(self, id_token):
+        """Verify Google ID token"""
+        try:
+            if not self.app:
+                return None
+            decoded_token = auth.verify_id_token(id_token)
+            return decoded_token
+        except Exception as e:
+            print(f"Token verification error: {e}")
+            return None
     
-    def collection(self, name):
-        return MockCollection(self, name)
-
-class MockCollection:
-    def __init__(self, db, name):
-        self.db = db
-        self.name = name
-    
-    def document(self, doc_id):
-        return MockDocument(self.db, self.name, doc_id)
-    
-    def stream(self):
-        docs = []
-        if self.name in self.db.data:
-            for doc_id, data in self.db.data[self.name].items():
-                docs.append(MockDocumentSnapshot(doc_id, data))
-        return docs
-
-class MockDocument:
-    def __init__(self, db, collection_name, doc_id):
-        self.db = db
-        self.collection_name = collection_name
-        self.doc_id = str(doc_id)
-    
-    def set(self, data):
-        if self.collection_name not in self.db.data:
-            self.db.data[self.collection_name] = {}
-        self.db.data[self.collection_name][self.doc_id] = data
-        self.db._save_data()
-    
-    def collection(self, name):
-        return MockCollection(self.db, f"{self.collection_name}/{self.doc_id}/{name}")
-
-class MockDocumentSnapshot:
-    def __init__(self, doc_id, data):
-        self.id = doc_id
-        self._data = data
-    
-    def to_dict(self):
-        return self._data
-    
-    def exists(self):
-        return self._data is not None
-
-class FirebaseConfig:
-    _instance = None
-    db = None
-    is_initialized = True
-    using_mock = True
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(FirebaseConfig, cls).__new__(cls)
-            cls._instance._initialize()
-        return cls._instance
-    
-    def _initialize(self):
-        self.db = MockFirestore()
-        print("✅ Mock Firebase ready (no installation needed)")
-    
-    def get_db(self):
-        return self.db
-    
-    def is_ready(self):
-        return True
-    
-    def is_mock(self):
-        return True
-
-firebase = FirebaseConfig()
+    def create_user(self, email, name, uid=None):
+        """Create a user in Firebase Auth"""
+        try:
+            if not self.app:
+                return None
+            
+            user_args = {
+                'email': email,
+                'display_name': name,
+                'email_verified': True
+            }
+            if uid:
+                user_args['uid'] = uid
+            
+            user = auth.create_user(**user_args)
+            return user
+        except Exception as e:
+            print(f"Create user error: {e}")
+            return None
