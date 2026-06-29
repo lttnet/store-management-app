@@ -5339,9 +5339,127 @@ class StoreApp:
     def google_sign_in(self, page: ft.Page):
         """Handle Google Sign-In flow"""
         self.show_google_signin_dialog(page)
+
+    def start_free_trial_demo(self, page: ft.Page, status_text=None, loading_indicator=None):
+        """Start free trial with demo account"""
         
+        # Ensure demo users exist
+        self.ensure_demo_users()
+        
+        # Use demo credentials
+        email = "demo@store.com"
+        password = "demo123"
+        
+        if status_text:
+            status_text.value = "🔄 Starting your free trial..."
+            status_text.color = self.accent_color
+            page.update()
+        
+        # Authenticate
+        user = UserManager.authenticate(email, password)
+        
+        if user:
+            user_dict = dict(user)
+            company_id = user_dict.get('company_id', 1)
+            user_dict['company_id'] = company_id
+            
+            self.current_user = user_dict
+            
+            # Check if trial is active
+            if company_id == 1:
+                days_left = DemoManager.get_demo_days_left(company_id)
+                if days_left == 0:
+                    if status_text:
+                        status_text.value = "⚠️ Your 30-day trial has expired! Please enter activation code."
+                        status_text.color = self.danger_color
+                        page.update()
+                    return
+            
+            if status_text:
+                status_text.value = ""
+                page.update()
+            
+            if loading_indicator:
+                loading_indicator.visible = False
+                page.update()
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✅ Welcome {user_dict.get('name', 'User')}! Your 30-day trial has started."),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            self.auto_sync_on_start(page)
+            self.show_dashboard(page)
+        else:
+            if status_text:
+                status_text.value = "❌ Trial start failed. Please try again."
+                status_text.color = self.danger_color
+                page.update()
+                
+    def start_free_trial_demo(self, page: ft.Page, status_text=None, loading_indicator=None):
+        """Start free trial with demo account"""
+        
+        # Ensure demo users exist
+        self.ensure_demo_users()
+        
+        # Use demo credentials
+        email = "demo@store.com"
+        password = "demo123"
+        
+        if status_text:
+            status_text.value = "🔄 Starting your free trial..."
+            status_text.color = self.accent_color
+            page.update()
+        
+        # Authenticate
+        user = UserManager.authenticate(email, password)
+        
+        if user:
+            user_dict = dict(user)
+            company_id = user_dict.get('company_id', 1)
+            user_dict['company_id'] = company_id
+            
+            self.current_user = user_dict
+            
+            # Check if trial is active (company 1 is demo company)
+            if company_id == 1:
+                days_left = DemoManager.get_demo_days_left(company_id)
+                if days_left == 0:
+                    if status_text:
+                        status_text.value = "⚠️ Your 30-day trial has expired! Please enter activation code."
+                        status_text.color = self.danger_color
+                        page.update()
+                    return
+            
+            if status_text:
+                status_text.value = ""
+                page.update()
+            
+            if loading_indicator:
+                loading_indicator.visible = False
+                page.update()
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✅ Welcome {user_dict.get('name', 'User')}! Your 30-day trial has started."),
+                bgcolor=self.success_color,
+                duration=4000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            self.auto_sync_on_start(page)
+            self.show_dashboard(page)
+        else:
+            if status_text:
+                status_text.value = "❌ Trial start failed. Please try again."
+                status_text.color = self.danger_color
+                page.update()
+
     def show_login(self, page: ft.Page):
-        """Login screen with Google Sign-In, Trial, and Login Code support"""
+        """Login screen with Start Free Trial button and Google Sign-In"""
         page.controls.clear()
         self.page_ref = page
         
@@ -5371,7 +5489,28 @@ class StoreApp:
         # STEP 1: CREATE ALL UI ELEMENTS
         # ============================================================
         
-        # Google Sign-In Button
+        # ===== START FREE TRIAL BUTTON - CORRECTED =====
+        trial_btn = ft.ElevatedButton(
+            "🚀 Start 30-Day Free Trial",
+            on_click=lambda e: self.start_free_trial_demo(page),
+            icon=ft.icons.PLAY_ARROW,
+            style=ft.ButtonStyle(
+                bgcolor="#4CAF50",
+                color="white",
+                padding=15,
+            ),
+            width=field_width,
+            height=55,
+        )
+        
+        trial_subtext = ft.Text(
+            "No credit card required • 30 days full access",
+            size=11,
+            color="#888888",
+            text_align=ft.TextAlign.CENTER,
+        )
+        
+        # ===== GOOGLE SIGN-IN BUTTON =====
         google_btn = ft.ElevatedButton(
             "Sign in with Google",
             on_click=lambda e: self.show_google_signin_dialog(page),
@@ -5385,7 +5524,7 @@ class StoreApp:
             height=50,
         )
         
-        # Email Field
+        # ===== EMAIL FIELD =====
         email_field = ft.TextField(
             label="Email", 
             hint_text="your@email.com", 
@@ -5395,7 +5534,7 @@ class StoreApp:
             text_size=14,
         )
         
-        # Password Field
+        # ===== PASSWORD FIELD =====
         password_field = ft.TextField(
             label="Password", 
             hint_text="••••••••", 
@@ -5407,7 +5546,7 @@ class StoreApp:
             text_size=14,
         )
         
-        # Login Code Field
+        # ===== LOGIN CODE FIELD =====
         login_code_field = ft.TextField(
             label="Login Code", 
             hint_text="Enter code from admin (e.g., LOGIN-XXXXXX)", 
@@ -5418,7 +5557,7 @@ class StoreApp:
             prefix_icon=ft.icons.VERIFIED,
         )
         
-        # New Password Fields (for first-time login with code)
+        # ===== NEW PASSWORD FIELDS =====
         new_password_field = ft.TextField(
             label="Set Password (first time)", 
             hint_text="Choose your password", 
@@ -5442,7 +5581,7 @@ class StoreApp:
             visible=False,
         )
         
-        # Activation Code Field
+        # ===== ACTIVATION CODE FIELD =====
         activation_field = ft.TextField(
             label="Activation Code", 
             hint_text="Enter code to activate full access", 
@@ -5453,37 +5592,22 @@ class StoreApp:
             prefix_icon=ft.icons.VERIFIED,
         )
         
-        # Status and Loading
+        # ===== STATUS AND LOADING =====
         status_text = ft.Text("", color="red", size=12)
         loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
         
-        # Trial Banner
-        trial_banner = ft.Container(
-            content=ft.Row([
-                ft.Icon(ft.icons.INFO_OUTLINE, color="#FF9800", size=20),
-                ft.Text("Try 30 days free! No credit card required.", size=13, color="#FF9800"),
-            ], spacing=8),
-            padding=10,
-            bgcolor="#2C2C2C",
-            border_radius=8,
-            margin=ft.margin.only(bottom=15),
-        )
+        # ============================================================
+        # STEP 2: CREATE LOGIN MODE AND BUTTONS
+        # ============================================================
         
-        # ===== LOGIN MODE =====
         login_mode = "code"  # "code" or "password"
         
-        # ============================================================
-        # STEP 2: CREATE BUTTONS
-        # ============================================================
-        
-        # Login mode toggle button
         login_mode_btn = ft.TextButton(
             "🔐 Use Password",
             on_click=None,
             style=ft.ButtonStyle(color=self.accent_color),
         )
         
-        # Login button
         login_btn = ft.FilledButton(
             "Login with Code",
             width=140,
@@ -5498,6 +5622,10 @@ class StoreApp:
         # ============================================================
         # STEP 3: DEFINE ALL FUNCTIONS
         # ============================================================
+        
+        def start_free_trial(e):
+            """Start free trial with demo account"""
+            self.start_free_trial_demo(page, status_text, loading_indicator)
         
         def login_with_password(email, password):
             """Login with email and password"""
@@ -5522,7 +5650,6 @@ class StoreApp:
                     company_id = user_dict.get('company_id', 1)
                     user_dict['company_id'] = company_id
                     
-                    # Check if trial is active
                     if user_dict.get('account_type') == 'trial':
                         days_left = DemoManager.get_trial_days_left(user_dict['id'])
                         if days_left == 0:
@@ -5567,7 +5694,6 @@ class StoreApp:
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
                 
-                # Check if login_code column exists
                 cursor.execute("PRAGMA table_info(users)")
                 columns = [col[1] for col in cursor.fetchall()]
                 
@@ -5579,7 +5705,6 @@ class StoreApp:
                     page.update()
                     return False
                 
-                # Find user by email and login code
                 cursor.execute("""
                     SELECT id, name, email, role, company_id, login_code, code_used 
                     FROM users 
@@ -5598,7 +5723,6 @@ class StoreApp:
                 
                 user_id, name, user_email, role, company_id, code, code_used = user
                 
-                # Check if code is already used
                 if code_used == 1:
                     conn.close()
                     loading_indicator.visible = False
@@ -5607,7 +5731,6 @@ class StoreApp:
                     page.update()
                     return False
                 
-                # Show password setup fields
                 new_password_field.visible = True
                 confirm_password_field.visible = True
                 loading_indicator.visible = False
@@ -5616,7 +5739,6 @@ class StoreApp:
                 page.update()
                 conn.close()
                 
-                # Store user info for password setup
                 self.pending_user = {
                     'id': user_id,
                     'name': name,
@@ -5626,7 +5748,6 @@ class StoreApp:
                     'login_code': login_code
                 }
                 
-                # Change login button to "Set Password"
                 login_btn.text = "Set Password"
                 login_btn.on_click = lambda e: set_password()
                 page.update()
@@ -5683,7 +5804,6 @@ class StoreApp:
                 conn.commit()
                 conn.close()
                 
-                # Sync to cloud
                 def sync_user():
                     try:
                         CloudSyncManager.sync_users_full_to_cloud(self.pending_user['company_id'])
@@ -5696,7 +5816,6 @@ class StoreApp:
                 
                 loading_indicator.visible = False
                 
-                # Login user
                 self.current_user = {
                     'id': self.pending_user['id'],
                     'name': self.pending_user['name'],
@@ -5784,13 +5903,10 @@ class StoreApp:
             status_text.color = self.accent_color
             page.update()
             
-            # Verify activation code
             company_id, message = ActivationManager.verify_activation_code(activation_code)
             
             if company_id:
-                # Check if user is logged in
                 if self.current_user:
-                    # Activate the current user
                     success, msg = DemoManager.activate_account(self.current_user['id'], activation_code)
                     if success:
                         loading_indicator.visible = False
@@ -5804,13 +5920,11 @@ class StoreApp:
                         self.show_dashboard(page)
                         return
                 
-                # If not logged in, show company setup
                 loading_indicator.visible = False
                 status_text.value = "✅ Code verified! Please login or create account."
                 status_text.color = self.success_color
                 page.update()
                 
-                # Store activation code for later
                 self.pending_activation = activation_code
                 
             else:
@@ -5844,7 +5958,6 @@ class StoreApp:
             email_field.value = "demo@store.com"
             password_field.value = "demo123"
             
-            # Switch to password mode
             nonlocal login_mode
             login_mode = "password"
             login_code_field.visible = False
@@ -5884,36 +5997,43 @@ class StoreApp:
             ft.Text("Sign in to manage your inventory", size=13, color="#AAAAAA"),
             ft.Container(height=10),
             
-            # Trial Banner
-            trial_banner,
-            
-            # Google Sign-In
-            google_btn,
-            ft.Container(height=10),
+            ft.Container(
+                content=ft.Column([
+                    trial_btn,
+                    ft.Container(height=5),
+                    trial_subtext,
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+                bgcolor="#1A3A1A",
+                padding=15,
+                border_radius=10,
+                margin=ft.margin.only(bottom=10),
+            ),
             
             ft.Divider(height=10, color="#3C3C3C"),
             ft.Text("or", size=12, color="#888888"),
             ft.Divider(height=10, color="#3C3C3C"),
             
-            # Email
+            google_btn,
+            ft.Container(height=10),
+            
+            ft.Divider(height=10, color="#3C3C3C"),
+            ft.Text("or sign in with email", size=12, color="#888888"),
+            ft.Divider(height=10, color="#3C3C3C"),
+            
             email_field,
             ft.Container(height=10),
             
-            # Password (visible based on mode)
             password_field,
             ft.Container(height=10),
             
-            # Login Code (visible based on mode)
             login_code_field,
             ft.Container(height=10),
             
-            # New Password fields (first time login)
             new_password_field,
             ft.Container(height=5),
             confirm_password_field,
             ft.Container(height=10),
             
-            # Activation Code
             activation_field,
             ft.Container(height=5),
             
@@ -5946,8 +6066,6 @@ class StoreApp:
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
             
             ft.Divider(height=10, color="#3C3C3C"),
-            
-            # Demo Section
             ft.Text("🚀 Try Demo", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
             ft.Row([
                 ft.ElevatedButton(
@@ -5970,7 +6088,7 @@ class StoreApp:
             ft.Container(height=10),
             ft.Text("💡 Default admin: admin@store.com / admin123", size=10, color="#888888", selectable=True),
             ft.Text("💡 Demo credentials: demo@store.com / demo123", size=10, color="#888888", selectable=True),
-            ft.Text("💡 Try 30 days free with Google Sign-In", size=10, color="#888888"),
+            ft.Text("💡 Try 30 days free with the green button above", size=10, color="#888888"),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
         
         login_card = ft.Container(
