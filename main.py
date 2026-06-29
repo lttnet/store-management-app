@@ -1929,7 +1929,131 @@ class StoreApp:
         }
 
         self.migrate_add_login_code()
+        self.ensure_database_setup()
+
+    def ensure_database_setup(self):
+        """Ensure database has all required tables and columns"""
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime
         
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Create companies table if not exists
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS companies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    created_at TEXT
+                )
+            ''')
+            
+            # Create users table if not exists
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    role TEXT DEFAULT 'user',
+                    company_id INTEGER DEFAULT 1,
+                    login_code TEXT,
+                    code_used INTEGER DEFAULT 0,
+                    account_type TEXT DEFAULT 'trial',
+                    trial_end_date TEXT,
+                    google_uid TEXT,
+                    created_at TEXT,
+                    updated_at TEXT
+                )
+            ''')
+            
+            # Create categories table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS categories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    icon TEXT,
+                    user_id INTEGER,
+                    created_at TEXT
+                )
+            ''')
+            
+            # Create materials table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS materials (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    category_id INTEGER,
+                    quantity INTEGER DEFAULT 0,
+                    quality TEXT DEFAULT 'New',
+                    location_ids TEXT,
+                    size TEXT,
+                    length REAL,
+                    colors TEXT,
+                    notes TEXT,
+                    barcode_value TEXT,
+                    image_path TEXT,
+                    company_id INTEGER DEFAULT 1,
+                    created_at TEXT,
+                    updated_at TEXT
+                )
+            ''')
+            
+            # Create accessories table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS accessories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    category_id INTEGER,
+                    quantity INTEGER DEFAULT 0,
+                    price REAL DEFAULT 0,
+                    quality TEXT DEFAULT 'New',
+                    location TEXT,
+                    notes TEXT,
+                    barcode_value TEXT,
+                    image_path TEXT,
+                    company_id INTEGER DEFAULT 1,
+                    created_at TEXT,
+                    updated_at TEXT
+                )
+            ''')
+            
+            # Check if any company exists
+            cursor.execute("SELECT COUNT(*) FROM companies")
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                # Create default company
+                cursor.execute(
+                    "INSERT INTO companies (name, created_at) VALUES (?, ?)",
+                    ('My Store', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                )
+                company_id = cursor.lastrowid
+                
+                # Create default admin
+                import hashlib
+                hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
+                cursor.execute("""
+                    INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id,
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                
+                conn.commit()
+                print("✅ Created default company and admin user")
+            
+            conn.commit()
+            conn.close()
+            
+            print("✅ Database setup complete")
+            
+        except Exception as e:
+            print(f"Database setup error: {e}")
+            import traceback
+            traceback.print_exc()
+
     def migrate_add_login_code(self):
         """Add login_code and code_used columns to users table"""
         try:
@@ -3682,9 +3806,68 @@ class StoreApp:
                     self.show_barcode_scanner(page)
         
         page.on_resize = on_resize
-        
+           # ===== ENSURE DATABASE IS SETUP =====
+        self.ensure_database_setup()
         init_database()
         self.show_login(page)
+        page.update()
+        
+    def debug_database(self, page: ft.Page):
+        """Debug database state on mobile"""
+        import sqlite3
+        from database import DB_PATH
+        
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Check tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = cursor.fetchall()
+        
+        message = "📊 DATABASE TABLES\n"
+        message += "=" * 30 + "\n"
+        for table in tables:
+            message += f"  {table[0]}\n"
+        
+        # Check companies
+        cursor.execute("SELECT COUNT(*) FROM companies")
+        company_count = cursor.fetchone()[0]
+        message += f"\n🏢 Companies: {company_count}\n"
+        
+        if company_count > 0:
+            cursor.execute("SELECT id, name FROM companies")
+            companies = cursor.fetchall()
+            for c in companies:
+                message += f"  ID:{c[0]} - {c[1]}\n"
+        
+        # Check users
+        cursor.execute("SELECT COUNT(*) FROM users")
+        user_count = cursor.fetchone()[0]
+        message += f"\n👤 Users: {user_count}\n"
+        
+        if user_count > 0:
+            cursor.execute("SELECT id, name, email, role FROM users LIMIT 5")
+            users = cursor.fetchall()
+            for u in users:
+                message += f"  ID:{u[0]} - {u[1]} ({u[2]}) - {u[3]}\n"
+        
+        conn.close()
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text("Database Debug", size=18, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                content=ft.Text(message, size=11, font_family="monospace", selectable=True),
+                width=400,
+                height=400,
+                padding=20,
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.ElevatedButton("Fix Database", on_click=lambda e: self.ensure_database_setup()),
+            ],
+        )
+        page.dialog = dialog
+        dialog.open = True
         page.update()
 
     def is_mobile(self, page: ft.Page):
@@ -5398,7 +5581,7 @@ class StoreApp:
                 status_text.value = "❌ Trial start failed. Please try again."
                 status_text.color = self.danger_color
                 page.update()
-                
+
     def start_free_trial_demo(self, page: ft.Page, status_text=None, loading_indicator=None):
         """Start free trial with demo account"""
         
@@ -5459,40 +5642,110 @@ class StoreApp:
                 page.update()
 
     def show_login(self, page: ft.Page):
-        """Login screen with Start Free Trial button and Google Sign-In"""
+        """Login screen with Start Free Trial button and Google Sign-In - MOBILE READY"""
         page.controls.clear()
         self.page_ref = page
         
-        # ===== CHECK IF ANY COMPANY EXISTS =====
+        # ============================================================
+        # STEP 1: CHECK/ CREATE DEFAULT COMPANY
+        # ============================================================
         import sqlite3
         from database import DB_PATH
+        from datetime import datetime
         
         has_company = False
+        
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
+            
+            # Check if companies table exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
+            if not cursor.fetchone():
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS companies (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        created_at TEXT
+                    )
+                ''')
+                conn.commit()
+            
+            # Check if any company exists
             cursor.execute("SELECT COUNT(*) FROM companies")
             count = cursor.fetchone()[0]
-            has_company = count > 0
+            
+            if count == 0:
+                # Create default company
+                cursor.execute(
+                    "INSERT INTO companies (name, created_at) VALUES (?, ?)",
+                    ('My Store', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                )
+                company_id = cursor.lastrowid
+                conn.commit()
+                
+                # Create default admin user
+                import hashlib
+                hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
+                
+                # Check if users table exists
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+                if not cursor.fetchone():
+                    cursor.execute('''
+                        CREATE TABLE IF NOT EXISTS users (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL,
+                            email TEXT UNIQUE NOT NULL,
+                            password_hash TEXT NOT NULL,
+                            role TEXT DEFAULT 'user',
+                            company_id INTEGER DEFAULT 1,
+                            login_code TEXT,
+                            code_used INTEGER DEFAULT 0,
+                            account_type TEXT DEFAULT 'trial',
+                            trial_end_date TEXT,
+                            google_uid TEXT,
+                            created_at TEXT,
+                            updated_at TEXT
+                        )
+                    ''')
+                
+                cursor.execute("""
+                    INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id,
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                conn.commit()
+                
+                has_company = True
+                print("✅ Created default company and admin user on mobile")
+            else:
+                has_company = True
+            
             conn.close()
-        except:
-            pass
+        except Exception as e:
+            print(f"Error checking company: {e}")
+            has_company = False
         
         # ===== IF NO COMPANY, SHOW FIRST-TIME SETUP =====
         if not has_company:
             self.show_first_time_setup(page)
             return
         
-        field_width = 320
+        # ============================================================
+        # STEP 2: CHECK MOBILE
+        # ============================================================
+        is_mobile = page.width < 800 if page.width else False
         
         # ============================================================
-        # STEP 1: CREATE ALL UI ELEMENTS
+        # STEP 3: CREATE ALL UI ELEMENTS
         # ============================================================
         
-        # ===== START FREE TRIAL BUTTON - CORRECTED =====
+        field_width = 320 if not is_mobile else (page.width - 40 if page.width else 300)
+        
+        # ===== START FREE TRIAL BUTTON =====
         trial_btn = ft.ElevatedButton(
             "🚀 Start 30-Day Free Trial",
-            on_click=lambda e: self.start_free_trial_demo(page),
+            on_click=lambda e: self.start_free_trial_demo(page, status_text, loading_indicator),
             icon=ft.icons.PLAY_ARROW,
             style=ft.ButtonStyle(
                 bgcolor="#4CAF50",
@@ -5597,7 +5850,7 @@ class StoreApp:
         loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
         
         # ============================================================
-        # STEP 2: CREATE LOGIN MODE AND BUTTONS
+        # STEP 4: CREATE LOGIN MODE AND BUTTONS
         # ============================================================
         
         login_mode = "code"  # "code" or "password"
@@ -5610,7 +5863,7 @@ class StoreApp:
         
         login_btn = ft.FilledButton(
             "Login with Code",
-            width=140,
+            width=140 if not is_mobile else 120,
             height=45,
             on_click=None,
             style=ft.ButtonStyle(
@@ -5620,12 +5873,8 @@ class StoreApp:
         )
         
         # ============================================================
-        # STEP 3: DEFINE ALL FUNCTIONS
+        # STEP 5: DEFINE ALL FUNCTIONS
         # ============================================================
-        
-        def start_free_trial(e):
-            """Start free trial with demo account"""
-            self.start_free_trial_demo(page, status_text, loading_indicator)
         
         def login_with_password(email, password):
             """Login with email and password"""
@@ -5650,6 +5899,7 @@ class StoreApp:
                     company_id = user_dict.get('company_id', 1)
                     user_dict['company_id'] = company_id
                     
+                    # Check if trial is active
                     if user_dict.get('account_type') == 'trial':
                         days_left = DemoManager.get_trial_days_left(user_dict['id'])
                         if days_left == 0:
@@ -5694,6 +5944,7 @@ class StoreApp:
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
                 
+                # Check if login_code column exists
                 cursor.execute("PRAGMA table_info(users)")
                 columns = [col[1] for col in cursor.fetchall()]
                 
@@ -5705,6 +5956,7 @@ class StoreApp:
                     page.update()
                     return False
                 
+                # Find user by email and login code
                 cursor.execute("""
                     SELECT id, name, email, role, company_id, login_code, code_used 
                     FROM users 
@@ -5723,6 +5975,7 @@ class StoreApp:
                 
                 user_id, name, user_email, role, company_id, code, code_used = user
                 
+                # Check if code is already used
                 if code_used == 1:
                     conn.close()
                     loading_indicator.visible = False
@@ -5731,6 +5984,7 @@ class StoreApp:
                     page.update()
                     return False
                 
+                # Show password setup fields
                 new_password_field.visible = True
                 confirm_password_field.visible = True
                 loading_indicator.visible = False
@@ -5739,6 +5993,7 @@ class StoreApp:
                 page.update()
                 conn.close()
                 
+                # Store user info for password setup
                 self.pending_user = {
                     'id': user_id,
                     'name': name,
@@ -5748,6 +6003,7 @@ class StoreApp:
                     'login_code': login_code
                 }
                 
+                # Change login button to "Set Password"
                 login_btn.text = "Set Password"
                 login_btn.on_click = lambda e: set_password()
                 page.update()
@@ -5804,6 +6060,7 @@ class StoreApp:
                 conn.commit()
                 conn.close()
                 
+                # Sync to cloud
                 def sync_user():
                     try:
                         CloudSyncManager.sync_users_full_to_cloud(self.pending_user['company_id'])
@@ -5816,6 +6073,7 @@ class StoreApp:
                 
                 loading_indicator.visible = False
                 
+                # Login user
                 self.current_user = {
                     'id': self.pending_user['id'],
                     'name': self.pending_user['name'],
@@ -5903,10 +6161,13 @@ class StoreApp:
             status_text.color = self.accent_color
             page.update()
             
+            # Verify activation code
             company_id, message = ActivationManager.verify_activation_code(activation_code)
             
             if company_id:
+                # Check if user is logged in
                 if self.current_user:
+                    # Activate the current user
                     success, msg = DemoManager.activate_account(self.current_user['id'], activation_code)
                     if success:
                         loading_indicator.visible = False
@@ -5920,11 +6181,13 @@ class StoreApp:
                         self.show_dashboard(page)
                         return
                 
+                # If not logged in, show company setup
                 loading_indicator.visible = False
                 status_text.value = "✅ Code verified! Please login or create account."
                 status_text.color = self.success_color
                 page.update()
                 
+                # Store activation code for later
                 self.pending_activation = activation_code
                 
             else:
@@ -5979,24 +6242,33 @@ class StoreApp:
             self.show_forgot_password_dialog(page)
         
         # ============================================================
-        # STEP 4: SET BUTTON ON_CLICK HANDLERS
+        # STEP 6: SET BUTTON ON_CLICK HANDLERS
         # ============================================================
         
         login_btn.on_click = on_login
         login_mode_btn.on_click = toggle_login_mode
         
         # ============================================================
-        # STEP 5: BUILD UI
+        # STEP 7: BUILD UI
         # ============================================================
         
         logo_exists = os.path.exists(logo_path)
         logo = ft.Image(src=logo_path, width=80, height=80, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=50)
         
+        # Mobile padding
+        if is_mobile:
+            padding_size = 15
+            card_padding = 15
+        else:
+            padding_size = 30
+            card_padding = 40
+        
         main_layout = ft.Column([
-            ft.Text("Welcome", size=28, weight=ft.FontWeight.BOLD, color=self.text_color),
-            ft.Text("Sign in to manage your inventory", size=13, color="#AAAAAA"),
+            ft.Text("Welcome", size=28 if not is_mobile else 24, weight=ft.FontWeight.BOLD, color=self.text_color),
+            ft.Text("Sign in to manage your inventory", size=13 if not is_mobile else 11, color="#AAAAAA"),
             ft.Container(height=10),
             
+            # ===== START FREE TRIAL SECTION =====
             ft.Container(
                 content=ft.Column([
                     trial_btn,
@@ -6004,7 +6276,7 @@ class StoreApp:
                     trial_subtext,
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
                 bgcolor="#1A3A1A",
-                padding=15,
+                padding=10,
                 border_radius=10,
                 margin=ft.margin.only(bottom=10),
             ),
@@ -6066,7 +6338,7 @@ class StoreApp:
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
             
             ft.Divider(height=10, color="#3C3C3C"),
-            ft.Text("🚀 Try Demo", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
+            ft.Text("🚀 Try Demo", size=14 if not is_mobile else 12, weight=ft.FontWeight.BOLD, color=self.accent_color),
             ft.Row([
                 ft.ElevatedButton(
                     "▶️ Demo Login",
@@ -6093,10 +6365,10 @@ class StoreApp:
         
         login_card = ft.Container(
             content=main_layout,
-            padding=30,
+            padding=card_padding,
             bgcolor=None,
             border_radius=20,
-            width=550,
+            width=550 if not is_mobile else (page.width - 20 if page.width else 360),
         )
         
         centered_login = ft.Container(
