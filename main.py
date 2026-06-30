@@ -5672,455 +5672,95 @@ class StoreApp:
                 page.update()
 
     def show_login(self, page: ft.Page):
-        """Login screen with on-screen error display for mobile debugging"""
-        
-        # ===== CREATE ERROR DISPLAY =====
-        error_container = ft.Container(
-            content=ft.Text("", size=12, color="red", selectable=True),
-            padding=10,
-            bgcolor="#2C2C2C",
-            border_radius=8,
-            visible=False,
-            margin=ft.margin.only(bottom=10),
-        )
-        
-        def show_error(message):
-            """Show error on screen"""
-            error_container.content.value = f"❌ {message}"
-            error_container.visible = True
-            page.update()
-            print(f"ERROR: {message}")  # Also print for logcat
+        """ULTRA MINIMAL LOGIN - Guaranteed to show on mobile"""
         
         try:
-            print("🔵 show_login started")
+            print("🔵 STEP 1: show_login called")
             page.controls.clear()
             self.page_ref = page
             
-            # ===== CHECK DATABASE =====
-            import sqlite3
-            from database import DB_PATH
-            from datetime import datetime
-            
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                
-                # Create tables
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS companies (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT NOT NULL,
-                        created_at TEXT
-                    )
-                ''')
-                
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS users (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT NOT NULL,
-                        email TEXT UNIQUE NOT NULL,
-                        password_hash TEXT NOT NULL,
-                        role TEXT DEFAULT 'user',
-                        company_id INTEGER DEFAULT 1,
-                        login_code TEXT,
-                        code_used INTEGER DEFAULT 0,
-                        account_type TEXT DEFAULT 'trial',
-                        trial_end_date TEXT,
-                        created_at TEXT
-                    )
-                ''')
-                
-                # Check if any company exists
-                cursor.execute("SELECT COUNT(*) FROM companies")
-                count = cursor.fetchone()[0]
-                
-                if count == 0:
-                    import hashlib
-                    cursor.execute(
-                        "INSERT INTO companies (name, created_at) VALUES (?, ?)",
-                        ('My Store', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-                    )
-                    company_id = cursor.lastrowid
-                    
-                    hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
-                    cursor.execute("""
-                        INSERT INTO users (name, email, password_hash, role, company_id, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id,
-                        datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                    conn.commit()
-                    print("✅ Created default company")
-                
-                conn.close()
-            except Exception as e:
-                show_error(f"Database: {str(e)[:50]}")
-                import traceback
-                traceback.print_exc()
-            
-            # ===== MOBILE DETECTION =====
-            is_mobile = page.width < 800 if page.width else False
-            field_width = page.width - 40 if is_mobile and page.width else 320
-            
-            # ===== CREATE UI =====
-            try:
-                # Header
-                header = ft.Text("Welcome", size=28 if not is_mobile else 24, 
-                            weight=ft.FontWeight.BOLD, color="#FFFFFF")
-                subheader = ft.Text("Sign in to manage your inventory", 
-                                size=13 if not is_mobile else 11, color="#AAAAAA")
-                
-                # ===== START FREE TRIAL BUTTON =====
-                trial_btn = ft.ElevatedButton(
-                    "🚀 Start 30-Day Free Trial",
-                    on_click=lambda e: self.start_free_trial_demo(page, status_text, loading_indicator),
-                    icon=ft.icons.PLAY_ARROW,
-                    style=ft.ButtonStyle(
-                        bgcolor="#4CAF50",
-                        color="white",
-                        padding=15,
-                    ),
-                    width=field_width,
-                    height=50,
-                )
-                
-                trial_subtext = ft.Text(
-                    "No credit card required • 30 days full access",
-                    size=10, color="#888888", text_align=ft.TextAlign.CENTER
-                )
-                
-                # ===== FIELDS =====
-                email_field = ft.TextField(
-                    label="Email", 
-                    hint_text="your@email.com", 
-                    width=field_width, 
-                    bgcolor="#2C2C2C", 
-                    border_color="#1976D2",
-                    text_size=14,
-                )
-                
-                password_field = ft.TextField(
-                    label="Password", 
-                    hint_text="••••••••", 
-                    password=True, 
-                    can_reveal_password=True, 
-                    width=field_width, 
-                    bgcolor="#2C2C2C", 
-                    border_color="#1976D2",
-                    text_size=14,
-                )
-                
-                login_code_field = ft.TextField(
-                    label="Login Code", 
-                    hint_text="Enter code from admin", 
-                    width=field_width, 
-                    bgcolor="#2C2C2C", 
-                    border_color="#1976D2",
-                    text_size=14,
-                    prefix_icon=ft.icons.VERIFIED,
-                )
-                
-                activation_field = ft.TextField(
-                    label="Activation Code", 
-                    hint_text="Enter code to unlock full access", 
-                    width=field_width, 
-                    bgcolor="#2C2C2C", 
-                    border_color="#FF9800",
-                    text_size=14,
-                    prefix_icon=ft.icons.VERIFIED,
-                )
-                
-                # ===== STATUS =====
-                status_text = ft.Text("", color="red", size=12)
-                loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
-                
-                # ===== LOGIN BUTTON =====
-                login_btn = ft.FilledButton(
-                    "Sign In",
-                    width=field_width,
-                    height=45,
-                    on_click=None,
-                    style=ft.ButtonStyle(
-                        bgcolor="#1976D2",
-                        color="white",
-                    ),
-                )
-                
-                # ===== DEFINE LOGIN FUNCTION =====
-                def on_login(e):
-                    try:
-                        email = email_field.value.strip()
-                        password = password_field.value
-                        login_code = login_code_field.value.strip().upper()
-                        
-                        if not email:
-                            status_text.value = "Please enter email!"
-                            status_text.color = "red"
-                            page.update()
-                            return
-                        
-                        # Try login code first
-                        if login_code and login_code.startswith('LOGIN-'):
-                            loading_indicator.visible = True
-                            status_text.value = "🔄 Verifying code..."
-                            status_text.color = "#1976D2"
-                            page.update()
-                            
-                            import sqlite3
-                            conn = sqlite3.connect(DB_PATH)
-                            cursor = conn.cursor()
-                            cursor.execute("""
-                                SELECT id, name, email, role, company_id, code_used 
-                                FROM users 
-                                WHERE email = ? AND login_code = ?
-                            """, (email, login_code))
-                            user = cursor.fetchone()
-                            conn.close()
-                            
-                            if user:
-                                user_id, name, user_email, role, company_id, code_used = user
-                                
-                                if code_used == 1:
-                                    status_text.value = "❌ Code already used!"
-                                    status_text.color = "red"
-                                    loading_indicator.visible = False
-                                    page.update()
-                                    return
-                                
-                                self.current_user = {
-                                    'id': user_id,
-                                    'name': name,
-                                    'email': user_email,
-                                    'role': role,
-                                    'company_id': company_id
-                                }
-                                
-                                loading_indicator.visible = False
-                                page.snack_bar = ft.SnackBar(
-                                    ft.Text(f"✅ Welcome {name}!"),
-                                    bgcolor="#2E7D32",
-                                    duration=3000
-                                )
-                                page.snack_bar.open = True
-                                page.update()
-                                
-                                self.auto_sync_on_start(page)
-                                self.show_dashboard(page)
-                                return
-                            else:
-                                status_text.value = "❌ Invalid email or code!"
-                                status_text.color = "red"
-                                loading_indicator.visible = False
-                                page.update()
-                                return
-                        
-                        # Try password login
-                        if not password:
-                            status_text.value = "Please enter password!"
-                            status_text.color = "red"
-                            page.update()
-                            return
-                        
-                        loading_indicator.visible = True
-                        status_text.value = "🔄 Authenticating..."
-                        status_text.color = "#1976D2"
-                        page.update()
-                        
-                        import hashlib
-                        hashed_password = hashlib.sha256(password.encode()).hexdigest()
-                        
-                        conn = sqlite3.connect(DB_PATH)
-                        conn.row_factory = sqlite3.Row
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "SELECT * FROM users WHERE email = ? AND password_hash = ?",
-                            (email, hashed_password)
-                        )
-                        user = cursor.fetchone()
-                        conn.close()
-                        
-                        if user:
-                            user_dict = dict(user)
-                            self.current_user = user_dict
-                            
-                            loading_indicator.visible = False
-                            page.snack_bar = ft.SnackBar(
-                                ft.Text(f"✅ Welcome {user_dict.get('name', 'User')}!"),
-                                bgcolor="#2E7D32",
-                                duration=3000
-                            )
-                            page.snack_bar.open = True
-                            page.update()
-                            
-                            self.auto_sync_on_start(page)
-                            self.show_dashboard(page)
-                        else:
-                            status_text.value = "Invalid email or password!"
-                            status_text.color = "red"
-                            loading_indicator.visible = False
-                            page.update()
-                            
-                    except Exception as login_error:
-                        status_text.value = f"Error: {str(login_error)[:40]}"
-                        status_text.color = "red"
-                        loading_indicator.visible = False
-                        page.update()
-                        show_error(f"Login: {str(login_error)[:50]}")
-                
-                login_btn.on_click = on_login
-                
-                # ===== START TRIAL FUNCTION =====
-                def start_trial(e):
-                    try:
-                        self.start_free_trial_demo(page, status_text, loading_indicator)
-                    except Exception as trial_error:
-                        show_error(f"Trial: {str(trial_error)[:50]}")
-                
-                trial_btn.on_click = start_trial
-                
-                # ===== ACTIVATE FUNCTION =====
-                def on_activate(e):
-                    try:
-                        activation_code = activation_field.value.strip().upper()
-                        if not activation_code:
-                            status_text.value = "Please enter activation code!"
-                            status_text.color = "red"
-                            page.update()
-                            return
-                        
-                        from activation_manager import ActivationManager
-                        company_id, message = ActivationManager.verify_activation_code(activation_code)
-                        
-                        if company_id:
-                            status_text.value = "✅ Code verified! Login or create account."
-                            status_text.color = "green"
-                        else:
-                            status_text.value = f"❌ {message}"
-                            status_text.color = "red"
-                        page.update()
-                    except Exception as activate_error:
-                        show_error(f"Activate: {str(activate_error)[:50]}")
-                
-                # ===== BUILD UI =====
-                main_column = ft.Column([
-                    header,
-                    subheader,
-                    ft.Container(height=15),
-                    
-                    # Error display (hidden by default)
-                    error_container,
-                    
-                    # Trial Button
-                    ft.Container(
-                        content=ft.Column([
-                            trial_btn,
-                            ft.Container(height=3),
-                            trial_subtext,
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
-                        bgcolor="#1A3A1A",
-                        padding=10,
-                        border_radius=10,
-                    ),
-                    
-                    ft.Divider(height=15, color="#3C3C3C"),
-                    ft.Text("or", size=12, color="#888888"),
-                    ft.Divider(height=15, color="#3C3C3C"),
-                    
-                    email_field,
-                    ft.Container(height=10),
-                    
-                    password_field,
-                    ft.Container(height=10),
-                    
-                    login_code_field,
-                    ft.Container(height=10),
-                    
-                    activation_field,
-                    ft.Container(height=10),
-                    
-                    ft.Row([
-                        ft.TextButton("Activate", on_click=on_activate, 
-                                    style=ft.ButtonStyle(color="#FF9800")),
-                        ft.Text("💡 Enter code to unlock", size=9, color="#888888"),
-                    ], alignment=ft.MainAxisAlignment.CENTER, spacing=8),
-                    
-                    ft.Container(height=15),
-                    
-                    ft.Row([status_text, loading_indicator], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
-                    ft.Container(height=10),
-                    
-                    login_btn,
-                    ft.Container(height=5),
-                    
-                    ft.Divider(height=15, color="#3C3C3C"),
-                    
-                    ft.Row([
-                        ft.TextButton("Create Account", on_click=lambda e: self.show_register_dialog(page),
-                                    style=ft.ButtonStyle(color="#4CAF50")),
-                        ft.TextButton("Forgot Password?", on_click=lambda e: self.show_forgot_password_dialog(page),
-                                    style=ft.ButtonStyle(color="#888888")),
-                    ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
-                    
-                    ft.Container(height=10),
-                    ft.Text("💡 Default admin: admin@store.com / admin123", size=10, color="#888888"),
-                    ft.Text("💡 Demo: demo@store.com / demo123", size=10, color="#888888"),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
-                
-                # Create card
-                card_width = field_width + 40
-                card = ft.Container(
-                    content=main_column,
-                    padding=20 if is_mobile else 30,
-                    bgcolor=None,
-                    border_radius=20,
-                    width=card_width,
-                )
-                
-                # Center on page
-                centered = ft.Container(
-                    content=card,
+            # ============================================================
+            # STEP 2: Show a simple text immediately
+            # ============================================================
+            page.add(
+                ft.Container(
+                    content=ft.Text("Loading...", size=30, color="white"),
                     alignment=ft.alignment.center,
                     expand=True,
+                    bgcolor="#1E1E1E",
                 )
-                
-                # Add to page
-                page.controls.clear()
-                page.add(centered)
-                page.update()
-                
-                print("✅ Login screen displayed")
-                
-            except Exception as ui_error:
-                show_error(f"UI: {str(ui_error)[:50]}")
-                import traceback
-                traceback.print_exc()
-                
-                # Show minimal fallback
-                page.controls.clear()
-                page.add(
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Text("Login Error", size=20, color="red"),
-                            ft.Text(str(ui_error), size=12, color="white"),
-                            ft.ElevatedButton("Retry", on_click=lambda e: self.show_login(page)),
-                        ]),
-                        alignment=ft.alignment.center,
-                        expand=True,
-                    )
-                )
-                page.update()
-                
+            )
+            page.update()
+            print("🔵 STEP 2: 'Loading...' shown")
+            
+            # ============================================================
+            # STEP 3: Create a very simple login UI
+            # ============================================================
+            
+            # Simple text
+            title = ft.Text("Store Management", size=24, weight=ft.FontWeight.BOLD, color="white")
+            
+            # Simple button
+            login_btn = ft.ElevatedButton(
+                "Login",
+                on_click=lambda e: print("Button clicked"),
+                style=ft.ButtonStyle(bgcolor="#1976D2", color="white"),
+            )
+            
+            # Simple text field
+            email_field = ft.TextField(
+                label="Email",
+                hint_text="your@email.com",
+                width=300,
+                bgcolor="#2C2C2C",
+                border_color="#1976D2",
+            )
+            
+            # Simple layout
+            main_content = ft.Column([
+                title,
+                ft.Container(height=20),
+                email_field,
+                ft.Container(height=10),
+                login_btn,
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+            
+            # Simple card
+            card = ft.Container(
+                content=main_content,
+                padding=30,
+                bgcolor="#2C2C2C",
+                border_radius=20,
+                width=350,
+            )
+            
+            # Center it
+            centered = ft.Container(
+                content=card,
+                alignment=ft.alignment.center,
+                expand=True,
+            )
+            
+            # Replace the loading text with the actual UI
+            page.controls.clear()
+            page.add(centered)
+            page.update()
+            
+            print("🔵 STEP 3: Simple login UI shown")
+            
         except Exception as e:
-            print(f"CRITICAL ERROR: {e}")
+            print(f"❌ ERROR: {e}")
             import traceback
             traceback.print_exc()
             
+            # Try to show error on screen
             try:
                 page.controls.clear()
                 page.add(
                     ft.Container(
                         content=ft.Column([
-                            ft.Text("Critical Error", size=20, color="red"),
-                            ft.Text(str(e), size=12, color="white"),
+                            ft.Text("❌ Error", size=24, color="red"),
+                            ft.Text(str(e), size=14, color="white"),
                         ]),
                         alignment=ft.alignment.center,
                         expand=True,
