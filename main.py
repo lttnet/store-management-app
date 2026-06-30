@@ -5672,166 +5672,205 @@ class StoreApp:
                 page.update()
 
     def show_login(self, page: ft.Page):
-        """ULTRA MINIMAL LOGIN - Guaranteed to show on mobile"""
+        """Original working login screen - NO TRIAL, NO GOOGLE SIGN-IN"""
+        page.controls.clear()
         
-        try:
-            print("🔵 STEP 1: show_login called")
-            page.controls.clear()
-            self.page_ref = page
+        field_width = 280
+        
+        email_field = ft.TextField(
+            label="Email", 
+            hint_text="your@email.com", 
+            width=field_width, 
+            bgcolor="#2C2C2C", 
+            border_color=self.accent_color
+        )
+        password_field = ft.TextField(
+            label="Password", 
+            hint_text="••••••••", 
+            password=True, 
+            can_reveal_password=True, 
+            width=field_width, 
+            bgcolor="#2C2C2C", 
+            border_color=self.accent_color
+        )
+        status_text = ft.Text("", color="red", size=12)
+        loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
+        
+        def create_default_admin():
+            """Create default admin if no users exist"""
+            import sqlite3
+            import hashlib
+            from database import DB_PATH
+            from datetime import datetime
             
-            # ============================================================
-            # STEP 2: Show a simple text immediately
-            # ============================================================
-            page.add(
-                ft.Container(
-                    content=ft.Text("Loading...", size=30, color="white"),
-                    alignment=ft.alignment.center,
-                    expand=True,
-                    bgcolor="#1E1E1E",
-                )
-            )
-            page.update()
-            print("🔵 STEP 2: 'Loading...' shown")
-            
-            # ============================================================
-            # STEP 3: Create a very simple login UI
-            # ============================================================
-            
-            # Simple text
-            title = ft.Text("Store Management", size=24, weight=ft.FontWeight.BOLD, color="white")
-            
-            # Simple button
-            login_btn = ft.ElevatedButton(
-                "Login",
-                on_click=lambda e: print("Button clicked"),
-                style=ft.ButtonStyle(bgcolor="#1976D2", color="white"),
-            )
-            
-            # Simple text field
-            email_field = ft.TextField(
-                label="Email",
-                hint_text="your@email.com",
-                width=300,
-                bgcolor="#2C2C2C",
-                border_color="#1976D2",
-            )
-            
-            # Simple layout
-            main_content = ft.Column([
-                title,
-                ft.Container(height=20),
-                email_field,
-                ft.Container(height=10),
-                login_btn,
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-            
-            # Simple card
-            card = ft.Container(
-                content=main_content,
-                padding=30,
-                bgcolor="#2C2C2C",
-                border_radius=20,
-                width=350,
-            )
-            
-            # Center it
-            centered = ft.Container(
-                content=card,
-                alignment=ft.alignment.center,
-                expand=True,
-            )
-            
-            # Replace the loading text with the actual UI
-            page.controls.clear()
-            page.add(centered)
-            page.update()
-            
-            print("🔵 STEP 3: Simple login UI shown")
-            
-        except Exception as e:
-            print(f"❌ ERROR: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            # Try to show error on screen
             try:
-                page.controls.clear()
-                page.add(
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Text("❌ Error", size=24, color="red"),
-                            ft.Text(str(e), size=14, color="white"),
-                        ]),
-                        alignment=ft.alignment.center,
-                        expand=True,
-                    )
-                )
-                page.update()
-            except:
-                pass
-
-    def create_default_admin(self):
-        """Create default admin if no users exist"""
-        import sqlite3
-        import hashlib
-        from database import DB_PATH
-        from datetime import datetime
-        
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            # Check if users table exists
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-            if not cursor.fetchone():
-                print("Users table doesn't exist, initializing database...")
-                conn.close()
-                init_database()
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
-            
-            # Check if any users exist
-            cursor.execute("SELECT COUNT(*) FROM users")
-            count = cursor.fetchone()[0]
-            
-            if count == 0:
-                # Check if companies table exists
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
+                
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
                 if not cursor.fetchone():
-                    cursor.execute('''
-                        CREATE TABLE IF NOT EXISTS companies (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            name TEXT NOT NULL,
-                            created_at TEXT
-                        )
-                    ''')
+                    conn.close()
+                    return
                 
-                # Create default company
-                cursor.execute(
-                    "INSERT INTO companies (name, created_at) VALUES (?, ?)",
-                    ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-                )
-                company_id = cursor.lastrowid
+                cursor.execute("SELECT COUNT(*) FROM users")
+                count = cursor.fetchone()[0]
                 
-                # Create admin user
-                hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
-                cursor.execute("""
-                    INSERT INTO users (name, email, password_hash, role, company_id, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id,
-                    datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                conn.commit()
-                print("✅ Created default admin: admin@store.com / admin123")
-                
-                return True
-            conn.close()
-            return True
+                if count == 0:
+                    # Create company first
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
+                    if not cursor.fetchone():
+                        cursor.execute('''
+                            CREATE TABLE IF NOT EXISTS companies (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                name TEXT NOT NULL,
+                                created_at TEXT
+                            )
+                        ''')
+                    
+                    cursor.execute("INSERT INTO companies (name, created_at) VALUES (?, ?)", 
+                                ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    company_id = cursor.lastrowid
+                    
+                    hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
+                    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    cursor.execute("""
+                        INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id, current_time))
+                    conn.commit()
+                    print("✅ Created default admin: admin@store.com / admin123")
+                    
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("✓ Default admin created! Email: admin@store.com, Password: admin123"),
+                        bgcolor=self.success_color,
+                        duration=5000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+                conn.close()
+            except Exception as e:
+                print(f"Error creating default admin: {e}")
+        
+        def on_login(e):
+            email = email_field.value.strip()
+            password = password_field.value
             
-        except Exception as e:
-            print(f"Error creating default admin: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
+            if not email or not password:
+                status_text.value = "Please enter email and password!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            loading_indicator.visible = True
+            status_text.value = "🔄 Authenticating..."
+            status_text.color = self.accent_color
+            page.update()
+            
+            try:
+                user = UserManager.authenticate(email, password)
+                
+                if user:
+                    user_dict = dict(user)
+                    company_id = user_dict.get('company_id', 1)
+                    user_dict['company_id'] = company_id
+                    
+                    self.current_user = user_dict
+                    
+                    loading_indicator.visible = False
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✓ Welcome {user_dict.get('name', 'User')}!"),
+                        bgcolor=self.success_color,
+                        duration=3000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+                    
+                    self.auto_sync_on_start(page)
+                    self.show_dashboard(page)
+                else:
+                    loading_indicator.visible = False
+                    status_text.value = "Invalid email or password!"
+                    status_text.color = self.danger_color
+                    page.update()
+                    
+            except Exception as ex:
+                loading_indicator.visible = False
+                status_text.value = f"Error: {str(ex)[:50]}"
+                status_text.color = self.danger_color
+                page.update()
+                print(f"Login error: {ex}")
+        
+        def on_register(e):
+            self.show_register_dialog(page)
+        
+        def on_forgot_password(e):
+            self.show_forgot_password_dialog(page)
+        
+        def on_demo_login(e):
+            """Auto-login with demo credentials"""
+            email_field.value = "demo@store.com"
+            password_field.value = "demo123"
+            page.update()
+            on_login(e)
+        
+        create_default_admin()
+        
+        # Load logo
+        logo_exists = os.path.exists(logo_path)
+        logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=60)
+        
+        # Main layout
+        main_layout = ft.Column([
+            ft.Text("Welcome", size=28, weight=ft.FontWeight.BOLD, color=self.text_color),
+            ft.Text("Sign in to manage your inventory", size=13, color="#AAAAAA"),
+            ft.Container(height=20),
+            ft.Container(width=50, height=2, bgcolor=self.accent_color, border_radius=1),
+            ft.Container(height=20),
+            email_field, 
+            ft.Container(height=15),
+            password_field, 
+            ft.Container(height=15),
+            ft.Row([status_text, loading_indicator], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+            ft.Container(height=10),
+            ft.Row([
+                logo, 
+                ft.Container(width=20), 
+                ft.FilledButton("Sign In", width=140, height=45, on_click=on_login)
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Divider(height=20, color="#3C3C3C"),
+            ft.Row([
+                ft.TextButton("Create Account", on_click=on_register, style=ft.ButtonStyle(color=self.success_color)),
+                ft.TextButton("Forgot Password?", on_click=on_forgot_password, style=ft.ButtonStyle(color="#888888")),
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
+            ft.Divider(height=10, color="#3C3C3C"),
+            ft.Text("🚀 Try Demo", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
+            ft.Row([
+                ft.ElevatedButton(
+                    "▶️ Demo Login",
+                    on_click=on_demo_login,
+                    icon=ft.icons.PLAY_ARROW,
+                    style=ft.ButtonStyle(bgcolor="#4CAF50", color="white"),
+                    expand=True,
+                ),
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Row([
+                ft.Text("Email: demo@store.com", size=10, color="#888888"),
+                ft.Text("Password: demo123", size=10, color="#888888"),
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
+            ft.Container(height=10),
+            ft.Text("💡 Default admin: admin@store.com / admin123", size=10, color="#888888", selectable=True),
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
+        
+        login_card = ft.Container(content=main_layout, padding=40, bgcolor=None, border_radius=20, width=500)
+        centered_login = ft.Container(content=login_card, alignment=ft.alignment.center, expand=True)
+        
+        bg_image = ft.Image(src=background_path, fit=ft.ImageFit.COVER) if os.path.exists(background_path) else None
+        
+        if bg_image:
+            page.add(ft.Stack([bg_image, centered_login], expand=True))
+        else:
+            page.add(centered_login)
+        page.update()
 
     
     
