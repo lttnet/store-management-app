@@ -5672,18 +5672,89 @@ class StoreApp:
                 page.update()
 
     def show_login(self, page: ft.Page):
-        """Original working login screen - NO TRIAL, NO GOOGLE SIGN-IN"""
+        """SIMPLIFIED LOGIN - One user + Demo mode"""
         page.controls.clear()
+        self.page_ref = page
         
-        field_width = 280
+        # ===== INITIALIZE DATABASE =====
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime
         
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Create tables if not exist
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS companies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    created_at TEXT
+                )
+            ''')
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    role TEXT DEFAULT 'admin',
+                    company_id INTEGER DEFAULT 1,
+                    created_at TEXT
+                )
+            ''')
+            
+            # Create default company if not exists
+            cursor.execute("SELECT COUNT(*) FROM companies")
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                cursor.execute(
+                    "INSERT INTO companies (name, created_at) VALUES (?, ?)",
+                    ('My Store', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                )
+                company_id = cursor.lastrowid
+                
+                # Create default admin user
+                import hashlib
+                hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
+                cursor.execute("""
+                    INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id,
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                conn.commit()
+                print("✅ Created default company and admin")
+            
+            conn.close()
+        except Exception as e:
+            print(f"Database error: {e}")
+        
+        # ===== DETECT MOBILE =====
+        is_mobile = page.width < 800 if page.width else False
+        field_width = page.width - 40 if is_mobile and page.width > 100 else 320
+        
+        # ===== CREATE UI =====
+        
+        # Title
+        title = ft.Text("Store Management", size=28 if not is_mobile else 24, 
+                    weight=ft.FontWeight.BOLD, color="#FFFFFF")
+        subtitle = ft.Text("Sign in to manage your inventory", size=13 if not is_mobile else 11, 
+                        color="#AAAAAA")
+        
+        # ===== LOGIN FIELDS =====
         email_field = ft.TextField(
             label="Email", 
             hint_text="your@email.com", 
             width=field_width, 
             bgcolor="#2C2C2C", 
-            border_color=self.accent_color
+            border_color="#1976D2",
+            text_size=14,
+            value="admin@store.com" if is_mobile else "",  # Auto-fill on mobile
         )
+        
         password_field = ft.TextField(
             label="Password", 
             hint_text="••••••••", 
@@ -5691,95 +5762,53 @@ class StoreApp:
             can_reveal_password=True, 
             width=field_width, 
             bgcolor="#2C2C2C", 
-            border_color=self.accent_color
+            border_color="#1976D2",
+            text_size=14,
+            value="admin123" if is_mobile else "",  # Auto-fill on mobile
         )
+        
+        # ===== STATUS =====
         status_text = ft.Text("", color="red", size=12)
         loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
         
-        def create_default_admin():
-            """Create default admin if no users exist"""
-            import sqlite3
-            import hashlib
-            from database import DB_PATH
-            from datetime import datetime
-            
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-                if not cursor.fetchone():
-                    conn.close()
-                    return
-                
-                cursor.execute("SELECT COUNT(*) FROM users")
-                count = cursor.fetchone()[0]
-                
-                if count == 0:
-                    # Create company first
-                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
-                    if not cursor.fetchone():
-                        cursor.execute('''
-                            CREATE TABLE IF NOT EXISTS companies (
-                                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                name TEXT NOT NULL,
-                                created_at TEXT
-                            )
-                        ''')
-                    
-                    cursor.execute("INSERT INTO companies (name, created_at) VALUES (?, ?)", 
-                                ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                    company_id = cursor.lastrowid
-                    
-                    hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
-                    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    cursor.execute("""
-                        INSERT INTO users (name, email, password_hash, role, company_id, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id, current_time))
-                    conn.commit()
-                    print("✅ Created default admin: admin@store.com / admin123")
-                    
-                    page.snack_bar = ft.SnackBar(
-                        ft.Text("✓ Default admin created! Email: admin@store.com, Password: admin123"),
-                        bgcolor=self.success_color,
-                        duration=5000
-                    )
-                    page.snack_bar.open = True
-                    page.update()
-                conn.close()
-            except Exception as e:
-                print(f"Error creating default admin: {e}")
-        
+        # ===== LOGIN FUNCTION =====
         def on_login(e):
             email = email_field.value.strip()
             password = password_field.value
             
             if not email or not password:
                 status_text.value = "Please enter email and password!"
-                status_text.color = self.danger_color
+                status_text.color = "red"
                 page.update()
                 return
             
             loading_indicator.visible = True
             status_text.value = "🔄 Authenticating..."
-            status_text.color = self.accent_color
+            status_text.color = "#1976D2"
             page.update()
             
             try:
-                user = UserManager.authenticate(email, password)
+                import hashlib
+                hashed_password = hashlib.sha256(password.encode()).hexdigest()
+                
+                conn = sqlite3.connect(DB_PATH)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM users WHERE email = ? AND password_hash = ?",
+                    (email, hashed_password)
+                )
+                user = cursor.fetchone()
+                conn.close()
                 
                 if user:
                     user_dict = dict(user)
-                    company_id = user_dict.get('company_id', 1)
-                    user_dict['company_id'] = company_id
-                    
                     self.current_user = user_dict
                     
                     loading_indicator.visible = False
                     page.snack_bar = ft.SnackBar(
-                        ft.Text(f"✓ Welcome {user_dict.get('name', 'User')}!"),
-                        bgcolor=self.success_color,
+                        ft.Text(f"✅ Welcome {user_dict.get('name', 'Admin')}!"),
+                        bgcolor="#2E7D32",
                         duration=3000
                     )
                     page.snack_bar.open = True
@@ -5790,88 +5819,166 @@ class StoreApp:
                 else:
                     loading_indicator.visible = False
                     status_text.value = "Invalid email or password!"
-                    status_text.color = self.danger_color
+                    status_text.color = "red"
                     page.update()
                     
             except Exception as ex:
                 loading_indicator.visible = False
                 status_text.value = f"Error: {str(ex)[:50]}"
-                status_text.color = self.danger_color
+                status_text.color = "red"
                 page.update()
                 print(f"Login error: {ex}")
         
-        def on_register(e):
-            self.show_register_dialog(page)
-        
-        def on_forgot_password(e):
-            self.show_forgot_password_dialog(page)
-        
+        # ===== DEMO LOGIN =====
         def on_demo_login(e):
             """Auto-login with demo credentials"""
             email_field.value = "demo@store.com"
             password_field.value = "demo123"
+            status_text.value = "🔄 Logging in with demo account..."
+            status_text.color = "#1976D2"
             page.update()
+            
+            # Check if demo user exists
+            import sqlite3
+            import hashlib
+            from database import DB_PATH
+            from datetime import datetime
+            
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                
+                # Check if demo user exists
+                cursor.execute("SELECT id FROM users WHERE email = ?", ("demo@store.com",))
+                demo_user = cursor.fetchone()
+                
+                if not demo_user:
+                    # Create demo user
+                    cursor.execute("SELECT id FROM companies WHERE name = 'Demo Company'")
+                    company = cursor.fetchone()
+                    
+                    if not company:
+                        cursor.execute(
+                            "INSERT INTO companies (name, created_at) VALUES (?, ?)",
+                            ('Demo Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                        )
+                        company_id = cursor.lastrowid
+                    else:
+                        company_id = company[0]
+                    
+                    hashed_password = hashlib.sha256("demo123".encode()).hexdigest()
+                    cursor.execute("""
+                        INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, ('Demo User', 'demo@store.com', hashed_password, 'admin', company_id,
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    conn.commit()
+                    print("✅ Created demo user")
+                
+                conn.close()
+                
+            except Exception as ex:
+                print(f"Demo user creation error: {ex}")
+            
+            # Now login with demo credentials
             on_login(e)
         
-        create_default_admin()
+        # ===== BUILD UI =====
         
-        # Load logo
+        # Logo
         logo_exists = os.path.exists(logo_path)
-        logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=60)
+        logo = ft.Image(src=logo_path, width=80, height=80, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=50)
+        
+        # Login button
+        login_btn = ft.FilledButton(
+            "Sign In",
+            width=field_width,
+            height=45,
+            on_click=on_login,
+            style=ft.ButtonStyle(
+                bgcolor="#1976D2",
+                color="white",
+            ),
+        )
+        
+        # Demo button
+        demo_btn = ft.ElevatedButton(
+            "▶️ Try Demo Version",
+            on_click=on_demo_login,
+            icon=ft.icons.PLAY_ARROW,
+            style=ft.ButtonStyle(
+                bgcolor="#4CAF50",
+                color="white",
+                padding=12,
+            ),
+            width=field_width,
+            height=45,
+        )
         
         # Main layout
-        main_layout = ft.Column([
-            ft.Text("Welcome", size=28, weight=ft.FontWeight.BOLD, color=self.text_color),
-            ft.Text("Sign in to manage your inventory", size=13, color="#AAAAAA"),
+        content = ft.Column([
+            title,
+            subtitle,
             ft.Container(height=20),
-            ft.Container(width=50, height=2, bgcolor=self.accent_color, border_radius=1),
+            ft.Container(width=50, height=2, bgcolor="#1976D2", border_radius=1),
             ft.Container(height=20),
-            email_field, 
+            
+            email_field,
+            ft.Container(height=10),
+            password_field,
             ft.Container(height=15),
-            password_field, 
-            ft.Container(height=15),
+            
             ft.Row([status_text, loading_indicator], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
             ft.Container(height=10),
+            
             ft.Row([
-                logo, 
-                ft.Container(width=20), 
-                ft.FilledButton("Sign In", width=140, height=45, on_click=on_login)
+                logo,
+                ft.Container(width=15),
+                login_btn,
             ], alignment=ft.MainAxisAlignment.CENTER),
+            
             ft.Divider(height=20, color="#3C3C3C"),
-            ft.Row([
-                ft.TextButton("Create Account", on_click=on_register, style=ft.ButtonStyle(color=self.success_color)),
-                ft.TextButton("Forgot Password?", on_click=on_forgot_password, style=ft.ButtonStyle(color="#888888")),
-            ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
-            ft.Divider(height=10, color="#3C3C3C"),
-            ft.Text("🚀 Try Demo", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
-            ft.Row([
-                ft.ElevatedButton(
-                    "▶️ Demo Login",
-                    on_click=on_demo_login,
-                    icon=ft.icons.PLAY_ARROW,
-                    style=ft.ButtonStyle(bgcolor="#4CAF50", color="white"),
-                    expand=True,
-                ),
-            ], alignment=ft.MainAxisAlignment.CENTER),
-            ft.Row([
-                ft.Text("Email: demo@store.com", size=10, color="#888888"),
-                ft.Text("Password: demo123", size=10, color="#888888"),
-            ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
-            ft.Container(height=10),
-            ft.Text("💡 Default admin: admin@store.com / admin123", size=10, color="#888888", selectable=True),
+            ft.Text("or", size=12, color="#888888"),
+            ft.Divider(height=15, color="#3C3C3C"),
+            
+            demo_btn,
+            
+            ft.Container(height=15),
+            ft.Text("💡 Demo: email@demo.com / password: demo123", size=10, color="#888888"),
+            ft.Text("💡 Admin: admin@store.com / admin123", size=10, color="#888888"),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
         
-        login_card = ft.Container(content=main_layout, padding=40, bgcolor=None, border_radius=20, width=500)
-        centered_login = ft.Container(content=login_card, alignment=ft.alignment.center, expand=True)
+        # Card
+        card_width = field_width + 40
+        card = ft.Container(
+            content=content,
+            padding=30 if not is_mobile else 20,
+            bgcolor=None,
+            border_radius=20,
+            width=card_width,
+        )
         
-        bg_image = ft.Image(src=background_path, fit=ft.ImageFit.COVER) if os.path.exists(background_path) else None
+        # Center
+        centered = ft.Container(
+            content=card,
+            alignment=ft.alignment.center,
+            expand=True,
+        )
+        
+        # Background
+        bg_image = ft.Image(
+            src=background_path,
+            fit=ft.ImageFit.COVER
+        ) if os.path.exists(background_path) else None
         
         if bg_image:
-            page.add(ft.Stack([bg_image, centered_login], expand=True))
+            page.add(ft.Stack([bg_image, centered], expand=True))
         else:
-            page.add(centered_login)
+            page.add(centered)
+        
+        self.current_view = "login"
         page.update()
-
+        print("✅ Login screen displayed")
     
     
     def animate_card_update(self, container, old_cards, new_cards):
@@ -8566,133 +8673,31 @@ class StoreApp:
             page.snack_bar.open = True
             page.update()
 
-                        # ============ DASHBOARD ============
+                            # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Dashboard with full error handling"""
-        try:
-            print("🔵 show_dashboard started")
-            page.controls.clear()
-            
-            is_mobile = page.width < 800 if page.width else False
-            print(f"📱 is_mobile: {is_mobile}")
-            
-            # Navigation
-            try:
-                if is_mobile:
-                    nav = self.create_bottom_nav(page)
-                    sidebar = None
-                else:
-                    sidebar = self.create_sidebar(page)
-                    nav = None
-                print("✅ Navigation created")
-            except Exception as nav_error:
-                print(f"❌ Navigation error: {nav_error}")
-                nav = None
-                sidebar = None
-            
-            # Get data with error handling
-            try:
-                materials = self.dict_list(MaterialManager.get_all())
-                accessories = self.dict_list(AccessoryManager.get_all())
-                users = self.dict_list(UserManager.get_all())
-                print(f"📦 Data loaded: {len(materials)} materials, {len(accessories)} accessories, {len(users)} users")
-            except Exception as data_error:
-                print(f"❌ Data error: {data_error}")
-                materials = []
-                accessories = []
-                users = []
-            
-            # Check demo status
-            company_id = self.current_user.get('company_id', 1) if self.current_user else 1
-            is_demo = company_id == 1
-            days_left = DemoManager.get_demo_days_left(company_id) if is_demo else None
-            print(f"🏢 Company: {company_id}, Demo: {is_demo}, Days left: {days_left}")
-            
-            # Get company info
-            company_info = self.get_company_info()
-            company_name = company_info.get('company_name', 'Store Management System')
-            
-            # Calculate statistics
-            total_materials = len(materials)
-            total_accessories = len(accessories)
-            total_items = total_materials + total_accessories
-            total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
-            total_users = len(users)
-            total_low_stock = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
-            
-            # Quality distribution
-            quality_counts = {"New": 0, "Used": 0, "Damaged": 0, "Repaired": 0}
-            for m in materials:
-                q = m.get('quality', 'Used')
-                quality_counts[q] = quality_counts.get(q, 0) + 1
-            for a in accessories:
-                q = a.get('quality', 'Used')
-                quality_counts[q] = quality_counts.get(q, 0) + 1
-            
-            # Get recent items
-            recent_materials = sorted(materials, key=lambda x: x.get('created_at', ''), reverse=True)[:3]
-            recent_accessories = sorted(accessories, key=lambda x: x.get('created_at', ''), reverse=True)[:3]
-            
-            # Font sizes
-            if is_mobile:
-                font_title = 24
-                font_normal = 16
-                font_small = 14
-                padding_size = 12
-            else:
-                font_title = 28
-                font_normal = 18
-                font_small = 14
-                padding_size = 20
-            
-            # =============================================
-            # BUILD UI - Main Column
-            # =============================================
-            main_column = ft.Column(spacing=15, expand=True)
-            
-            # 1. DEMO BANNER
-            if is_demo and days_left is not None:
-                if days_left <= 5:
-                    banner_color = self.danger_color
-                    banner_text = f"⚠️ Trial ends in {days_left} days!"
-                    button_text = "Purchase Now"
-                    button_color = "#FF9800"
-                else:
-                    banner_color = self.success_color
-                    banner_text = f"🚀 Free Trial: {days_left} days remaining"
-                    button_text = "Upgrade Now"
-                    button_color = "#4CAF50"
-                
-                banner = ft.Container(
-                    content=ft.Row([
-                        ft.Icon(ft.icons.INFO_OUTLINE, color="white", size=20),
-                        ft.Text(banner_text, color="white", size=12, expand=True),
-                        ft.ElevatedButton(
-                            button_text,
-                            on_click=lambda e: self.show_purchase_dialog(page),
-                            style=ft.ButtonStyle(bgcolor=button_color, color="white", padding=10),
-                        ),
-                    ], spacing=10),
-                    padding=10,
-                    bgcolor=banner_color,
-                    border_radius=10,
-                )
-                main_column.controls.append(banner)
-            
-            # 2. HEADER
-            header_row = ft.Row([
-                ft.Column([
-                    ft.Text("Dashboard", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
-                    ft.Text(f"{company_name} • {self.current_user.get('name', 'User')}", size=12, color="#888888"),
-                ], spacing=2),
+        """SIMPLIFIED DASHBOARD - For single user"""
+        page.controls.clear()
+        
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Get data
+        materials = self.dict_list(MaterialManager.get_all())
+        accessories = self.dict_list(AccessoryManager.get_all())
+        
+        total_materials = len(materials)
+        total_accessories = len(accessories)
+        total_items = total_materials + total_accessories
+        total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
+        
+        # Main column
+        main_column = ft.Column(spacing=15, scroll=ft.ScrollMode.AUTO, expand=True)
+        
+        # Header
+        main_column.controls.append(
+            ft.Row([
+                ft.Text("📊 Dashboard", size=28 if not is_mobile else 24, 
+                    weight=ft.FontWeight.BOLD, color=self.text_color),
                 ft.Container(expand=True),
-                ft.IconButton(
-                    icon=ft.icons.CLOUD_SYNC,
-                    icon_size=24,
-                    icon_color=self.accent_color,
-                    on_click=lambda e: self.manual_sync(page),
-                    tooltip="Sync with Cloud",
-                ),
                 ft.IconButton(
                     icon=ft.icons.REFRESH,
                     icon_size=24,
@@ -8700,225 +8705,143 @@ class StoreApp:
                     on_click=lambda e: self.show_dashboard(page),
                     tooltip="Refresh",
                 ),
-                ft.IconButton(
-                    icon=ft.icons.CLOUD_QUEUE,
-                    icon_size=24,
-                    icon_color="#9C27B0",
-                    on_click=lambda e: self.show_cloud_status(page),
-                    tooltip="Cloud Status",
-                ),
             ])
-            main_column.controls.append(header_row)
-            main_column.controls.append(ft.Container(height=5))
-            
-            # 3. STATS CARDS
-            stats_row = ft.Row([
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("📦", size=20),
-                        ft.Text(str(total_items), size=24, weight=ft.FontWeight.BOLD),
-                        ft.Text("Items", size=10, color="#CCCCCC"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
-                    padding=10,
-                    bgcolor=self.accent_color,
-                    border_radius=10,
-                    expand=True,
-                ),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("📊", size=20),
-                        ft.Text(str(total_stock), size=24, weight=ft.FontWeight.BOLD),
-                        ft.Text("Stock", size=10, color="#CCCCCC"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
-                    padding=10,
-                    bgcolor=self.success_color,
-                    border_radius=10,
-                    expand=True,
-                ),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("⚠️", size=20),
-                        ft.Text(str(total_low_stock), size=24, weight=ft.FontWeight.BOLD),
-                        ft.Text("Low Stock", size=10, color="#CCCCCC"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
-                    padding=10,
-                    bgcolor=self.danger_color if total_low_stock > 0 else self.card_color,
-                    border_radius=10,
-                    expand=True,
-                ),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("👥", size=20),
-                        ft.Text(str(total_users), size=24, weight=ft.FontWeight.BOLD),
-                        ft.Text("Users", size=10, color="#CCCCCC"),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
-                    padding=10,
-                    bgcolor="#9C27B0",
-                    border_radius=10,
-                    expand=True,
-                ),
-            ], spacing=8)
-            main_column.controls.append(stats_row)
-            main_column.controls.append(ft.Container(height=5))
-            
-            # 4. QUICK ACTIONS
-            main_column.controls.append(ft.Text("⚡ Quick Actions", size=font_normal, weight=ft.FontWeight.BOLD))
-            main_column.controls.append(
-                ft.Row([
-                    ft.ElevatedButton("📦 Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
-                    ft.ElevatedButton("🔧 Add Part", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
-                ], spacing=8)
-            )
-            main_column.controls.append(
-                ft.Row([
-                    ft.ElevatedButton("📷 Scan", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
-                    ft.ElevatedButton("📊 Inventory", on_click=lambda e: self.show_inventory(page), expand=True),
-                ], spacing=8)
-            )
-            main_column.controls.append(
-                ft.Row([
-                    ft.ElevatedButton("👥 Users", on_click=lambda e: self.show_users(page), expand=True),
-                    ft.ElevatedButton("⚙️ Settings", on_click=lambda e: self.show_settings(page), expand=True),
-                ], spacing=8)
-            )
-            main_column.controls.append(ft.Container(height=5))
-            
-            # 5. INVITE TEAM (Demo only)
-            if is_demo:
-                main_column.controls.append(
-                    ft.Row([
-                        ft.ElevatedButton(
-                            "👥 Invite Team Members",
-                            on_click=lambda e: self.show_company_invite(page),
-                            expand=True,
-                            style=ft.ButtonStyle(bgcolor="#9C27B0", color="white"),
-                        ),
-                    ], spacing=8)
-                )
-                main_column.controls.append(ft.Container(height=5))
-            
-            # 6. RECENT MATERIALS
-            main_column.controls.append(ft.Text("📦 Recent Materials", size=font_normal, weight=ft.FontWeight.BOLD))
-            if recent_materials:
-                for m in recent_materials:
-                    main_column.controls.append(
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Text("📦", size=18),
-                                ft.Column([
-                                    ft.Text(m.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD),
-                                    ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=font_small - 2, color="#888888"),
-                                ], spacing=2, expand=True),
-                                ft.Text(f"Qty: {m.get('quantity', 0)}", size=font_small),
-                            ]),
-                            padding=10,
-                            bgcolor="#2C2C2C",
-                            border_radius=8,
-                            margin=ft.margin.only(bottom=5),
-                        )
-                    )
-                main_column.controls.append(ft.TextButton("View All Materials", on_click=lambda e: self.show_materials_screen(page)))
-                main_column.controls.append(ft.Container(height=5))
-            else:
+        )
+        main_column.controls.append(
+            ft.Text(f"Welcome {self.current_user.get('name', 'Admin')}!", size=14, color="#888888")
+        )
+        main_column.controls.append(ft.Container(height=10))
+        
+        # Stats cards
+        stats_row = ft.Row([
+            self._create_stat_card_simple("📦", str(total_items), "Items"),
+            self._create_stat_card_simple("📊", str(total_stock), "Stock"),
+        ], spacing=10)
+        main_column.controls.append(stats_row)
+        main_column.controls.append(ft.Container(height=15))
+        
+        # Quick Actions
+        main_column.controls.append(ft.Text("⚡ Quick Actions", size=18, weight=ft.FontWeight.BOLD))
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton("📦 Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
+                ft.ElevatedButton("🔧 Add Part", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
+            ], spacing=10)
+        )
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton("📋 View Inventory", on_click=lambda e: self.show_inventory(page), expand=True),
+                ft.ElevatedButton("📤 Export Data", on_click=lambda e: self.export_all_data_simple(page), expand=True),
+            ], spacing=10)
+        )
+        main_column.controls.append(ft.Container(height=15))
+        
+        # Recent Materials
+        main_column.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
+        if materials:
+            for m in materials[:5]:
                 main_column.controls.append(
                     ft.Container(
-                        content=ft.Text("No materials yet. Add one!", size=12, color="#888888"),
+                        content=ft.Row([
+                            ft.Text("📦", size=18),
+                            ft.Text(m.get('name', 'N/A'), size=14, expand=True),
+                            ft.Text(f"Qty: {m.get('quantity', 0)}", size=14),
+                        ]),
                         padding=10,
                         bgcolor="#2C2C2C",
                         border_radius=8,
+                        margin=ft.margin.only(bottom=5),
                     )
                 )
-                main_column.controls.append(ft.Container(height=5))
-            
-            # 7. RECENT ACCESSORIES
-            main_column.controls.append(ft.Text("🔧 Recent Accessories", size=font_normal, weight=ft.FontWeight.BOLD))
-            if recent_accessories:
-                for a in recent_accessories:
-                    main_column.controls.append(
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Text("🔧", size=18),
-                                ft.Column([
-                                    ft.Text(a.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD),
-                                    ft.Text(f"📍 {a.get('location', 'N/A')}", size=font_small - 2, color="#888888"),
-                                ], spacing=2, expand=True),
-                                ft.Text(f"Qty: {a.get('quantity', 0)}", size=font_small),
-                            ]),
-                            padding=10,
-                            bgcolor="#2C2C2C",
-                            border_radius=8,
-                            margin=ft.margin.only(bottom=5),
-                        )
-                    )
-                main_column.controls.append(ft.TextButton("View All Accessories", on_click=lambda e: self.show_accessories(page)))
-                main_column.controls.append(ft.Container(height=5))
-            else:
+        else:
+            main_column.controls.append(
+                ft.Container(
+                    content=ft.Text("No materials yet. Click 'Add Material' to get started!", 
+                                size=12, color="#888888"),
+                    padding=10,
+                    bgcolor="#2C2C2C",
+                    border_radius=8,
+                )
+            )
+        
+        main_column.controls.append(ft.Container(height=15))
+        
+        # Recent Accessories
+        main_column.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
+        if accessories:
+            for a in accessories[:5]:
+                price = a.get('price', 0)
+                price_text = f"${price:.2f}" if price else ""
                 main_column.controls.append(
                     ft.Container(
-                        content=ft.Text("No accessories yet. Add one!", size=12, color="#888888"),
+                        content=ft.Row([
+                            ft.Text("🔧", size=18),
+                            ft.Text(a.get('name', 'N/A'), size=14, expand=True),
+                            ft.Text(f"Qty: {a.get('quantity', 0)}", size=14),
+                            ft.Text(price_text, size=12, color="#4CAF50"),
+                        ]),
                         padding=10,
                         bgcolor="#2C2C2C",
                         border_radius=8,
+                        margin=ft.margin.only(bottom=5),
                     )
                 )
-                main_column.controls.append(ft.Container(height=5))
-            
-            # 8. FOOTER
-            main_column.controls.append(ft.Divider())
+        else:
             main_column.controls.append(
-                ft.Row([
-                    ft.Text(f"🏢 {company_name}", size=11, color="#888888"),
-                    ft.Container(expand=True),
-                    ft.Text("v2.0.0", size=11, color="#888888"),
-                ])
-            )
-            
-            # Bottom spacing
-            if is_mobile:
-                main_column.controls.append(ft.Container(height=70))
-            else:
-                main_column.controls.append(ft.Container(height=20))
-            
-            # =============================================
-            # WRAP AND RENDER
-            # =============================================
-            main_container = ft.Container(
-                content=ft.Column([main_column], scroll=ft.ScrollMode.AUTO, expand=True),
-                expand=True,
-                padding=padding_size,
-            )
-            
-            if is_mobile and nav:
-                page.add(ft.Column([main_container, nav], spacing=0, expand=True))
-            else:
-                page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
-            
-            self.current_view = "dashboard"
-            page.update()
-            print("✅ Dashboard rendered successfully!")
-            
-        except Exception as e:
-            print(f"❌ CRITICAL ERROR in show_dashboard: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            # Emergency fallback
-            try:
-                page.controls.clear()
-                page.add(
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Text("⚠️ Dashboard Error", size=24, color="red"),
-                            ft.Text(str(e), size=12, color="white"),
-                            ft.ElevatedButton("Go to Login", on_click=lambda e: self.show_login(page)),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15),
-                        alignment=ft.alignment.center,
-                        expand=True,
-                    )
+                ft.Container(
+                    content=ft.Text("No accessories yet. Click 'Add Part' to get started!", 
+                                size=12, color="#888888"),
+                    padding=10,
+                    bgcolor="#2C2C2C",
+                    border_radius=8,
                 )
-                page.update()
-            except:
-                pass
+            )
+        
+        # Logout button
+        main_column.controls.append(ft.Container(height=15))
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton(
+                    "🚪 Logout",
+                    on_click=lambda e: self.confirm_logout(page),
+                    style=ft.ButtonStyle(bgcolor="#FF5252", color="white"),
+                    expand=True,
+                ),
+            ], spacing=10)
+        )
+        main_column.controls.append(ft.Container(height=30))
+        
+        # Wrap in container
+        container = ft.Container(
+            content=main_column,
+            expand=True,
+            padding=15 if is_mobile else 20,
+        )
+        
+        # Bottom nav for mobile
+        if is_mobile:
+            nav = self.create_bottom_nav(page)
+            page.add(ft.Column([container, nav], spacing=0, expand=True))
+        else:
+            sidebar = self.create_sidebar(page)
+            page.add(ft.Row([sidebar, container], spacing=0, expand=True))
+        
+        self.current_view = "dashboard"
+        page.update()
+
+    def _create_stat_card_simple(self, icon, value, label):
+        """Simple stat card"""
+        return ft.Container(
+            content=ft.Column([
+                ft.Text(icon, size=24),
+                ft.Text(value, size=28, weight=ft.FontWeight.BOLD),
+                ft.Text(label, size=12, color="#CCCCCC"),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+            padding=15,
+            bgcolor=self.accent_color,
+            border_radius=10,
+            expand=True,
+        )
     
     def force_upload_all(self, page: ft.Page):
         """Force upload ALL data to cloud (overwrites cloud)"""
