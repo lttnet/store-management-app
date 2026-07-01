@@ -5672,35 +5672,327 @@ class StoreApp:
                 page.update()
 
     def show_login(self, page: ft.Page):
-        """ABSOLUTE MINIMUM - No database, no imports, just text"""
+        """Login screen with Demo button - COMPLETE VERSION"""
+        page.controls.clear()
         
-        try:
-            print("🔵 show_login called")
-            page.controls.clear()
-            
-            # ===== SIMPLEST POSSIBLE UI =====
-            page.add(
-                ft.Container(
-                    content=ft.Text("Hello World!", size=40, color="white"),
-                    alignment=ft.alignment.center,
-                    expand=True,
-                    bgcolor="#1E1E1E",
-                )
-            )
-            page.update()
-            print("✅ Hello World displayed")
-            
-        except Exception as e:
-            print(f"❌ ERROR: {e}")
-            import traceback
-            traceback.print_exc()
+        # Ensure demo users exist
+        self.ensure_demo_users()
+        
+        field_width = 280
+        
+        email_field = ft.TextField(
+            label="Email", 
+            hint_text="your@email.com", 
+            width=field_width, 
+            bgcolor="#2C2C2C", 
+            border_color=self.accent_color,
+            text_size=14,
+        )
+        password_field = ft.TextField(
+            label="Password", 
+            hint_text="••••••••", 
+            password=True, 
+            can_reveal_password=True, 
+            width=field_width, 
+            bgcolor="#2C2C2C", 
+            border_color=self.accent_color,
+            text_size=14,
+        )
+        status_text = ft.Text("", color="red", size=12)
+        loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
+        
+        def create_default_admin():
+            """Create default admin if no users exist"""
+            import sqlite3
+            import hashlib
+            from database import DB_PATH
+            from datetime import datetime
             
             try:
-                page.controls.clear()
-                page.add(ft.Text(f"Error: {e}", size=20, color="red"))
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                
+                # Check if users table exists
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+                if not cursor.fetchone():
+                    print("Users table doesn't exist, initializing database...")
+                    conn.close()
+                    init_database()
+                    conn = sqlite3.connect(DB_PATH)
+                    cursor = conn.cursor()
+                
+                # Check if any users exist
+                cursor.execute("SELECT COUNT(*) FROM users")
+                count = cursor.fetchone()[0]
+                
+                if count == 0:
+                    # Check if companies table exists
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
+                    if not cursor.fetchone():
+                        cursor.execute('''
+                            CREATE TABLE IF NOT EXISTS companies (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                name TEXT NOT NULL,
+                                created_at TEXT
+                            )
+                        ''')
+                    
+                    # Create default company
+                    cursor.execute("INSERT INTO companies (name, created_at) VALUES (?, ?)", 
+                                ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    company_id = cursor.lastrowid
+                    
+                    # Create admin user
+                    hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
+                    cursor.execute("""
+                        INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id,
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    conn.commit()
+                    print("✅ Created default admin: admin@store.com / admin123")
+                    
+                    # Show snackbar
+                    try:
+                        page.snack_bar = ft.SnackBar(
+                            ft.Text("✓ Default admin created! Email: admin@store.com, Password: admin123"),
+                            bgcolor=self.success_color,
+                            duration=5000
+                        )
+                        page.snack_bar.open = True
+                        page.update()
+                    except:
+                        pass
+                conn.close()
+            except Exception as e:
+                print(f"Error creating default admin: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        def authenticate_user(email, password):
+            """Authenticate user and handle login"""
+            try:
+                user = UserManager.authenticate(email, password)
+                
+                if user:
+                    user_dict = dict(user)
+                    company_id = user_dict.get('company_id', 1)
+                    user_dict['company_id'] = company_id
+                    
+                    self.current_user = user_dict
+                    
+                    loading_indicator.visible = False
+                    
+                    # Check demo status for company 1
+                    if company_id == 1:
+                        days_left = DemoManager.get_demo_days_left(company_id)
+                        if days_left == 0:
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text("⚠️ Your 30-day trial has expired! Please contact support."),
+                                bgcolor=self.danger_color,
+                                duration=5000
+                            )
+                            page.snack_bar.open = True
+                            page.update()
+                            return False
+                        elif days_left <= 5:
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text(f"⚠️ Your trial ends in {days_left} days! Purchase to continue."),
+                                bgcolor=self.warning_color,
+                                duration=4000
+                            )
+                        else:
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text(f"✓ Welcome! Trial: {days_left} days left."),
+                                bgcolor=self.success_color,
+                                duration=3000
+                            )
+                    else:
+                        page.snack_bar = ft.SnackBar(
+                            ft.Text(f"✓ Welcome {user_dict.get('name', 'User')}!"),
+                            bgcolor=self.success_color,
+                            duration=3000
+                        )
+                    
+                    page.snack_bar.open = True
+                    page.update()
+                    
+                    # Auto-sync
+                    self.auto_sync_on_start(page)
+                    
+                    # Navigate to dashboard
+                    self.show_dashboard(page)
+                    return True
+                else:
+                    loading_indicator.visible = False
+                    status_text.value = "Invalid email or password!"
+                    status_text.color = self.danger_color
+                    page.update()
+                    return False
+                    
+            except Exception as ex:
+                loading_indicator.visible = False
+                status_text.value = f"Error: {str(ex)[:50]}"
+                status_text.color = self.danger_color
                 page.update()
-            except:
-                pass
+                print(f"Login error: {ex}")
+                import traceback
+                traceback.print_exc()
+                return False
+        
+        def on_login(e):
+            email = email_field.value.strip()
+            password = password_field.value
+            
+            if not email or not password:
+                status_text.value = "Please enter email and password!"
+                status_text.color = self.danger_color
+                page.update()
+                return
+            
+            loading_indicator.visible = True
+            status_text.value = "🔄 Authenticating..."
+            status_text.color = self.accent_color
+            page.update()
+            
+            # Run authentication in background to not block UI
+            import threading
+            def do_auth():
+                authenticate_user(email, password)
+            
+            threading.Thread(target=do_auth, daemon=True).start()
+        
+        def on_demo_login(e):
+            """Auto-login with demo credentials"""
+            # Ensure demo users exist first
+            self.ensure_demo_users()
+            
+            # Set credentials
+            email_field.value = "demo@store.com"
+            password_field.value = "demo123"
+            status_text.value = "🔄 Logging in with demo account..."
+            status_text.color = self.accent_color
+            page.update()
+            
+            # Trigger login
+            on_login(e)
+        
+        def on_register(e):
+            self.show_register_dialog(page)
+        
+        def on_forgot_password(e):
+            self.show_forgot_password_dialog(page)
+        
+        # Create default admin and demo data
+        create_default_admin()
+        self.ensure_demo_users()
+        
+        # Load logo
+        logo_exists = os.path.exists(logo_path)
+        logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.ImageFit.CONTAIN) if logo_exists else ft.Text("🏪", size=60)
+        
+        # ===== MAIN LOGIN LAYOUT =====
+        main_layout = ft.Column([
+            ft.Text("Welcome", size=28, weight=ft.FontWeight.BOLD, color=self.text_color),
+            ft.Text("Sign in to manage your inventory", size=13, color="#AAAAAA"),
+            ft.Container(height=20),
+            ft.Container(width=50, height=2, bgcolor=self.accent_color, border_radius=1),
+            ft.Container(height=20),
+            
+            # Email field
+            email_field,
+            ft.Container(height=15),
+            
+            # Password field
+            password_field,
+            ft.Container(height=15),
+            
+            # Status and loading
+            ft.Row([status_text, loading_indicator], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+            ft.Container(height=10),
+            
+            # Sign In button with logo
+            ft.Row([
+                logo,
+                ft.Container(width=20),
+                ft.FilledButton(
+                    "Sign In", 
+                    width=140, 
+                    height=45, 
+                    on_click=on_login,
+                    style=ft.ButtonStyle(
+                        bgcolor=self.accent_color,
+                        color="white",
+                    ),
+                ),
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            
+            ft.Divider(height=20, color="#3C3C3C"),
+            
+            # Register and Forgot Password
+            ft.Row([
+                ft.TextButton("Create Account", on_click=on_register, style=ft.ButtonStyle(color=self.success_color)),
+                ft.TextButton("Forgot Password?", on_click=on_forgot_password, style=ft.ButtonStyle(color="#888888")),
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
+            
+            ft.Divider(height=10, color="#3C3C3C"),
+            
+            # ===== DEMO SECTION =====
+            ft.Text("🚀 Try Demo", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
+            ft.Row([
+                ft.ElevatedButton(
+                    "▶️ Demo Login",
+                    on_click=on_demo_login,
+                    icon=ft.icons.PLAY_ARROW,
+                    style=ft.ButtonStyle(
+                        bgcolor="#4CAF50", 
+                        color="white",
+                        padding=10,
+                    ),
+                    expand=True,
+                ),
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Row([
+                ft.Text("Email: demo@store.com", size=10, color="#888888"),
+                ft.Text("Password: demo123", size=10, color="#888888"),
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
+            # ===== END DEMO SECTION =====
+            
+            ft.Container(height=10),
+            ft.Text("💡 Default admin: admin@store.com / admin123", size=10, color="#888888", selectable=True),
+            ft.Text("💡 Demo credentials: demo@store.com / demo123", size=10, color="#888888", selectable=True),
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
+        
+        # Login card
+        login_card = ft.Container(
+            content=main_layout, 
+            padding=40, 
+            bgcolor=None, 
+            border_radius=20, 
+            width=500,
+        )
+        
+        # Center the login card
+        centered_login = ft.Container(
+            content=login_card, 
+            alignment=ft.alignment.center, 
+            expand=True,
+        )
+        
+        # Background image if exists
+        bg_image = ft.Image(
+            src=background_path, 
+            fit=ft.ImageFit.COVER
+        ) if os.path.exists(background_path) else None
+        
+        # Layout with or without background
+        if bg_image:
+            page.add(ft.Stack([bg_image, centered_login], expand=True))
+        else:
+            page.add(centered_login)
+        
+        self.current_view = "login"
+        page.update()
     
     
     def animate_card_update(self, container, old_cards, new_cards):
