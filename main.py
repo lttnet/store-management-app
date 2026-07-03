@@ -96,33 +96,41 @@ class FirebaseRestAPI:
     def _get_url(self, path):
         return f"https://firestore.googleapis.com/v1/projects/{self.project_id}/databases/(default)/documents/{path}?key={self.api_key}"
     
-    def sync_users(self, company_id, users):
-        """Sync users to Firebase"""
+    # ============================================================
+    # USER METHODS - FULL SYNC
+    # ============================================================
+    
+    def sync_user_full(self, company_id, user_data):
+        """Sync user with ALL fields including password_hash"""
         if not self.is_ready():
             return False
         
         try:
-            for user in users:
-                url = self._get_url(f"companies/{company_id}/users/{user['id']}")
-                
-                document = {
-                    "fields": {
-                        "id": {"integerValue": str(user['id'])},
-                        "name": {"stringValue": user['name']},
-                        "email": {"stringValue": user['email']},
-                        "role": {"stringValue": user['role']},
-                    }
-                }
-                
-                response = requests.patch(url, json=document)
-                if response.status_code not in [200, 201]:
-                    print(f"Error syncing user {user['id']}: {response.text}")
-                    return False
+            url = self._get_url(f"companies/{company_id}/users/{user_data['id']}")
             
-            print(f"✅ Synced {len(users)} users to Firebase")
-            return True
+            document = {
+                "fields": {
+                    "id": {"integerValue": str(user_data['id'])},
+                    "name": {"stringValue": user_data.get('name', '')},
+                    "email": {"stringValue": user_data.get('email', '')},
+                    "role": {"stringValue": user_data.get('role', 'user')},
+                    "password_hash": {"stringValue": user_data.get('password_hash', '')},
+                    "company_id": {"integerValue": str(company_id)},
+                    "synced_at": {"stringValue": datetime.now().isoformat()}
+                }
+            }
+            
+            response = requests.patch(url, json=document)
+            
+            if response.status_code in [200, 201]:
+                print(f"  ✅ Synced user {user_data['id']}: {user_data.get('name')}")
+                return True
+            else:
+                print(f"  ❌ Failed to sync user {user_data['id']}: {response.status_code}")
+                return False
+                
         except Exception as e:
-            print(f"Sync error: {e}")
+            print(f"Sync user full error: {e}")
             return False
     
     def get_users(self, company_id):
@@ -141,226 +149,637 @@ class FirebaseRestAPI:
             users = []
             
             for doc in data.get('documents', []):
-                user = {'id': int(doc['name'].split('/')[-1])}
+                doc_id = doc['name'].split('/')[-1]
                 fields = doc.get('fields', {})
                 
-                for key, value in fields.items():
-                    if 'stringValue' in value:
-                        user[key] = value['stringValue']
-                    elif 'integerValue' in value:
-                        user[key] = int(value['integerValue'])
-                
+                user = {
+                    'id': int(doc_id),
+                    'name': fields.get('name', {}).get('stringValue', ''),
+                    'email': fields.get('email', {}).get('stringValue', ''),
+                    'role': fields.get('role', {}).get('stringValue', 'user'),
+                    'password_hash': fields.get('password_hash', {}).get('stringValue', ''),
+                    'company_id': int(fields.get('company_id', {}).get('integerValue', company_id))
+                }
                 users.append(user)
             
             print(f"✅ Downloaded {len(users)} users from Firebase")
             return users
+            
         except Exception as e:
-            print(f"Get error: {e}")
+            print(f"Get users error: {e}")
             return []
     
-    def sync_company_data(self, company_id, data):
-        """Sync all company data to Firebase"""
+    # ============================================================
+    # MATERIAL METHODS - FULL SYNC
+    # ============================================================
+    
+    def sync_material_full(self, company_id, material_data):
+        """Sync material with ALL fields"""
         if not self.is_ready():
             return False
         
         try:
-            url = self._get_url(f"companies/{company_id}")
+            url = self._get_url(f"companies/{company_id}/materials/{material_data['id']}")
+            
+            # Handle length field properly
+            length_value = material_data.get('length', '')
+            if length_value is None:
+                length_value = ''
+            elif isinstance(length_value, (int, float)):
+                length_value = str(length_value)
+            
             document = {
                 "fields": {
+                    "id": {"integerValue": str(material_data['id'])},
+                    "name": {"stringValue": material_data.get('name', '')},
+                    "category_id": {"integerValue": str(material_data.get('category_id', 0))},
+                    "quantity": {"integerValue": str(material_data.get('quantity', 0))},
+                    "quality": {"stringValue": material_data.get('quality', 'New')},
+                    "location_ids": {"stringValue": material_data.get('location_ids', '')},
+                    "size": {"stringValue": material_data.get('size', '')},
+                    "length": {"stringValue": str(length_value)},
+                    "colors": {"stringValue": material_data.get('colors', '')},
+                    "notes": {"stringValue": material_data.get('notes', '')},
+                    "barcode_value": {"stringValue": material_data.get('barcode_value', '')},
+                    "image_path": {"stringValue": material_data.get('image_path', '')},
                     "company_id": {"integerValue": str(company_id)},
-                    "data": {"stringValue": json.dumps(data)},
-                    "last_sync": {"stringValue": datetime.now().isoformat()}
+                    "synced_at": {"stringValue": datetime.now().isoformat()}
                 }
             }
+            
             response = requests.patch(url, json=document)
-            return response.status_code in [200, 201]
+            
+            if response.status_code in [200, 201]:
+                print(f"  ✅ Synced material {material_data['id']}: {material_data.get('name')}")
+                return True
+            else:
+                print(f"  ❌ Failed to sync material {material_data['id']}: {response.status_code}")
+                return False
+                
         except Exception as e:
-            print(f"Sync company data error: {e}")
+            print(f"Sync material full error: {e}")
             return False
     
-    def get_company_data(self, company_id):
-        """Get all company data from Firebase"""
+    def get_materials(self, company_id):
+        """Get materials from Firebase"""
         if not self.is_ready():
-            return None
+            return []
         
         try:
-            url = self._get_url(f"companies/{company_id}")
+            url = self._get_url(f"companies/{company_id}/materials")
             response = requests.get(url)
             
             if response.status_code != 200:
-                return None
+                return []
             
             data = response.json()
-            fields = data.get('fields', {})
+            materials = []
             
-            if 'data' in fields and 'stringValue' in fields['data']:
-                return json.loads(fields['data']['stringValue'])
-            return None
+            for doc in data.get('documents', []):
+                doc_id = doc['name'].split('/')[-1]
+                fields = doc.get('fields', {})
+                
+                material = {
+                    'id': int(doc_id),
+                    'name': fields.get('name', {}).get('stringValue', ''),
+                    'category_id': int(fields.get('category_id', {}).get('integerValue', 0)),
+                    'quantity': int(fields.get('quantity', {}).get('integerValue', 0)),
+                    'quality': fields.get('quality', {}).get('stringValue', 'New'),
+                    'location_ids': fields.get('location_ids', {}).get('stringValue', ''),
+                    'size': fields.get('size', {}).get('stringValue', ''),
+                    'length': float(fields.get('length', {}).get('stringValue', 0)) if fields.get('length', {}).get('stringValue') else None,
+                    'colors': fields.get('colors', {}).get('stringValue', ''),
+                    'notes': fields.get('notes', {}).get('stringValue', ''),
+                    'barcode_value': fields.get('barcode_value', {}).get('stringValue', ''),
+                    'image_path': fields.get('image_path', {}).get('stringValue', ''),
+                }
+                materials.append(material)
+            
+            print(f"✅ Downloaded {len(materials)} materials from Firebase")
+            return materials
+            
         except Exception as e:
-            print(f"Get company data error: {e}")
-            return None
+            print(f"Get materials error: {e}")
+            return []
+    
+    # ============================================================
+    # ACCESSORY METHODS - FULL SYNC
+    # ============================================================
+    
+    def sync_accessory_full(self, company_id, accessory_data):
+        """Sync accessory with ALL fields"""
+        if not self.is_ready():
+            return False
         
+        try:
+            url = self._get_url(f"companies/{company_id}/accessories/{accessory_data['id']}")
+            
+            document = {
+                "fields": {
+                    "id": {"integerValue": str(accessory_data['id'])},
+                    "name": {"stringValue": accessory_data.get('name', '')},
+                    "category_id": {"integerValue": str(accessory_data.get('category_id', 0))},
+                    "quantity": {"integerValue": str(accessory_data.get('quantity', 0))},
+                    "price": {"stringValue": str(accessory_data.get('price', 0))},
+                    "quality": {"stringValue": accessory_data.get('quality', 'New')},
+                    "location": {"stringValue": accessory_data.get('location', '')},
+                    "notes": {"stringValue": accessory_data.get('notes', '')},
+                    "barcode_value": {"stringValue": accessory_data.get('barcode_value', '')},
+                    "image_path": {"stringValue": accessory_data.get('image_path', '')},
+                    "company_id": {"integerValue": str(company_id)},
+                    "synced_at": {"stringValue": datetime.now().isoformat()}
+                }
+            }
+            
+            response = requests.patch(url, json=document)
+            
+            if response.status_code in [200, 201]:
+                print(f"  ✅ Synced accessory {accessory_data['id']}: {accessory_data.get('name')}")
+                return True
+            else:
+                print(f"  ❌ Failed to sync accessory {accessory_data['id']}: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"Sync accessory full error: {e}")
+            return False
+    
+    def get_accessories(self, company_id):
+        """Get accessories from Firebase"""
+        if not self.is_ready():
+            return []
+        
+        try:
+            url = self._get_url(f"companies/{company_id}/accessories")
+            response = requests.get(url)
+            
+            if response.status_code != 200:
+                return []
+            
+            data = response.json()
+            accessories = []
+            
+            for doc in data.get('documents', []):
+                doc_id = doc['name'].split('/')[-1]
+                fields = doc.get('fields', {})
+                
+                accessory = {
+                    'id': int(doc_id),
+                    'name': fields.get('name', {}).get('stringValue', ''),
+                    'category_id': int(fields.get('category_id', {}).get('integerValue', 0)),
+                    'quantity': int(fields.get('quantity', {}).get('integerValue', 0)),
+                    'price': float(fields.get('price', {}).get('stringValue', 0)),
+                    'quality': fields.get('quality', {}).get('stringValue', 'New'),
+                    'location': fields.get('location', {}).get('stringValue', ''),
+                    'notes': fields.get('notes', {}).get('stringValue', ''),
+                    'barcode_value': fields.get('barcode_value', {}).get('stringValue', ''),
+                    'image_path': fields.get('image_path', {}).get('stringValue', ''),
+                }
+                accessories.append(accessory)
+            
+            print(f"✅ Downloaded {len(accessories)} accessories from Firebase")
+            return accessories
+            
+        except Exception as e:
+            print(f"Get accessories error: {e}")
+            return []
+        
+    def delete_user(self, company_id, user_id):
+        """Delete a user from Firebase"""
+        if not self.is_ready():
+            return False
+        
+        try:
+            url = self._get_url(f"companies/{company_id}/users/{user_id}")
+            response = requests.delete(url)
+            
+            if response.status_code in [200, 204]:
+                print(f"✅ Deleted user {user_id} from Firebase")
+                return True
+            else:
+                print(f"❌ Failed to delete user {user_id}: {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"Delete user error: {e}")
+            return False
+    
+    def delete_material(self, company_id, material_id):
+        """Delete a material from Firebase"""
+        if not self.is_ready():
+            return False
+        
+        try:
+            url = self._get_url(f"companies/{company_id}/materials/{material_id}")
+            response = requests.delete(url)
+            
+            if response.status_code in [200, 204]:
+                print(f"✅ Deleted material {material_id} from Firebase")
+                return True
+            else:
+                print(f"❌ Failed to delete material {material_id}: {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"Delete material error: {e}")
+            return False
+    
+    def delete_accessory(self, company_id, accessory_id):
+        """Delete an accessory from Firebase"""
+        if not self.is_ready():
+            return False
+        
+        try:
+            url = self._get_url(f"companies/{company_id}/accessories/{accessory_id}")
+            response = requests.delete(url)
+            
+            if response.status_code in [200, 204]:
+                print(f"✅ Deleted accessory {accessory_id} from Firebase")
+                return True
+            else:
+                print(f"❌ Failed to delete accessory {accessory_id}: {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"Delete accessory error: {e}")
+            return False    
 # Create Firebase instance
 firebase_api = FirebaseRestAPI()
 
 class CloudSyncManager:
+    """Manages cloud sync for all company data"""
+    
+    # ============================================================
+    # USER SYNC WITH DELETION
+    # ============================================================
     
     @staticmethod
     def sync_users_to_cloud(company_id):
-        """Sync users to cloud - EXCLUDE password_hash for security"""
+        """Sync users to cloud - DELETES cloud users not in local"""
         try:
-            # Get local users
             conn = sqlite3.connect("store_management.db")
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT id, name, email, role, company_id FROM users WHERE company_id = ?", (company_id,))
-            users = cursor.fetchall()
+            cursor.execute("SELECT id, name, email, password_hash, role, company_id FROM users WHERE company_id = ?", (company_id,))
+            local_users = cursor.fetchall()
             conn.close()
             
-            users_list = [dict(u) for u in users]
+            local_ids = {u['id'] for u in local_users}
+            print(f"📊 Local users: {len(local_ids)}")
             
-            if firebase_api.is_ready() and users_list:
-                return firebase_api.sync_users(company_id, users_list)
-            else:
-                print("⚠️ No users to sync or Firebase not ready")
+            if not firebase_api.is_ready():
+                print("Firebase not ready")
                 return False
+            
+            # STEP 1: Get ALL cloud users
+            cloud_users = firebase_api.get_users(company_id)
+            cloud_ids = {u['id'] for u in cloud_users}
+            print(f"📊 Cloud users: {len(cloud_ids)}")
+            
+            # STEP 2: Find users to DELETE (in cloud but NOT in local)
+            users_to_delete = cloud_ids - local_ids
+            
+            # STEP 3: DELETE from cloud
+            deleted_count = 0
+            for user_id in users_to_delete:
+                if firebase_api.delete_user(company_id, user_id):
+                    deleted_count += 1
+                    print(f"🗑️ Deleted user {user_id} from cloud")
+                else:
+                    print(f"⚠️ Failed to delete user {user_id} from cloud")
+            
+            # STEP 4: UPLOAD local users to cloud
+            uploaded_count = 0
+            for user in local_users:
+                if firebase_api.sync_user_full(company_id, dict(user)):
+                    uploaded_count += 1
+                else:
+                    print(f"⚠️ Failed to upload user {user['id']}")
+            
+            print(f"✅ Users synced: {uploaded_count} uploaded, {deleted_count} deleted from cloud")
+            return True
+            
         except Exception as e:
-            print(f"Sync error: {e}")
+            print(f"Sync users error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     @staticmethod
     def download_users_from_cloud(company_id):
-        """Download users from cloud - SET DEFAULT PASSWORD for new users"""
+        """Download users from cloud"""
         try:
             if not firebase_api.is_ready():
                 return False
             
             cloud_users = firebase_api.get_users(company_id)
             if not cloud_users:
-                return False
+                return True
             
             conn = sqlite3.connect("store_management.db")
             cursor = conn.cursor()
             
-            # Get existing local users to avoid overwriting passwords
+            # Get existing passwords to preserve them
             cursor.execute("SELECT id, password_hash FROM users")
-            existing_passwords = {row[0]: row[1] for row in cursor.fetchall()}
+            existing = {row[0]: row[1] for row in cursor.fetchall()}
+            DEFAULT_PASSWORD = hashlib.sha256("changeme".encode()).hexdigest()
             
-            # Default password hash for cloud-synced users (use a placeholder)
-            # This hash is for "changeme" - force user to change password on next login
-            DEFAULT_PASSWORD_HASH = hashlib.sha256("changeme".encode()).hexdigest()
+            # Get local user IDs
+            cursor.execute("SELECT id FROM users WHERE company_id = ?", (company_id,))
+            local_ids = {row[0] for row in cursor.fetchall()}
             
+            # DELETE local users not in cloud
+            deleted_count = 0
+            for user_id in local_ids - {u['id'] for u in cloud_users}:
+                cursor.execute("DELETE FROM users WHERE id = ? AND company_id = ?", (user_id, company_id))
+                deleted_count += 1
+                print(f"🗑️ Deleted user {user_id} from local (not in cloud)")
+            
+            # INSERT or UPDATE cloud users
             for user in cloud_users:
                 user_id = user.get('id')
-                # Use existing password hash if user already exists locally
-                password_hash = existing_passwords.get(user_id, DEFAULT_PASSWORD_HASH)
+                password_hash = existing.get(user_id, DEFAULT_PASSWORD)
+                if user.get('password_hash'):
+                    password_hash = user.get('password_hash')
                 
-                cursor.execute('''INSERT OR REPLACE INTO users 
-                    (id, name, email, password_hash, role, company_id, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM users WHERE id = ?), datetime('now')))''',
-                    (user_id, user.get('name'), user.get('email'), 
-                     password_hash, user.get('role'), company_id, user_id))
-            
-            conn.commit()
-            conn.close()
-            print(f"✅ Downloaded {len(cloud_users)} users from cloud")
-            return True
-        except Exception as e:
-            print(f"Download error: {e}")
-            return False
-    
-    @staticmethod
-    def full_sync_to_cloud(company_id):
-        """Upload all company data to cloud"""
-        try:
-            # Sync users
-            user_result = CloudSyncManager.sync_users_to_cloud(company_id)
-            
-            # Sync materials
-            conn = sqlite3.connect("store_management.db")
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM materials WHERE company_id = ?", (company_id,))
-            materials = cursor.fetchall()
-            cursor.execute("SELECT * FROM accessories WHERE company_id = ?", (company_id,))
-            accessories = cursor.fetchall()
-            conn.close()
-            
-            # Upload to Firebase
-            if firebase_api.is_ready():
-                firebase_api.sync_company_data(company_id, {
-                    'materials': [dict(m) for m in materials],
-                    'accessories': [dict(a) for a in accessories],
-                    'last_sync': datetime.now().isoformat()
-                })
-            
-            return user_result
-        except Exception as e:
-            print(f"Full sync error: {e}")
-            return False
-    
-    @staticmethod
-    def full_sync_from_cloud(company_id):
-        """Download all company data from cloud"""
-        try:
-            if not firebase_api.is_ready():
-                return False
-            
-            cloud_data = firebase_api.get_company_data(company_id)
-            if not cloud_data:
-                return False
-            
-            conn = sqlite3.connect("store_management.db")
-            cursor = conn.cursor()
-            
-            # Get existing password hashes
-            cursor.execute("SELECT id, password_hash FROM users")
-            existing_passwords = {row[0]: row[1] for row in cursor.fetchall()}
-            DEFAULT_PASSWORD_HASH = hashlib.sha256("changeme".encode()).hexdigest()
-            
-            # Download users
-            users = cloud_data.get('users', [])
-            for user in users:
-                user_id = user.get('id')
-                password_hash = existing_passwords.get(user_id, DEFAULT_PASSWORD_HASH)
                 cursor.execute('''INSERT OR REPLACE INTO users 
                     (id, name, email, password_hash, role, company_id)
                     VALUES (?, ?, ?, ?, ?, ?)''',
                     (user_id, user.get('name'), user.get('email'), 
                      password_hash, user.get('role'), company_id))
             
-            # Download materials
-            materials = cloud_data.get('materials', [])
-            for material in materials:
-                cursor.execute('''INSERT OR REPLACE INTO materials 
-                    (id, name, category_id, quantity, quality, location_ids, 
-                     size, length, colors, notes, barcode_value, company_id, 
-                     created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                    (material.get('id'), material.get('name'), material.get('category_id'),
-                     material.get('quantity'), material.get('quality'), material.get('location_ids'),
-                     material.get('size'), material.get('length'), material.get('colors'),
-                     material.get('notes'), material.get('barcode_value'), company_id,
-                     material.get('created_at'), material.get('updated_at')))
+            conn.commit()
+            conn.close()
+            print(f"✅ Downloaded {len(cloud_users)} users, {deleted_count} deleted locally")
+            return True
+        except Exception as e:
+            print(f"Download users error: {e}")
+            return False
+    
+    # ============================================================
+    # MATERIAL SYNC WITH DELETION
+    # ============================================================
+    
+    @staticmethod
+    def sync_materials_to_cloud(company_id):
+        """Sync materials to cloud - DELETES cloud materials not in local"""
+        try:
+            conn = sqlite3.connect("store_management.db")
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM materials WHERE company_id = ?", (company_id,))
+            local_materials = cursor.fetchall()
+            conn.close()
             
-            # Download accessories
-            accessories = cloud_data.get('accessories', [])
-            for accessory in accessories:
-                cursor.execute('''INSERT OR REPLACE INTO accessories 
-                    (id, name, category_id, quantity, price, quality, location, 
-                     notes, barcode_value, company_id, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                    (accessory.get('id'), accessory.get('name'), accessory.get('category_id'),
-                     accessory.get('quantity'), accessory.get('price'), accessory.get('quality'),
-                     accessory.get('location'), accessory.get('notes'), accessory.get('barcode_value'),
-                     company_id, accessory.get('created_at'), accessory.get('updated_at')))
+            local_ids = {m['id'] for m in local_materials}
+            print(f"📊 Local materials: {len(local_ids)}")
+            
+            if not firebase_api.is_ready():
+                return False
+            
+            # Get cloud materials
+            cloud_materials = firebase_api.get_materials(company_id)
+            cloud_ids = {m['id'] for m in cloud_materials}
+            print(f"📊 Cloud materials: {len(cloud_ids)}")
+            
+            # DELETE from cloud what's not in local
+            deleted_count = 0
+            for mat_id in cloud_ids - local_ids:
+                if firebase_api.delete_material(company_id, mat_id):
+                    deleted_count += 1
+                    print(f"🗑️ Deleted material {mat_id} from cloud")
+                else:
+                    print(f"⚠️ Failed to delete material {mat_id} from cloud")
+            
+            # UPLOAD local materials to cloud
+            uploaded_count = 0
+            for material in local_materials:
+                if firebase_api.sync_material_full(company_id, dict(material)):
+                    uploaded_count += 1
+                else:
+                    print(f"⚠️ Failed to upload material {material['id']}")
+            
+            print(f"✅ Materials synced: {uploaded_count} uploaded, {deleted_count} deleted from cloud")
+            return True
+            
+        except Exception as e:
+            print(f"Sync materials error: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    @staticmethod
+    def download_materials_from_cloud(company_id):
+        """Download materials from cloud"""
+        try:
+            if not firebase_api.is_ready():
+                return False
+            
+            cloud_materials = firebase_api.get_materials(company_id)
+            if not cloud_materials:
+                return True
+            
+            conn = sqlite3.connect("store_management.db")
+            cursor = conn.cursor()
+            
+            # Get local IDs
+            cursor.execute("SELECT id FROM materials WHERE company_id = ?", (company_id,))
+            local_ids = {row[0] for row in cursor.fetchall()}
+            
+            # DELETE local materials not in cloud
+            deleted_count = 0
+            for mat_id in local_ids - {m['id'] for m in cloud_materials}:
+                cursor.execute("DELETE FROM materials WHERE id = ? AND company_id = ?", (mat_id, company_id))
+                deleted_count += 1
+                print(f"🗑️ Deleted material {mat_id} from local (not in cloud)")
+            
+            # INSERT or UPDATE cloud materials
+            for material in cloud_materials:
+                material_id = material.get('id')
+                
+                if material_id in local_ids:
+                    # UPDATE existing
+                    cursor.execute('''UPDATE materials SET 
+                        name = ?, category_id = ?, quantity = ?, quality = ?, location_ids = ?,
+                        size = ?, length = ?, colors = ?, notes = ?, barcode_value = ?,
+                        image_path = ?, updated_at = ?
+                        WHERE id = ? AND company_id = ?''',
+                        (material.get('name'), material.get('category_id', 0),
+                         material.get('quantity', 0), material.get('quality', 'New'),
+                         material.get('location_ids', ''), material.get('size', ''),
+                         material.get('length', 0), material.get('colors', ''),
+                         material.get('notes', ''), material.get('barcode_value', ''),
+                         material.get('image_path', ''), datetime.now().isoformat(),
+                         material_id, company_id))
+                else:
+                    # INSERT new
+                    cursor.execute('''INSERT INTO materials 
+                        (id, name, category_id, quantity, quality, location_ids,
+                         size, length, colors, notes, barcode_value, image_path, company_id,
+                         created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                        (material_id, material.get('name'), material.get('category_id', 0),
+                         material.get('quantity', 0), material.get('quality', 'New'),
+                         material.get('location_ids', ''), material.get('size', ''),
+                         material.get('length', 0), material.get('colors', ''),
+                         material.get('notes', ''), material.get('barcode_value', ''),
+                         material.get('image_path', ''), company_id,
+                         material.get('created_at', datetime.now().isoformat()),
+                         material.get('updated_at', datetime.now().isoformat())))
             
             conn.commit()
             conn.close()
-            print(f"✅ Downloaded full company data for company {company_id}")
+            print(f"✅ Downloaded {len(cloud_materials)} materials, {deleted_count} deleted locally")
             return True
         except Exception as e:
-            print(f"Download error: {e}")
+            print(f"Download materials error: {e}")
+            return False
+    
+    # ============================================================
+    # ACCESSORY SYNC WITH DELETION
+    # ============================================================
+    
+    @staticmethod
+    def sync_accessories_to_cloud(company_id):
+        """Sync accessories to cloud - DELETES cloud accessories not in local"""
+        try:
+            conn = sqlite3.connect("store_management.db")
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM accessories WHERE company_id = ?", (company_id,))
+            local_accessories = cursor.fetchall()
+            conn.close()
+            
+            local_ids = {a['id'] for a in local_accessories}
+            print(f"📊 Local accessories: {len(local_ids)}")
+            
+            if not firebase_api.is_ready():
+                return False
+            
+            cloud_accessories = firebase_api.get_accessories(company_id)
+            cloud_ids = {a['id'] for a in cloud_accessories}
+            print(f"📊 Cloud accessories: {len(cloud_ids)}")
+            
+            # DELETE from cloud what's not in local
+            deleted_count = 0
+            for acc_id in cloud_ids - local_ids:
+                if firebase_api.delete_accessory(company_id, acc_id):
+                    deleted_count += 1
+                    print(f"🗑️ Deleted accessory {acc_id} from cloud")
+                else:
+                    print(f"⚠️ Failed to delete accessory {acc_id} from cloud")
+            
+            # UPLOAD local accessories to cloud
+            uploaded_count = 0
+            for accessory in local_accessories:
+                if firebase_api.sync_accessory_full(company_id, dict(accessory)):
+                    uploaded_count += 1
+                else:
+                    print(f"⚠️ Failed to upload accessory {accessory['id']}")
+            
+            print(f"✅ Accessories synced: {uploaded_count} uploaded, {deleted_count} deleted from cloud")
+            return True
+            
+        except Exception as e:
+            print(f"Sync accessories error: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    @staticmethod
+    def download_accessories_from_cloud(company_id):
+        """Download accessories from cloud"""
+        try:
+            if not firebase_api.is_ready():
+                return False
+            
+            cloud_accessories = firebase_api.get_accessories(company_id)
+            if not cloud_accessories:
+                return True
+            
+            conn = sqlite3.connect("store_management.db")
+            cursor = conn.cursor()
+            
+            # Get local IDs
+            cursor.execute("SELECT id FROM accessories WHERE company_id = ?", (company_id,))
+            local_ids = {row[0] for row in cursor.fetchall()}
+            
+            # DELETE local accessories not in cloud
+            deleted_count = 0
+            for acc_id in local_ids - {a['id'] for a in cloud_accessories}:
+                cursor.execute("DELETE FROM accessories WHERE id = ? AND company_id = ?", (acc_id, company_id))
+                deleted_count += 1
+                print(f"🗑️ Deleted accessory {acc_id} from local (not in cloud)")
+            
+            # INSERT or UPDATE cloud accessories
+            for accessory in cloud_accessories:
+                accessory_id = accessory.get('id')
+                
+                if accessory_id in local_ids:
+                    # UPDATE existing
+                    cursor.execute('''UPDATE accessories SET 
+                        name = ?, category_id = ?, quantity = ?, price = ?, quality = ?,
+                        location = ?, notes = ?, barcode_value = ?, image_path = ?, updated_at = ?
+                        WHERE id = ? AND company_id = ?''',
+                        (accessory.get('name'), accessory.get('category_id', 0),
+                         accessory.get('quantity', 0), accessory.get('price', 0),
+                         accessory.get('quality', 'New'), accessory.get('location', ''),
+                         accessory.get('notes', ''), accessory.get('barcode_value', ''),
+                         accessory.get('image_path', ''), datetime.now().isoformat(),
+                         accessory_id, company_id))
+                else:
+                    # INSERT new
+                    cursor.execute('''INSERT INTO accessories 
+                        (id, name, category_id, quantity, price, quality, location,
+                         notes, barcode_value, image_path, company_id, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                        (accessory_id, accessory.get('name'), accessory.get('category_id', 0),
+                         accessory.get('quantity', 0), accessory.get('price', 0),
+                         accessory.get('quality', 'New'), accessory.get('location', ''),
+                         accessory.get('notes', ''), accessory.get('barcode_value', ''),
+                         accessory.get('image_path', ''), company_id,
+                         accessory.get('created_at', datetime.now().isoformat()),
+                         accessory.get('updated_at', datetime.now().isoformat())))
+            
+            conn.commit()
+            conn.close()
+            print(f"✅ Downloaded {len(cloud_accessories)} accessories, {deleted_count} deleted locally")
+            return True
+        except Exception as e:
+            print(f"Download accessories error: {e}")
+            return False
+    
+    # ============================================================
+    # FULL SYNC METHODS
+    # ============================================================
+    
+    @staticmethod
+    def full_sync_to_cloud(company_id):
+        """Sync ALL data to cloud - UPLOAD with deletion"""
+        try:
+            print(f"🔄 Syncing ALL data to cloud for company {company_id}")
+            
+            user_result = CloudSyncManager.sync_users_to_cloud(company_id)
+            material_result = CloudSyncManager.sync_materials_to_cloud(company_id)
+            accessory_result = CloudSyncManager.sync_accessories_to_cloud(company_id)
+            
+            print(f"✅ Full sync complete: Users={user_result}, Materials={material_result}, Accessories={accessory_result}")
+            return user_result and material_result and accessory_result
+        except Exception as e:
+            print(f"Full sync error: {e}")
+            return False
+    
+    @staticmethod
+    def full_sync_from_cloud(company_id):
+        """Download ALL data from cloud - DOWNLOAD with deletion"""
+        try:
+            print(f"🔄 Downloading ALL data from cloud for company {company_id}")
+            
+            user_result = CloudSyncManager.download_users_from_cloud(company_id)
+            material_result = CloudSyncManager.download_materials_from_cloud(company_id)
+            accessory_result = CloudSyncManager.download_accessories_from_cloud(company_id)
+            
+            print(f"✅ Full download complete: Users={user_result}, Materials={material_result}, Accessories={accessory_result}")
+            return user_result and material_result and accessory_result
+        except Exception as e:
+            print(f"Full download error: {e}")
             return False
         
 class StoreApp:
@@ -1577,66 +1996,68 @@ class StoreApp:
         company_id = self.current_user.get('company_id', 1)
         
         page.snack_bar = ft.SnackBar(
-            ft.Text(f"🔄 Syncing..."),
+            ft.Text(f"🔄 Syncing with cloud..."),
             bgcolor=self.accent_color,
             duration=2000
         )
         page.snack_bar.open = True
         page.update()
         
-        try:
-            # Upload to cloud
-            upload_result = CloudSyncManager.full_sync_to_cloud(company_id)
-            # Download from cloud
-            download_result = CloudSyncManager.full_sync_from_cloud(company_id)
-            
-            if upload_result or download_result:
+        def do_sync():
+            try:
+                # Upload all data to cloud
+                upload_result = CloudSyncManager.full_sync_to_cloud(company_id)
+                
+                # Download all data from cloud
+                download_result = CloudSyncManager.full_sync_from_cloud(company_id)
+                
+                if upload_result or download_result:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✅ Sync completed! Data updated."),
+                        bgcolor=self.success_color,
+                        duration=3000
+                    )
+                else:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("ℹ️ No changes detected"),
+                        bgcolor=self.warning_color,
+                        duration=2000
+                    )
+                page.snack_bar.open = True
+                
+                # Refresh current view
+                def refresh():
+                    if self.current_view == "dashboard":
+                        self.show_dashboard(page)
+                    elif self.current_view == "materials":
+                        self.show_materials_screen(page)
+                    elif self.current_view == "accessories":
+                        self.show_accessories(page)
+                    elif self.current_view == "users":
+                        self.show_users(page)
+                    else:
+                        self.show_dashboard(page)
+                
+                import threading
+                threading.Thread(target=refresh, daemon=True).start()
+                
+                page.update()
+                
+            except Exception as e:
+                print(f"Sync error: {e}")
+                import traceback
+                traceback.print_exc()
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✅ Sync completed!"),
-                    bgcolor=self.success_color,
+                    ft.Text(f"Sync error: {str(e)[:50]}"),
+                    bgcolor=self.danger_color,
                     duration=3000
                 )
-                # Refresh current view
-                if self.current_view == "users":
-                    self.show_users(page)
-                elif self.current_view == "dashboard":
-                    self.show_dashboard(page)
-            else:
-                page.snack_bar = ft.SnackBar(
-                    ft.Text("ℹ️ No changes detected"),
-                    bgcolor=self.warning_color,
-                    duration=2000
-                )
-        except Exception as e:
-            print(f"Sync error: {e}")
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"Sync error: {str(e)[:50]}"),
-                bgcolor=self.danger_color,
-                duration=3000
-            )
+                page.snack_bar.open = True
+                page.update()
         
-        page.snack_bar.open = True
-        page.update()
+        import threading
+        threading.Thread(target=do_sync, daemon=True).start()
 
-    def auto_sync_on_start(self, page: ft.Page):
-        """Auto sync when app starts"""
-        if self.current_user and self.current_user.get('id', 0) > 0:
-            company_id = self.current_user.get('company_id', 1)
-            print(f"🔄 Auto-syncing for company ID: {company_id}")
-            
-            success = CloudSyncManager.full_sync_from_cloud(company_id)
-            
-            if success:
-                print(f"✅ Auto-sync completed for company {company_id}")
-                if self.current_view == "users":
-                    self.show_users(page)
-
-    def auto_sync_after_change(self, page: ft.Page):
-        """Auto sync after data changes"""
-        if self.current_user and self.current_user.get('id', 0) > 0:
-            company_id = self.current_user.get('company_id', 1)
-            CloudSyncManager.full_sync_to_cloud(company_id)
-            print(f"✅ Auto-synced after change for company {company_id}")
     # ============ ZOOM METHODS ============
     def zoom_in(self, page: ft.Page):
         self.zoom_level = min(self.zoom_level + 0.1, 2.0)
@@ -2201,27 +2622,236 @@ class StoreApp:
         dialog.open = True
         page.update()
 
+    def ensure_demo_users(self):
+        """Ensure demo users exist - CLASS METHOD"""
+        import sqlite3
+        import hashlib
+        from database import DB_PATH
+        from datetime import datetime
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Check if users table exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if not cursor.fetchone():
+                print("❌ Users table doesn't exist!")
+                conn.close()
+                return False
+            
+            # Check if demo company exists
+            cursor.execute("SELECT id FROM companies WHERE name = 'Demo Company'")
+            company = cursor.fetchone()
+            
+            if company:
+                company_id = company[0]
+            else:
+                cursor.execute(
+                    "INSERT INTO companies (name, created_at) VALUES (?, ?)",
+                    ('Demo Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                )
+                company_id = cursor.lastrowid
+            
+            # Demo users
+            demo_users = [
+                ('Demo Admin', 'demo@store.com', 'demo123', 'admin'),
+                ('Demo Manager', 'manager@store.com', 'demo123', 'manager'),
+                ('Demo User', 'user@store.com', 'demo123', 'user'),
+            ]
+            
+            for name, email, password, role in demo_users:
+                cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+                if not cursor.fetchone():
+                    hashed_password = hashlib.sha256(password.encode()).hexdigest()
+                    cursor.execute('''
+                        INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (name, email, hashed_password, role, company_id,
+                          datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    print(f"✅ Created demo user: {name} ({email})")
+            
+            conn.commit()
+            conn.close()
+            print("✅ Demo users verified")
+            return True
+            
+        except Exception as e:
+            print(f"Error ensuring demo users: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+        
+    def ensure_admin_user(self):
+        """Ensure admin user exists - CLASS METHOD"""
+        import sqlite3
+        import hashlib
+        from database import DB_PATH
+        from datetime import datetime
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Check if users table exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if not cursor.fetchone():
+                print("❌ Users table doesn't exist!")
+                conn.close()
+                return False
+            
+            # Check if admin user exists
+            cursor.execute("SELECT id FROM users WHERE email = ?", ("admin@store.com",))
+            admin = cursor.fetchone()
+            
+            if not admin:
+                # Check if default company exists
+                cursor.execute("SELECT id FROM companies WHERE name = 'Default Company'")
+                company = cursor.fetchone()
+                if not company:
+                    cursor.execute(
+                        "INSERT INTO companies (name, created_at) VALUES (?, ?)",
+                        ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                    )
+                    company_id = cursor.lastrowid
+                else:
+                    company_id = company[0]
+                
+                # Create admin user
+                hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
+                cursor.execute("""
+                    INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id,
+                      datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                conn.commit()
+                print("✅ Created admin user: admin@store.com / admin123")
+            
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"Error ensuring admin user: {e}")
+            return False
+
+    def auto_sync_on_start(self, page: ft.Page):
+        """Auto sync when app starts"""
+        if self.current_user and self.current_user.get('id', 0) > 0:
+            company_id = self.current_user.get('company_id', 1)
+            print(f"🔄 Auto-syncing for company ID: {company_id}")
+            
+            import threading
+            def do_sync():
+                try:
+                    success = CloudSyncManager.full_sync_from_cloud(company_id)
+                    if success:
+                        print(f"✅ Auto-sync completed for company {company_id}")
+                    else:
+                        print(f"⚠️ Auto-sync had issues for company {company_id}")
+                except Exception as e:
+                    print(f"Auto-sync error: {e}")
+            
+            threading.Thread(target=do_sync, daemon=True).start()
+
+    def on_admin_login(self, e):
+        """Auto-login with admin credentials - USES CLASS METHOD"""
+        page = self.page_ref
+        
+        if not page:
+            print("❌ Page reference not set")
+            return
+        
+        # ✅ Now works - class method
+        self.ensure_admin_user()
+        
+        email = "admin@store.com"
+        password = "admin123"
+        
+        print(f"🔐 Attempting admin login: {email}")
+        
+        user = UserManager.authenticate(email, password)
+        
+        if user:
+            user_dict = dict(user)
+            company_id = user_dict.get('company_id', 1)
+            user_dict['company_id'] = company_id
+            
+            self.current_user = user_dict
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✅ Welcome Admin {user_dict.get('name', 'Admin')}!"),
+                bgcolor=self.accent_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            self.auto_sync_on_start(page)
+            self.show_dashboard(page)
+        else:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("❌ Admin login failed. Please check credentials."),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+    
+    def on_demo_login(self, e):
+        """Auto-login with demo credentials"""
+        page = self.page_ref
+        
+        if not page:
+            print("❌ Page reference not set")
+            return
+        
+        # Ensure demo users exist
+        self.ensure_demo_users()
+        
+        email = "demo@store.com"
+        password = "demo123"
+        
+        print(f"🔐 Attempting demo login: {email}")
+        
+        user = UserManager.authenticate(email, password)
+        
+        if user:
+            user_dict = dict(user)
+            company_id = user_dict.get('company_id', 1)
+            user_dict['company_id'] = company_id
+            
+            self.current_user = user_dict
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✅ Welcome {user_dict.get('name', 'Demo User')}!"),
+                bgcolor=self.success_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            # ===== AUTO-SYNC =====
+            self.auto_sync_on_start(page)
+            
+            # Navigate to dashboard
+            self.show_dashboard(page)
+        else:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("❌ Demo login failed. Please try again."),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+
     def show_login(self, page: ft.Page):
-        """Working login screen - Stores UI elements as class attributes"""
+        """Show login screen with admin and demo buttons"""
         page.controls.clear()
+        self.page_ref = page
         
         field_width = 280
         
-        # ===== TRIAL BANNER =====
-        trial_banner = ft.Container(
-            content=ft.Row([
-                ft.Icon(ft.icons.INFO_OUTLINE, color="#FF9800", size=16),
-                ft.Text("🎯 Try 30 days free!", size=12, color="#FF9800"),
-                ft.Container(expand=True),
-                ft.Text("⏳ 28 days left", size=10, color="#888888"),
-            ], spacing=5),
-            padding=ft.padding.symmetric(horizontal=10, vertical=6),
-            bgcolor="#2C2C2C",
-            border_radius=8,
-            margin=ft.margin.only(bottom=10),
-        )
-        
-        # ===== LOGIN FIELDS - STORE AS CLASS ATTRIBUTES =====
+        # ===== CREATE FIELDS =====
         self.email_field = ft.TextField(
             label="Email", 
             hint_text="your@email.com", 
@@ -2243,135 +2873,12 @@ class StoreApp:
         self.status_text = ft.Text("", color="red", size=12)
         self.loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
         
-        # ===== CREATE BUTTONS =====
-        self.login_btn = ft.FilledButton(
-            "Sign In",
-            width=140,
-            height=45,
-            on_click=None,
-            style=ft.ButtonStyle(
-                bgcolor=self.accent_color,
-                color="white",
-            ),
-        )
-        
-        self.demo_btn = ft.ElevatedButton(
-            "▶️ Demo Login",
-            on_click=None,
-            icon=ft.icons.PLAY_ARROW,
-            style=ft.ButtonStyle(
-                bgcolor="#4CAF50",
-                color="white",
-                padding=10,
-            ),
-            expand=True,
-        )
-        
         # ============================================================
-        # DEFINE FUNCTIONS
+        # LOGIN HANDLER - LOCAL FUNCTION
         # ============================================================
         
-        def create_default_admin():
-            """Create default admin if no users exist"""
-            import sqlite3
-            import hashlib
-            from database import DB_PATH
-            from datetime import datetime
-            
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-                if not cursor.fetchone():
-                    conn.close()
-                    return
-                
-                cursor.execute("SELECT COUNT(*) FROM users")
-                count = cursor.fetchone()[0]
-                
-                if count == 0:
-                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
-                    if not cursor.fetchone():
-                        cursor.execute('''
-                            CREATE TABLE IF NOT EXISTS companies (
-                                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                name TEXT NOT NULL,
-                                created_at TEXT
-                            )
-                        ''')
-                    
-                    cursor.execute("INSERT INTO companies (name, created_at) VALUES (?, ?)", 
-                                ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                    company_id = cursor.lastrowid
-                    
-                    hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
-                    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    cursor.execute("""
-                        INSERT INTO users (name, email, password_hash, role, company_id, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id, current_time))
-                    conn.commit()
-                    print("✅ Created default admin: admin@store.com / admin123")
-                    
-                    page.snack_bar = ft.SnackBar(
-                        ft.Text("✓ Default admin created! Email: admin@store.com, Password: admin123"),
-                        bgcolor=self.success_color,
-                        duration=5000
-                    )
-                    page.snack_bar.open = True
-                    page.update()
-                conn.close()
-            except Exception as e:
-                print(f"Error creating default admin: {e}")
-        
-        def ensure_demo_users():
-            """Ensure demo users exist"""
-            import sqlite3
-            import hashlib
-            from database import DB_PATH
-            from datetime import datetime
-            
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                
-                cursor.execute("SELECT id FROM companies WHERE name = 'Demo Company'")
-                company = cursor.fetchone()
-                
-                if company:
-                    company_id = company[0]
-                else:
-                    cursor.execute(
-                        "INSERT INTO companies (name, created_at) VALUES (?, ?)",
-                        ('Demo Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-                    )
-                    company_id = cursor.lastrowid
-                
-                demo_users = [
-                    ('Demo Admin', 'demo@store.com', 'demo123', 'admin'),
-                    ('Demo Manager', 'manager@store.com', 'demo123', 'manager'),
-                    ('Demo User', 'user@store.com', 'demo123', 'user'),
-                ]
-                
-                for name, email, password, role in demo_users:
-                    cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-                    if not cursor.fetchone():
-                        hashed_password = hashlib.sha256(password.encode()).hexdigest()
-                        cursor.execute('''
-                            INSERT INTO users (name, email, password_hash, role, company_id, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        ''', (name, email, hashed_password, role, company_id,
-                            datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                        print(f"✅ Created demo user: {name} ({email})")
-                
-                conn.commit()
-                conn.close()
-                
-            except Exception as e:
-                print(f"Error creating demo users: {e}")
-        
-        def on_login(e):
+        def handle_login(e):
+            """Handle manual login - local function"""
             email = self.email_field.value.strip()
             password = self.password_field.value
             
@@ -2398,33 +2905,11 @@ class StoreApp:
                     
                     self.loading_indicator.visible = False
                     
-                    if company_id == 1:
-                        days_left = self.get_demo_days_left(company_id)
-                        if days_left == 0:
-                            page.snack_bar = ft.SnackBar(
-                                ft.Text("⚠️ Your 30-day trial has expired! Please contact support."),
-                                bgcolor=self.danger_color,
-                                duration=5000
-                            )
-                        elif days_left <= 5:
-                            page.snack_bar = ft.SnackBar(
-                                ft.Text(f"⚠️ Your trial ends in {days_left} days! Purchase to continue."),
-                                bgcolor=self.warning_color,
-                                duration=4000
-                            )
-                        else:
-                            page.snack_bar = ft.SnackBar(
-                                ft.Text(f"✓ Welcome! Trial: {days_left} days left."),
-                                bgcolor=self.success_color,
-                                duration=3000
-                            )
-                    else:
-                        page.snack_bar = ft.SnackBar(
-                            ft.Text(f"✓ Welcome {user_dict.get('name', 'User')}!"),
-                            bgcolor=self.success_color,
-                            duration=3000
-                        )
-                    
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"✅ Welcome {user_dict.get('name', 'User')}!"),
+                        bgcolor=self.success_color,
+                        duration=3000
+                    )
                     page.snack_bar.open = True
                     page.update()
                     
@@ -2443,34 +2928,46 @@ class StoreApp:
                 page.update()
                 print(f"Login error: {ex}")
         
-        def on_demo_login(e):
-            """Auto-login with demo credentials - Uses self.email_field"""
-            self.email_field.value = "demo@store.com"
-            self.password_field.value = "demo123"
-            self.status_text.value = "🔄 Logging in with demo account..."
-            self.status_text.color = self.accent_color
-            page.update()
-            on_login(e)
-        
-        def on_register(e):
-            self.show_register_dialog(page)
-        
-        def on_forgot_password(e):
-            self.show_forgot_password_dialog(page)
-        
         # ============================================================
-        # SET BUTTON ON_CLICK HANDLERS
+        # CREATE BUTTONS
         # ============================================================
         
-        self.login_btn.on_click = on_login
-        self.demo_btn.on_click = on_demo_login
+        login_btn = ft.FilledButton(
+            "Sign In",
+            width=140,
+            height=45,
+            on_click=handle_login,  # ✅ Pass local function
+            style=ft.ButtonStyle(
+                bgcolor=self.accent_color,
+                color="white",
+            ),
+        )
         
-        # ============================================================
-        # INITIALIZE DATABASE
-        # ============================================================
+        # Admin Login - uses class method
+        admin_btn = ft.ElevatedButton(
+            "👑 Admin Login",
+            on_click=self.on_admin_login,  # ✅ Class method
+            icon=ft.icons.ADMIN_PANEL_SETTINGS,
+            style=ft.ButtonStyle(
+                bgcolor="#9C27B0",
+                color="white",
+                padding=10,
+            ),
+            expand=True,
+        )
         
-        create_default_admin()
-        ensure_demo_users()
+        # Demo Login - uses class method
+        demo_btn = ft.ElevatedButton(
+            "▶️ Demo Login",
+            on_click=self.on_demo_login,  # ✅ Class method
+            icon=ft.icons.PLAY_ARROW,
+            style=ft.ButtonStyle(
+                bgcolor="#4CAF50",
+                color="white",
+                padding=10,
+            ),
+            expand=True,
+        )
         
         # ============================================================
         # BUILD UI
@@ -2486,8 +2983,6 @@ class StoreApp:
             ft.Container(width=50, height=2, bgcolor=self.accent_color, border_radius=1),
             ft.Container(height=20),
             
-            trial_banner,
-            
             self.email_field, 
             ft.Container(height=15),
             self.password_field, 
@@ -2499,29 +2994,28 @@ class StoreApp:
             ft.Row([
                 logo, 
                 ft.Container(width=20), 
-                self.login_btn,
+                login_btn,
             ], alignment=ft.MainAxisAlignment.CENTER),
             
             ft.Divider(height=20, color="#3C3C3C"),
             
             ft.Row([
-                ft.TextButton("Create Account", on_click=on_register, style=ft.ButtonStyle(color=self.success_color)),
-                ft.TextButton("Forgot Password?", on_click=on_forgot_password, style=ft.ButtonStyle(color="#888888")),
+                ft.TextButton("Create Account", on_click=lambda e: self.show_register_dialog(page), 
+                            style=ft.ButtonStyle(color=self.success_color)),
+                ft.TextButton("Forgot Password?", on_click=lambda e: self.show_forgot_password_dialog(page), 
+                            style=ft.ButtonStyle(color="#888888")),
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
             
             ft.Divider(height=10, color="#3C3C3C"),
             
-            ft.Text("🚀 Try Demo", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
-            self.demo_btn,
+            ft.Text("Quick Login", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
+            ft.Row([admin_btn, demo_btn], spacing=10),
             ft.Row([
-                ft.Text("Email: demo@store.com", size=10, color="#888888"),
-                ft.Text("Password: demo123", size=10, color="#888888"),
-            ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
-            
-            ft.Container(height=10),
-            ft.Text("💡 Default admin: admin@store.com / admin123", size=10, color="#888888", selectable=True),
-            ft.Text("💡 Demo credentials: demo@store.com / demo123", size=10, color="#888888", selectable=True),
-            ft.Text("💡 Try 30 days free with demo account", size=10, color="#888888"),
+                ft.Text("Admin: admin@store.com / admin123", size=10, color="#888888"),
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Row([
+                ft.Text("Demo: demo@store.com / demo123", size=10, color="#888888"),
+            ], alignment=ft.MainAxisAlignment.CENTER),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
         
         login_card = ft.Container(
@@ -5166,14 +5660,13 @@ class StoreApp:
             page.snack_bar.open = True
             page.update()
 
-                # ============ DASHBOARD ============
+                    # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
         """Dashboard with cloud sync button"""
         page.controls.clear()
         
         is_mobile = page.width < 800 if page.width else False
         
-        # Navigation
         if is_mobile:
             nav = self.create_bottom_nav(page)
             sidebar = None
@@ -5194,6 +5687,7 @@ class StoreApp:
         total_users = len(users)
         total_low_stock = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
         
+        # Quality counts
         quality_counts = {"New": 0, "Used": 0, "Damaged": 0, "Repaired": 0}
         for m in materials:
             q = m.get('quality', 'Used')
@@ -5301,57 +5795,6 @@ class StoreApp:
             )
         )
         
-        # Recent Materials
-        main_column.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
-        if materials:
-            for m in materials[:3]:
-                main_column.controls.append(
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Text("📦", size=18),
-                            ft.Text(m.get('name', 'N/A'), size=14, expand=True),
-                            ft.Text(f"Qty: {m.get('quantity', 0)}", size=14),
-                            ft.Container(
-                                content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
-                                bgcolor=self.get_quality_color(m.get('quality', 'Used')),
-                                border_radius=8,
-                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
-                            ),
-                        ]),
-                        padding=10, bgcolor="#2C2C2C", border_radius=8,
-                    )
-                )
-            main_column.controls.append(ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)))
-        else:
-            main_column.controls.append(ft.Text("No materials", size=12, color="#888888"))
-        
-        # Recent Accessories
-        main_column.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
-        if accessories:
-            for a in accessories[:3]:
-                price = a.get('price', 0)
-                price_text = f"${price:.2f}" if price else ""
-                main_column.controls.append(
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Text("🔧", size=18),
-                            ft.Text(a.get('name', 'N/A'), size=14, expand=True),
-                            ft.Text(f"Qty: {a.get('quantity', 0)}", size=14),
-                            ft.Text(price_text, size=12, color="#4CAF50"),
-                            ft.Container(
-                                content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
-                                bgcolor=self.get_quality_color(a.get('quality', 'Used')),
-                                border_radius=8,
-                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
-                            ),
-                        ]),
-                        padding=10, bgcolor="#2C2C2C", border_radius=8,
-                    )
-                )
-            main_column.controls.append(ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)))
-        else:
-            main_column.controls.append(ft.Text("No accessories", size=12, color="#888888"))
-        
         # Quick Actions
         main_column.controls.append(ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD))
         main_column.controls.append(
@@ -5367,36 +5810,18 @@ class StoreApp:
             ], spacing=8)
         )
         
-        # Import/Export
-        main_column.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
-        main_column.controls.append(
-            ft.Row([
-                ft.ElevatedButton("🌐 Export HTML", on_click=lambda e: self.export_html_simple(page), expand=True),
-                ft.ElevatedButton("📁 View Exports", on_click=lambda e: self.show_exported_files_simple(page), expand=True),
-            ], spacing=8)
-        )
-        
         # Cloud Status
-        if firebase_api.is_ready():
-            cloud_status = ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CLOUD_DONE, size=16, color=self.success_color),
-                    ft.Text("Cloud Connected", size=12, color=self.success_color),
-                ], spacing=6),
-                padding=ft.padding.symmetric(horizontal=12, vertical=6),
-                bgcolor="#2C2C2C",
-                border_radius=12,
-            )
-        else:
-            cloud_status = ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CLOUD_OFF, size=16, color=self.warning_color),
-                    ft.Text("Local Mode", size=12, color=self.warning_color),
-                ], spacing=6),
-                padding=ft.padding.symmetric(horizontal=12, vertical=6),
-                bgcolor="#2C2C2C",
-                border_radius=12,
-            )
+        cloud_status = ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.icons.CLOUD_DONE if firebase_api.is_ready() else ft.icons.CLOUD_OFF, 
+                    size=16, color=self.success_color if firebase_api.is_ready() else self.warning_color),
+                ft.Text("Cloud Connected" if firebase_api.is_ready() else "Local Mode", 
+                    size=12, color=self.success_color if firebase_api.is_ready() else self.warning_color),
+            ], spacing=6),
+            padding=ft.padding.symmetric(horizontal=12, vertical=6),
+            bgcolor="#2C2C2C",
+            border_radius=12,
+        )
         main_column.controls.append(cloud_status)
         
         # Wrap in scrollable container
@@ -11722,10 +12147,17 @@ class StoreApp:
                 
                 print(f"✅ User '{user_name}' deleted from local database")
                 
-                # IMPORTANT: Upload changes to cloud
-                # This will upload the remaining users (excluding the deleted one)
-                sync_result = CloudSyncManager.full_sync_to_cloud(company_id)
-                print(f"Sync to cloud result: {sync_result}")
+                # ===== SYNC DELETION TO CLOUD =====
+                def sync_after_delete():
+                    try:
+                        # Sync all remaining users to cloud (which removes the deleted one)
+                        CloudSyncManager.sync_users_to_cloud(company_id)
+                        print(f"✅ User deletion synced to cloud")
+                    except Exception as e:
+                        print(f"Sync error: {e}")
+                
+                import threading
+                threading.Thread(target=sync_after_delete, daemon=True).start()
                 
                 page.overlay.clear()
                 page.snack_bar = ft.SnackBar(
@@ -11759,11 +12191,13 @@ class StoreApp:
                         ft.Text(f"'{user_name}'?", size=16, weight=ft.FontWeight.BOLD, color=self.danger_color),
                         ft.Container(height=10),
                         ft.Text("This action cannot be undone.", size=12, color="#888888"),
+                        ft.Text("User will be removed from ALL devices.", size=12, color=self.warning_color),
                         ft.Container(height=10),
                         ft.Divider(),
                         ft.Row([
                             ft.TextButton("Cancel", on_click=close_modal),
-                            ft.FilledButton("Yes, Delete", on_click=confirm_delete, style=ft.ButtonStyle(bgcolor=self.danger_color)),
+                            ft.FilledButton("Yes, Delete", on_click=confirm_delete, 
+                                        style=ft.ButtonStyle(bgcolor=self.danger_color)),
                         ], alignment=ft.MainAxisAlignment.END, spacing=10),
                     ], spacing=5),
                     padding=20,
