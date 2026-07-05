@@ -2923,15 +2923,15 @@ class StoreApp:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             
-            # ===== CHECK IF USERS TABLE EXISTS =====
+            # Check if users table exists
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
             if not cursor.fetchone():
                 print("❌ Users table doesn't exist! Creating tables...")
-                self.create_default_admin_with_code()
                 conn.close()
+                self.create_default_admin_with_code()
                 return
             
-            # ===== CHECK IF ANY USERS EXIST =====
+            # Check if any users exist
             cursor.execute("SELECT COUNT(*) FROM users")
             count = cursor.fetchone()[0]
             
@@ -2941,7 +2941,7 @@ class StoreApp:
                 self.create_default_admin_with_code()
                 return
             
-            # ===== CHECK IF ADMIN EXISTS =====
+            # Check if admin exists
             cursor.execute("SELECT id, login_code, temp_password FROM users WHERE email = ?", ("admin@store.com",))
             admin = cursor.fetchone()
             
@@ -2951,7 +2951,7 @@ class StoreApp:
                 self.create_default_admin_with_code()
                 return
             
-            # ===== CHECK IF ADMIN HAS LOGIN CODE =====
+            # Check if admin has login code
             admin_id, login_code, temp_password = admin
             if not login_code:
                 print("📋 Admin has no login code! Updating...")
@@ -3195,22 +3195,27 @@ class StoreApp:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             
+            # Check if users table exists
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
             if not cursor.fetchone():
-                message = "❌ Users table doesn't exist!"
+                message = "❌ Users table doesn't exist!\n\nCreating tables..."
                 self.show_debug_dialog(page, message)
                 conn.close()
+                # Create tables
+                self.create_default_admin_with_code()
                 return
             
+            # Get all users
             cursor.execute("SELECT id, name, email, login_code, temp_password, password_changed, code_used FROM users")
             users = cursor.fetchall()
             conn.close()
             
             if not users:
-                message = "❌ No users found in database!\n\nRun: create_default_admin_with_code()"
+                message = "❌ No users found in database!\n\nTap 'Create Admin' to create one."
                 self.show_debug_dialog(page, message)
                 return
             
+            # Build user list
             message = "📊 USERS IN DATABASE:\n"
             message += "=" * 40 + "\n"
             for u in users:
@@ -3223,6 +3228,8 @@ class StoreApp:
                 message += f"Code Used: {u[6]}\n"
                 message += "-" * 30 + "\n"
             
+            # Check if admin exists
+            conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             cursor.execute("SELECT id, login_code FROM users WHERE email = 'admin@store.com'")
             admin = cursor.fetchone()
@@ -3231,38 +3238,59 @@ class StoreApp:
             if admin:
                 message += f"\n✅ Admin exists! Login Code: {admin[1]}"
             else:
-                message += "\n❌ Admin NOT found!"
+                message += "\n❌ Admin NOT found! Tap 'Create Admin'"
+            
+            # Check if demo users exist
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            demo_emails = ['demo@store.com', 'manager@store.com', 'user@store.com']
+            demo_found = []
+            for email in demo_emails:
+                cursor.execute("SELECT email FROM users WHERE email = ?", (email,))
+                if cursor.fetchone():
+                    demo_found.append(email)
+            conn.close()
+            
+            if demo_found:
+                message += f"\n✅ Demo users found: {len(demo_found)}/3"
+            else:
+                message += "\n❌ No demo users found! Tap 'Create Demo Users'"
             
             self.show_debug_dialog(page, message)
             
         except Exception as e:
             self.show_debug_dialog(page, f"Error: {str(e)}")
 
-        def show_debug_dialog(self, page: ft.Page, message):
-            """Show debug dialog"""
-            dialog = ft.AlertDialog(
-                title=ft.Row([
-                    ft.Text("🔍 Database Debug", size=18, weight=ft.FontWeight.BOLD, expand=True),
-                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: setattr(page.dialog, 'open', False)),
-                ]),
-                content=ft.Container(
-                    content=ft.Text(message, size=12, font_family="monospace", selectable=True),
-                    width=400,
-                    height=400,
-                    padding=20,
+    def show_debug_dialog(self, page: ft.Page, message):
+        """Show debug dialog - CLASS METHOD"""
+        dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Text("🔍 Database Debug", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: setattr(page.dialog, 'open', False)),
+            ]),
+            content=ft.Container(
+                content=ft.Text(message, size=12, font_family="monospace", selectable=True),
+                width=400,
+                height=400,
+                padding=20,
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ft.ElevatedButton(
+                    "Create Admin", 
+                    on_click=lambda e: self.create_default_admin_with_code() or setattr(page.dialog, 'open', False),
+                    style=ft.ButtonStyle(bgcolor=self.success_color),
                 ),
-                actions=[
-                    ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False)),
-                    ft.ElevatedButton(
-                        "Create Admin", 
-                        on_click=lambda e: self.create_default_admin_with_code() or setattr(page.dialog, 'open', False),
-                        style=ft.ButtonStyle(bgcolor=self.success_color),
-                    ),
-                ],
-            )
-            page.dialog = dialog
-            dialog.open = True
-            page.update()
+                ft.ElevatedButton(
+                    "Create Demo Users", 
+                    on_click=lambda e: self.ensure_demo_users_with_codes() or setattr(page.dialog, 'open', False),
+                    style=ft.ButtonStyle(bgcolor=self.accent_color),
+                ),
+            ],
+        )
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
 
     def get_saved_user(self):
         """Get saved user from session - CLASS METHOD"""
@@ -9431,16 +9459,25 @@ class StoreApp:
             # Check if users table exists
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
             if not cursor.fetchone():
-                print("❌ Users table doesn't exist!")
-                conn.close()
-                return False
-            
-            # Check if admin already exists
-            cursor.execute("SELECT id FROM users WHERE email = ?", ("admin@store.com",))
-            if cursor.fetchone():
-                print("✅ Admin already exists")
-                conn.close()
-                return True
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        email TEXT UNIQUE NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        role TEXT DEFAULT 'user',
+                        company_id INTEGER DEFAULT 1,
+                        login_code TEXT,
+                        code_used INTEGER DEFAULT 0,
+                        temp_password TEXT,
+                        password_changed INTEGER DEFAULT 0,
+                        account_type TEXT DEFAULT 'trial',
+                        trial_end_date TEXT,
+                        created_at TEXT,
+                        updated_at TEXT
+                    )
+                ''')
+                print("✅ Users table created")
             
             # Check if companies table exists
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'")
@@ -9452,6 +9489,14 @@ class StoreApp:
                         created_at TEXT
                     )
                 ''')
+                print("✅ Companies table created")
+            
+            # Check if admin already exists
+            cursor.execute("SELECT id FROM users WHERE email = ?", ("admin@store.com",))
+            if cursor.fetchone():
+                print("✅ Admin already exists")
+                conn.close()
+                return True
             
             # Create default company
             cursor.execute("SELECT id FROM companies WHERE name = 'Default Company'")
@@ -9462,6 +9507,7 @@ class StoreApp:
                     ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
                 )
                 company_id = cursor.lastrowid
+                print("✅ Default Company created")
             else:
                 company_id = company[0]
             
@@ -9476,6 +9522,7 @@ class StoreApp:
             
             # Create admin with login code
             hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
+            login_code = "LOGIN-ADMIN123"
             
             fields = ['name', 'email', 'password_hash', 'role', 'company_id', 'created_at']
             placeholders = ['?', '?', '?', '?', '?', '?']
@@ -9491,7 +9538,7 @@ class StoreApp:
             if has_login_code:
                 fields.append('login_code')
                 placeholders.append('?')
-                values.append('LOGIN-ADMIN123')
+                values.append(login_code)
             
             if has_code_used:
                 fields.append('code_used')
@@ -9513,7 +9560,7 @@ class StoreApp:
             
             conn.commit()
             conn.close()
-            print("✅ Default admin created: admin@store.com / LOGIN-ADMIN123 / admin123")
+            print(f"✅ Default admin created: admin@store.com / {login_code} / admin123")
             return True
             
         except Exception as e:
