@@ -18,36 +18,41 @@ except ImportError:
 class MaterialManager:
     """Manages all material operations with auto-sync"""
     
+# managers/material_manager.py
+
     @staticmethod
     def _auto_sync(company_id):
-        """Auto-sync materials to cloud"""
+        """Auto-sync materials to cloud - FIXED"""
         try:
             import threading
             try:
                 from main import CloudSyncManager
+                print(f"🔄 Auto-sync triggered for materials (company: {company_id})")
                 threading.Thread(
                     target=CloudSyncManager.sync_materials_to_cloud,
                     args=(company_id,),
                     daemon=True
                 ).start()
-                print(f"🔄 Auto-sync triggered for materials (company: {company_id})")
-            except ImportError:
-                print("⚠️ CloudSyncManager not available")
+            except ImportError as e:
+                print(f"⚠️ CloudSyncManager not available: {e}")
+            except Exception as e:
+                print(f"⚠️ Auto-sync error: {e}")
         except Exception as e:
-            print(f"Auto-sync error: {e}")
+            print(f"Auto-sync trigger error: {e}")
     
     # ============================================================
     # CREATE
     # ============================================================
-    
+        
     @staticmethod
     def create(data):
-        """Create material with auto-sync"""
+        """Create material with auto-sync to cloud - FIXED"""
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            company_id = data.get('company_id', 1)
             
             cursor.execute('''
                 INSERT INTO materials (
@@ -67,7 +72,7 @@ class MaterialManager:
                 data.get('notes', ''),
                 data.get('barcode_value', ''),
                 data.get('image_path', ''),
-                data.get('company_id', 1),
+                company_id,
                 current_time,
                 current_time
             ))
@@ -76,10 +81,22 @@ class MaterialManager:
             conn.commit()
             conn.close()
             
-            print(f"✅ Material created locally: ID={material_id}")
+            print(f"✅ Material created locally: ID={material_id}, Name={data.get('name')}")
             
-            # Auto-sync to cloud
-            MaterialManager._auto_sync(data.get('company_id', 1))
+            # ===== FORCE AUTO-SYNC =====
+            # Call sync immediately
+            try:
+                import threading
+                from main import CloudSyncManager
+                threading.Thread(
+                    target=CloudSyncManager.sync_materials_to_cloud,
+                    args=(company_id,),
+                    daemon=True
+                ).start()
+                print(f"🔄 Auto-sync triggered after create")
+            except Exception as e:
+                print(f"⚠️ Auto-sync error: {e}")
+            # ============================
             
             return material_id
             
@@ -112,8 +129,6 @@ class MaterialManager:
             
         except Exception as e:
             print(f"Error getting materials: {e}")
-            import traceback
-            traceback.print_exc()
             return []
     
     @staticmethod
@@ -148,131 +163,13 @@ class MaterialManager:
             print(f"Error getting material by barcode: {e}")
             return None
     
-    @staticmethod
-    def get_by_category(category_id, company_id=None):
-        """Get materials by category"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            if company_id:
-                cursor.execute("SELECT * FROM materials WHERE category_id = ? AND company_id = ? ORDER BY name", 
-                             (category_id, company_id))
-            else:
-                cursor.execute("SELECT * FROM materials WHERE category_id = ? ORDER BY name", (category_id,))
-            
-            materials = cursor.fetchall()
-            conn.close()
-            return materials
-            
-        except Exception as e:
-            print(f"Error getting materials by category: {e}")
-            return []
-    
-    @staticmethod
-    def get_low_stock(threshold=10, company_id=None):
-        """Get materials with low stock"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            if company_id:
-                cursor.execute("SELECT * FROM materials WHERE quantity < ? AND company_id = ? ORDER BY quantity ASC", 
-                             (threshold, company_id))
-            else:
-                cursor.execute("SELECT * FROM materials WHERE quantity < ? ORDER BY quantity ASC", (threshold,))
-            
-            materials = cursor.fetchall()
-            conn.close()
-            return materials
-            
-        except Exception as e:
-            print(f"Error getting low stock materials: {e}")
-            return []
-    
-    @staticmethod
-    def get_by_quality(quality, company_id=None):
-        """Get materials by quality"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            if company_id:
-                cursor.execute("SELECT * FROM materials WHERE quality = ? AND company_id = ? ORDER BY name", 
-                             (quality, company_id))
-            else:
-                cursor.execute("SELECT * FROM materials WHERE quality = ? ORDER BY name", (quality,))
-            
-            materials = cursor.fetchall()
-            conn.close()
-            return materials
-            
-        except Exception as e:
-            print(f"Error getting materials by quality: {e}")
-            return []
-    
-    @staticmethod
-    def search(query, company_id=None):
-        """Search materials by name or barcode"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            search_term = f"%{query}%"
-            
-            if company_id:
-                cursor.execute('''
-                    SELECT * FROM materials 
-                    WHERE (name LIKE ? OR barcode_value LIKE ?) 
-                    AND company_id = ? 
-                    ORDER BY name
-                ''', (search_term, search_term, company_id))
-            else:
-                cursor.execute('''
-                    SELECT * FROM materials 
-                    WHERE name LIKE ? OR barcode_value LIKE ? 
-                    ORDER BY name
-                ''', (search_term, search_term))
-            
-            materials = cursor.fetchall()
-            conn.close()
-            return materials
-            
-        except Exception as e:
-            print(f"Error searching materials: {e}")
-            return []
-    
-    @staticmethod
-    def get_count(company_id=None):
-        """Get total count of materials"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            if company_id:
-                cursor.execute("SELECT COUNT(*) FROM materials WHERE company_id = ?", (company_id,))
-            else:
-                cursor.execute("SELECT COUNT(*) FROM materials")
-            
-            count = cursor.fetchone()[0]
-            conn.close()
-            return count
-            
-        except Exception as e:
-            print(f"Error getting material count: {e}")
-            return 0
-    
     # ============================================================
     # UPDATE
     # ============================================================
     
     @staticmethod
     def update(material_id, data):
-        """Update material with auto-sync"""
+        """Update material with auto-sync to cloud"""
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
@@ -302,7 +199,7 @@ class MaterialManager:
             
             print(f"✅ Material updated: ID={material_id}")
             
-            # Auto-sync to cloud
+            # ===== AUTO-SYNC TO CLOUD =====
             MaterialManager._auto_sync(company_id)
             
             return True
@@ -347,48 +244,47 @@ class MaterialManager:
     
     @staticmethod
     def delete(material_id):
-        """Delete material with auto-sync"""
+        """Delete material with auto-sync to cloud"""
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             
-            # Get company_id
+            # Get company_id before delete
             cursor.execute("SELECT company_id FROM materials WHERE id = ?", (material_id,))
             result = cursor.fetchone()
             company_id = result[0] if result else 1
             
+            # Get name for logging
+            cursor.execute("SELECT name FROM materials WHERE id = ?", (material_id,))
+            name_result = cursor.fetchone()
+            material_name = name_result[0] if name_result else "Unknown"
+            
+            # Delete from local
             cursor.execute("DELETE FROM materials WHERE id = ?", (material_id,))
             conn.commit()
             conn.close()
             
-            print(f"✅ Material deleted locally: ID={material_id}")
+            print(f"✅ Material deleted locally: ID={material_id}, Name={material_name}")
             
-            # Auto-sync deletion to cloud
-            MaterialManager._auto_sync(company_id)
+            # ===== FORCE AUTO-SYNC TO CLOUD =====
+            def sync_deletion():
+                try:
+                    import threading
+                    from main import CloudSyncManager
+                    # This will upload the remaining materials (excluding the deleted one)
+                    CloudSyncManager.sync_materials_to_cloud(company_id)
+                    print(f"🔄 Deletion synced to cloud for material {material_id}")
+                except Exception as e:
+                    print(f"⚠️ Sync error: {e}")
+            
+            import threading
+            threading.Thread(target=sync_deletion, daemon=True).start()
+            # =========================================
             
             return True
             
         except Exception as e:
             print(f"Error deleting material: {e}")
-            return False
-    
-    @staticmethod
-    def delete_by_company(company_id):
-        """Delete all materials for a company"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            cursor.execute("DELETE FROM materials WHERE company_id = ?", (company_id,))
-            conn.commit()
-            conn.close()
-            
-            print(f"✅ All materials deleted for company {company_id}")
-            
-            MaterialManager._auto_sync(company_id)
-            
-            return True
-            
-        except Exception as e:
-            print(f"Error deleting materials by company: {e}")
+            import traceback
+            traceback.print_exc()
             return False
