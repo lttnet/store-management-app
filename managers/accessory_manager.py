@@ -15,6 +15,7 @@ except ImportError:
     DB_PATH = os.path.join(parent_dir, "store_management.db")
 
 class AccessoryManager:
+    """Manages all accessory operations with auto-sync"""
     
     @staticmethod
     def _auto_sync(company_id):
@@ -70,7 +71,6 @@ class AccessoryManager:
             
             print(f"✅ Accessory created locally: ID={accessory_id}")
             
-            # ===== AUTO-SYNC TO CLOUD =====
             AccessoryManager._auto_sync(data.get('company_id', 1))
             
             return accessory_id
@@ -78,6 +78,27 @@ class AccessoryManager:
         except Exception as e:
             print(f"Error creating accessory: {e}")
             return None
+    
+    @staticmethod
+    def get_all(company_id=None):
+        """Get all accessories"""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            if company_id:
+                cursor.execute("SELECT * FROM accessories WHERE company_id = ? ORDER BY id DESC", (company_id,))
+            else:
+                cursor.execute("SELECT * FROM accessories ORDER BY id DESC")
+            
+            accessories = cursor.fetchall()
+            conn.close()
+            return accessories
+            
+        except Exception as e:
+            print(f"Error getting accessories: {e}")
+            return []
     
     @staticmethod
     def update(accessory_id, data):
@@ -109,7 +130,6 @@ class AccessoryManager:
             
             print(f"✅ Accessory updated: ID={accessory_id}")
             
-            # ===== AUTO-SYNC TO CLOUD =====
             AccessoryManager._auto_sync(company_id)
             
             return True
@@ -118,9 +138,11 @@ class AccessoryManager:
             print(f"Error updating accessory: {e}")
             return False
     
+# managers/accessory_manager.py
+
     @staticmethod
     def delete(accessory_id):
-        """Delete accessory with auto-sync (also deletes from cloud)"""
+        """Delete accessory with auto-sync to cloud"""
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
@@ -129,39 +151,32 @@ class AccessoryManager:
             result = cursor.fetchone()
             company_id = result[0] if result else 1
             
+            cursor.execute("SELECT name FROM accessories WHERE id = ?", (accessory_id,))
+            name_result = cursor.fetchone()
+            accessory_name = name_result[0] if name_result else "Unknown"
+            
             cursor.execute("DELETE FROM accessories WHERE id = ?", (accessory_id,))
             conn.commit()
             conn.close()
             
-            print(f"✅ Accessory deleted locally: ID={accessory_id}")
+            print(f"✅ Accessory deleted locally: ID={accessory_id}, Name={accessory_name}")
             
-            # ===== AUTO-SYNC DELETE TO CLOUD =====
-            AccessoryManager._auto_sync(company_id)
+            # ===== FORCE AUTO-SYNC TO CLOUD =====
+            def sync_deletion():
+                try:
+                    import threading
+                    from main import CloudSyncManager
+                    CloudSyncManager.sync_accessories_to_cloud(company_id)
+                    print(f"🔄 Deletion synced to cloud for accessory {accessory_id}")
+                except Exception as e:
+                    print(f"⚠️ Sync error: {e}")
+            
+            import threading
+            threading.Thread(target=sync_deletion, daemon=True).start()
+            # =========================================
             
             return True
             
         except Exception as e:
             print(f"Error deleting accessory: {e}")
             return False
-    # managers/accessory_manager.py - Add this method
-
-    @staticmethod
-    def get_all(company_id=None):
-        """Get all accessories, optionally filtered by company_id"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            if company_id:
-                cursor.execute("SELECT * FROM accessories WHERE company_id = ? ORDER BY id DESC", (company_id,))
-            else:
-                cursor.execute("SELECT * FROM accessories ORDER BY id DESC")
-            
-            accessories = cursor.fetchall()
-            conn.close()
-            return accessories
-            
-        except Exception as e:
-            print(f"Error getting accessories: {e}")
-            return []
