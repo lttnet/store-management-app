@@ -2912,6 +2912,70 @@ class StoreApp:
         except Exception as e:
             print(f"Error ensuring admin user: {e}")
             return False
+    def ensure_admin_user_on_start(self):
+        """Ensure admin user exists when app starts - CRITICAL FOR MOBILE"""
+        import sqlite3
+        import hashlib
+        from database import DB_PATH
+        from datetime import datetime
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # ===== CHECK IF USERS TABLE EXISTS =====
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if not cursor.fetchone():
+                print("❌ Users table doesn't exist! Creating tables...")
+                self.create_default_admin_with_code()
+                conn.close()
+                return
+            
+            # ===== CHECK IF ANY USERS EXIST =====
+            cursor.execute("SELECT COUNT(*) FROM users")
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                print("📋 No users found! Creating default admin...")
+                conn.close()
+                self.create_default_admin_with_code()
+                return
+            
+            # ===== CHECK IF ADMIN EXISTS =====
+            cursor.execute("SELECT id, login_code, temp_password FROM users WHERE email = ?", ("admin@store.com",))
+            admin = cursor.fetchone()
+            
+            if not admin:
+                print("📋 Admin not found! Creating admin...")
+                conn.close()
+                self.create_default_admin_with_code()
+                return
+            
+            # ===== CHECK IF ADMIN HAS LOGIN CODE =====
+            admin_id, login_code, temp_password = admin
+            if not login_code:
+                print("📋 Admin has no login code! Updating...")
+                import hashlib
+                raw = f"LOGIN-{admin_id}-admin-{datetime.now().isoformat()}"
+                hash_obj = hashlib.sha256(raw.encode())
+                code = hash_obj.hexdigest()[:8].upper()
+                new_login_code = f"LOGIN-{code}"
+                
+                cursor.execute("""
+                    UPDATE users 
+                    SET login_code = ?, temp_password = 'admin123', code_used = 0, password_changed = 0
+                    WHERE id = ?
+                """, (new_login_code, admin_id))
+                conn.commit()
+                print(f"✅ Updated admin login code: {new_login_code}")
+            
+            conn.close()
+            print("✅ Admin user verified")
+            
+        except Exception as e:
+            print(f"Error ensuring admin user: {e}")
+            import traceback
+            traceback.print_exc()
 
     def auto_sync_on_start(self, page: ft.Page):
         """Auto sync when app starts"""
@@ -3121,18 +3185,147 @@ class StoreApp:
         except Exception as e:
             print(f"Error clearing session: {e}")
             return False
+        
+    def debug_users_on_mobile(self, page: ft.Page):
+        """Debug: Check what users exist in database on mobile"""
+        import sqlite3
+        from database import DB_PATH
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if not cursor.fetchone():
+                message = "❌ Users table doesn't exist!"
+                self.show_debug_dialog(page, message)
+                conn.close()
+                return
+            
+            cursor.execute("SELECT id, name, email, login_code, temp_password, password_changed, code_used FROM users")
+            users = cursor.fetchall()
+            conn.close()
+            
+            if not users:
+                message = "❌ No users found in database!\n\nRun: create_default_admin_with_code()"
+                self.show_debug_dialog(page, message)
+                return
+            
+            message = "📊 USERS IN DATABASE:\n"
+            message += "=" * 40 + "\n"
+            for u in users:
+                message += f"ID: {u[0]}\n"
+                message += f"Name: {u[1]}\n"
+                message += f"Email: {u[2]}\n"
+                message += f"Login Code: {u[3] or 'None'}\n"
+                message += f"Temp Password: {u[4] or 'None'}\n"
+                message += f"Password Changed: {u[5]}\n"
+                message += f"Code Used: {u[6]}\n"
+                message += "-" * 30 + "\n"
+            
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, login_code FROM users WHERE email = 'admin@store.com'")
+            admin = cursor.fetchone()
+            conn.close()
+            
+            if admin:
+                message += f"\n✅ Admin exists! Login Code: {admin[1]}"
+            else:
+                message += "\n❌ Admin NOT found!"
+            
+            self.show_debug_dialog(page, message)
+            
+        except Exception as e:
+            self.show_debug_dialog(page, f"Error: {str(e)}")
+
+        def show_debug_dialog(self, page: ft.Page, message):
+            """Show debug dialog"""
+            dialog = ft.AlertDialog(
+                title=ft.Row([
+                    ft.Text("🔍 Database Debug", size=18, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: setattr(page.dialog, 'open', False)),
+                ]),
+                content=ft.Container(
+                    content=ft.Text(message, size=12, font_family="monospace", selectable=True),
+                    width=400,
+                    height=400,
+                    padding=20,
+                ),
+                actions=[
+                    ft.TextButton("Close", on_click=lambda e: setattr(page.dialog, 'open', False)),
+                    ft.ElevatedButton(
+                        "Create Admin", 
+                        on_click=lambda e: self.create_default_admin_with_code() or setattr(page.dialog, 'open', False),
+                        style=ft.ButtonStyle(bgcolor=self.success_color),
+                    ),
+                ],
+            )
+            page.dialog = dialog
+            dialog.open = True
+            page.update()
+
+    def get_saved_user(self):
+        """Get saved user from session - CLASS METHOD"""
+        import json
+        import os
+        import sqlite3
+        from database import DB_PATH
+        
+        try:
+            session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
+            if not os.path.exists(session_file):
+                return None
+            
+            with open(session_file, 'r') as f:
+                session_data = json.load(f)
+            
+            if not session_data.get('remember_me', False):
+                return None
+            
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name, email, role, company_id, password_hash FROM users WHERE id = ?", 
+                         (session_data.get('user_id'),))
+            user = cursor.fetchone()
+            conn.close()
+            
+            if not user:
+                return None
+            
+            if user[5] != session_data.get('password_hash'):
+                return None
+            
+            return {
+                'id': user[0],
+                'name': user[1],
+                'email': user[2],
+                'role': user[3],
+                'company_id': user[4],
+                'password_hash': user[5]
+            }
+            
+        except Exception as e:
+            print(f"Error getting saved user: {e}")
+            return None
+    
 
     def show_login(self, page: ft.Page):
-        """Login screen with Remember Me feature - COMPLETE FIXED VERSION"""
+        """Login screen with auto-creation of admin user - COMPLETE FIXED VERSION"""
         page.controls.clear()
         self.page_ref = page
         
         # ============================================================
-        # STEP 1: DEFINE SESSION FUNCTIONS (LOCAL)
+        # STEP 1: ENSURE ADMIN USER EXISTS (CRITICAL FOR MOBILE)
+        # ============================================================
+        
+        self.ensure_admin_user_on_start()
+        
+        # ============================================================
+        # STEP 2: DEFINE SESSION FUNCTIONS (LOCAL)
         # ============================================================
         
         def save_user_session(user_dict):
-            """Save user session for auto-login"""
+            """Save user session for auto-login - LOCAL FUNCTION"""
             import json
             import os
             
@@ -3156,7 +3349,7 @@ class StoreApp:
                 print(f"Error saving session: {e}")
         
         def get_saved_user():
-            """Get saved user from session"""
+            """Get saved user from session - LOCAL FUNCTION"""
             import json
             import os
             
@@ -3168,11 +3361,9 @@ class StoreApp:
                 with open(session_file, 'r') as f:
                     session_data = json.load(f)
                 
-                # Check if remember_me is True
                 if not session_data.get('remember_me', False):
                     return None
                 
-                # Verify user still exists in database
                 import sqlite3
                 from database import DB_PATH
                 
@@ -3186,7 +3377,6 @@ class StoreApp:
                 if not user:
                     return None
                 
-                # Check if password hash matches
                 if user[5] != session_data.get('password_hash'):
                     return None
                 
@@ -3204,7 +3394,7 @@ class StoreApp:
                 return None
         
         def clear_session():
-            """Clear saved session"""
+            """Clear saved session - LOCAL FUNCTION"""
             import os
             try:
                 session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
@@ -3215,11 +3405,11 @@ class StoreApp:
                 print(f"Error clearing session: {e}")
         
         # ============================================================
-        # STEP 2: CHECK IF USER IS ALREADY LOGGED IN
+        # STEP 3: CHECK IF USER IS ALREADY LOGGED IN
         # ============================================================
         
         # ===== CALL LOCAL FUNCTION (no self.) =====
-        saved_user = get_saved_user()
+        saved_user = get_saved_user()  # ✅ FIXED: No self.
         if saved_user:
             print(f"🔐 Auto-login for user: {saved_user.get('name')}")
             self.current_user = saved_user
@@ -3227,7 +3417,7 @@ class StoreApp:
             return
         
         # ============================================================
-        # STEP 3: INITIALIZE DATABASE AND USERS
+        # STEP 4: INITIALIZE DATABASE AND USERS
         # ============================================================
         
         self.migrate_login_code_system()
@@ -3238,7 +3428,7 @@ class StoreApp:
         field_width = 280
         
         # ============================================================
-        # STEP 4: CREATE UI ELEMENTS
+        # STEP 5: CREATE UI ELEMENTS
         # ============================================================
         
         # ===== LOGIN FIELDS =====
@@ -3305,7 +3495,7 @@ class StoreApp:
         self.loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
         
         # ============================================================
-        # STEP 5: LOGIN BUTTONS
+        # STEP 6: LOGIN BUTTONS
         # ============================================================
         
         login_btn = ft.FilledButton(
@@ -3343,8 +3533,16 @@ class StoreApp:
             expand=True,
         )
         
+        # ===== DEBUG BUTTON =====
+        debug_btn = ft.ElevatedButton(
+            "🔍 Debug Users",
+            on_click=lambda e: self.debug_users_on_mobile(page),
+            style=ft.ButtonStyle(bgcolor="#9C27B0", color="white"),
+            expand=True,
+        )
+        
         # ============================================================
-        # STEP 6: AUTHENTICATION FUNCTIONS
+        # STEP 7: AUTHENTICATION FUNCTIONS
         # ============================================================
         
         def authenticate_with_code(email, login_code, password):
@@ -3375,6 +3573,8 @@ class StoreApp:
                 user_dict = dict(user)
                 
                 print(f"✅ User found: {user_dict['name']} ({email})")
+                print(f"   Code used: {user_dict.get('code_used', 0)}")
+                print(f"   Password changed: {user_dict.get('password_changed', 0)}")
                 
                 hashed_input = hashlib.sha256(password.encode()).hexdigest()
                 stored_hash = user_dict.get('password_hash', '')
@@ -3386,6 +3586,7 @@ class StoreApp:
                         print("✅ Regular password matched!")
                         return user
                     else:
+                        print(f"❌ Password doesn't match stored hash")
                         conn.close()
                         return None
                 
@@ -3448,6 +3649,8 @@ class StoreApp:
                 
                 hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
                 
+                print(f"📝 Setting new password for user {user_dict.get('name')}")
+                
                 cursor.execute("""
                     UPDATE users 
                     SET password_hash = ?, 
@@ -3477,7 +3680,6 @@ class StoreApp:
                 user_dict['password_changed'] = 1
                 user_dict['code_used'] = 1
                 
-                # ===== Save session =====
                 if self.remember_me.value:
                     save_user_session(user_dict)
                 
@@ -3551,7 +3753,6 @@ class StoreApp:
                     login_btn.on_click = lambda e: set_new_password(e, user_dict)
                     return
                 
-                # ===== Save session =====
                 if self.remember_me.value:
                     save_user_session(user_dict)
                 
@@ -3601,7 +3802,7 @@ class StoreApp:
             self.show_forgot_password_dialog(page)
         
         # ============================================================
-        # STEP 7: SET BUTTON HANDLERS
+        # STEP 8: SET BUTTON HANDLERS
         # ============================================================
         
         login_btn.on_click = handle_login
@@ -3609,7 +3810,7 @@ class StoreApp:
         admin_btn.on_click = on_admin_login
         
         # ============================================================
-        # STEP 8: BUILD UI
+        # STEP 9: BUILD UI
         # ============================================================
         
         logo_exists = os.path.exists(logo_path)
@@ -3629,7 +3830,6 @@ class StoreApp:
             self.password_field,
             ft.Container(height=10),
             
-            # ===== REMEMBER ME =====
             ft.Row([
                 self.remember_me,
                 ft.Text("Stay logged in", size=12, color="#888888"),
@@ -3669,6 +3869,9 @@ class StoreApp:
             ft.Row([
                 ft.Text("Demo: demo@store.com / LOGIN-AF9E4C7D / temp4123", size=10, color="#888888"),
             ], alignment=ft.MainAxisAlignment.CENTER),
+            
+            ft.Divider(height=10, color="#3C3C3C"),
+            ft.Row([debug_btn], spacing=10),
             
             ft.Container(height=10),
             ft.Text("💡 Check 'Remember me' to stay logged in", size=10, color="#888888"),
