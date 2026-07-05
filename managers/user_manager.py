@@ -70,9 +70,11 @@ class UserManager:
             print(f"Error creating user: {e}")
             return False
     
+# managers/user_manager.py
+
     @staticmethod
     def delete(user_id):
-        """Delete user with auto-sync (also deletes from cloud)"""
+        """Delete user with auto-sync to cloud"""
         try:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
@@ -81,14 +83,29 @@ class UserManager:
             result = cursor.fetchone()
             company_id = result[0] if result else 1
             
+            cursor.execute("SELECT name FROM users WHERE id = ?", (user_id,))
+            name_result = cursor.fetchone()
+            user_name = name_result[0] if name_result else "Unknown"
+            
             cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
             conn.commit()
             conn.close()
             
-            print(f"✅ User deleted locally: ID={user_id}")
+            print(f"✅ User deleted locally: ID={user_id}, Name={user_name}")
             
-            # ===== AUTO-SYNC DELETE TO CLOUD =====
-            UserManager._auto_sync(company_id)
+            # ===== FORCE AUTO-SYNC TO CLOUD =====
+            def sync_deletion():
+                try:
+                    import threading
+                    from main import CloudSyncManager
+                    CloudSyncManager.sync_users_to_cloud(company_id)
+                    print(f"🔄 Deletion synced to cloud for user {user_id}")
+                except Exception as e:
+                    print(f"⚠️ Sync error: {e}")
+            
+            import threading
+            threading.Thread(target=sync_deletion, daemon=True).start()
+            # =========================================
             
             return True
             
