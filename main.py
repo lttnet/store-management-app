@@ -3088,7 +3088,7 @@ class StoreApp:
             page.update()
 
     def ensure_all_users_have_codes(self):
-        """Ensure all existing users have login codes"""
+        """Ensure all existing users have login codes and SYNC TO CLOUD"""
         import sqlite3
         import hashlib
         from database import DB_PATH
@@ -3108,6 +3108,7 @@ class StoreApp:
             
             print(f"📋 Found {len(users)} users without login codes, updating...")
             
+            updated_count = 0
             for user_id, name, email in users:
                 # Generate login code
                 raw = f"LOGIN-{user_id}-{email[:4]}-{datetime.now().isoformat()}"
@@ -3123,15 +3124,23 @@ class StoreApp:
                     SET login_code = ?, temp_password = ?, code_used = 0, password_changed = 0
                     WHERE id = ?
                 ''', (login_code, temp_password, user_id))
+                updated_count += 1
                 print(f"  ✅ Updated {name} ({email}) → {login_code}")
             
             conn.commit()
             conn.close()
-            print("✅ All users now have login codes")
+            print(f"✅ Updated {updated_count} users with login codes")
+            
+            # ===== SYNC TO CLOUD =====
+            if updated_count > 0:
+                self._sync_all_users_to_cloud()
+            
             return True
             
         except Exception as e:
             print(f"Error ensuring login codes: {e}")
+            import traceback
+            traceback.print_exc()
             return False
         
     def confirm_logout(self, page: ft.Page):
@@ -3338,106 +3347,34 @@ class StoreApp:
     
 
     def show_login(self, page: ft.Page):
-        """Login screen with auto-creation of admin user - COMPLETE FIXED VERSION"""
+        """Login screen with auto-creation of admin user - NON-BLOCKING"""
         page.controls.clear()
         self.page_ref = page
         
         # ============================================================
-        # STEP 1: ENSURE ADMIN USER EXISTS (CRITICAL FOR MOBILE)
+        # STEP 1: ENSURE ADMIN USER EXISTS (LOCAL ONLY - FAST)
         # ============================================================
         
         self.ensure_admin_user_on_start()
         
         # ============================================================
-        # STEP 2: DEFINE SESSION FUNCTIONS (LOCAL)
+        # STEP 2: SYNC USERS TO CLOUD (BACKGROUND - NON-BLOCKING)
         # ============================================================
         
-        def save_user_session(user_dict):
-            """Save user session for auto-login - LOCAL FUNCTION"""
-            import json
-            import os
-            
-            try:
-                session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
-                session_data = {
-                    'user_id': user_dict.get('id'),
-                    'name': user_dict.get('name'),
-                    'email': user_dict.get('email'),
-                    'role': user_dict.get('role'),
-                    'company_id': user_dict.get('company_id'),
-                    'password_hash': user_dict.get('password_hash'),
-                    'remember_me': self.remember_me.value if hasattr(self, 'remember_me') else True
-                }
-                
-                with open(session_file, 'w') as f:
-                    json.dump(session_data, f)
-                
-                print(f"✅ Session saved for user: {user_dict.get('name')}")
-            except Exception as e:
-                print(f"Error saving session: {e}")
+        def on_sync_complete(result):
+            if result:
+                print("✅ Users synced to cloud successfully")
+            else:
+                print("⚠️ User sync had issues, but app continues")
         
-        def get_saved_user():
-            """Get saved user from session - LOCAL FUNCTION"""
-            import json
-            import os
-            
-            try:
-                session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
-                if not os.path.exists(session_file):
-                    return None
-                
-                with open(session_file, 'r') as f:
-                    session_data = json.load(f)
-                
-                if not session_data.get('remember_me', False):
-                    return None
-                
-                import sqlite3
-                from database import DB_PATH
-                
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, name, email, role, company_id, password_hash FROM users WHERE id = ?", 
-                            (session_data.get('user_id'),))
-                user = cursor.fetchone()
-                conn.close()
-                
-                if not user:
-                    return None
-                
-                if user[5] != session_data.get('password_hash'):
-                    return None
-                
-                return {
-                    'id': user[0],
-                    'name': user[1],
-                    'email': user[2],
-                    'role': user[3],
-                    'company_id': user[4],
-                    'password_hash': user[5]
-                }
-                
-            except Exception as e:
-                print(f"Error getting saved user: {e}")
-                return None
-        
-        def clear_session():
-            """Clear saved session - LOCAL FUNCTION"""
-            import os
-            try:
-                session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
-                if os.path.exists(session_file):
-                    os.remove(session_file)
-                    print("✅ Session cleared")
-            except Exception as e:
-                print(f"Error clearing session: {e}")
+        # Run in background - UI won't freeze
+        self._sync_all_users_to_cloud(callback=on_sync_complete)
         
         # ============================================================
         # STEP 3: CHECK IF USER IS ALREADY LOGGED IN
         # ============================================================
         
-        # ===== CALL LOCAL FUNCTION (no self.) =====
-        saved_user = get_saved_user()  # ✅ FIXED: No self.
+        saved_user = self.get_saved_user()
         if saved_user:
             print(f"🔐 Auto-login for user: {saved_user.get('name')}")
             self.current_user = saved_user
@@ -3445,7 +3382,7 @@ class StoreApp:
             return
         
         # ============================================================
-        # STEP 4: INITIALIZE DATABASE AND USERS
+        # STEP 4: INITIALIZE DATABASE (LOCAL ONLY - FAST)
         # ============================================================
         
         self.migrate_login_code_system()
@@ -3453,11 +3390,17 @@ class StoreApp:
         self.ensure_demo_users_with_codes()
         self.ensure_all_users_have_codes()
         
-        field_width = 280
+        # ============================================================
+        # STEP 5: SYNC AGAIN (BACKGROUND - NON-BLOCKING)
+        # ============================================================
+        
+        self._sync_all_users_to_cloud(callback=on_sync_complete)
         
         # ============================================================
-        # STEP 5: CREATE UI ELEMENTS
+        # STEP 6: BUILD UI (WILL SHOW IMMEDIATELY)
         # ============================================================
+        
+        field_width = 280
         
         # ===== LOGIN FIELDS =====
         self.email_field = ft.TextField(
@@ -3523,7 +3466,7 @@ class StoreApp:
         self.loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
         
         # ============================================================
-        # STEP 6: LOGIN BUTTONS
+        # STEP 7: BUTTONS
         # ============================================================
         
         login_btn = ft.FilledButton(
@@ -3561,7 +3504,13 @@ class StoreApp:
             expand=True,
         )
         
-        # ===== DEBUG BUTTON =====
+        sync_btn = ft.ElevatedButton(
+            "☁️ Sync Users",
+            on_click=lambda e: self._sync_all_users_to_cloud(callback=lambda r: self.show_sync_result(page, r)),
+            style=ft.ButtonStyle(bgcolor="#FF9800", color="white"),
+            expand=True,
+        )
+        
         debug_btn = ft.ElevatedButton(
             "🔍 Debug Users",
             on_click=lambda e: self.debug_users_on_mobile(page),
@@ -3570,8 +3519,105 @@ class StoreApp:
         )
         
         # ============================================================
-        # STEP 7: AUTHENTICATION FUNCTIONS
+        # STEP 8: FUNCTIONS
         # ============================================================
+        
+        def save_user_session(user_dict):
+            """Save user session for auto-login"""
+            import json
+            import os
+            
+            try:
+                session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
+                session_data = {
+                    'user_id': user_dict.get('id'),
+                    'name': user_dict.get('name'),
+                    'email': user_dict.get('email'),
+                    'role': user_dict.get('role'),
+                    'company_id': user_dict.get('company_id'),
+                    'password_hash': user_dict.get('password_hash'),
+                    'remember_me': self.remember_me.value if hasattr(self, 'remember_me') else True
+                }
+                
+                with open(session_file, 'w') as f:
+                    json.dump(session_data, f)
+                
+                print(f"✅ Session saved for user: {user_dict.get('name')}")
+            except Exception as e:
+                print(f"Error saving session: {e}")
+        
+        def get_saved_user():
+            """Get saved user from session"""
+            import json
+            import os
+            
+            try:
+                session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
+                if not os.path.exists(session_file):
+                    return None
+                
+                with open(session_file, 'r') as f:
+                    session_data = json.load(f)
+                
+                if not session_data.get('remember_me', False):
+                    return None
+                
+                import sqlite3
+                from database import DB_PATH
+                
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, name, email, role, company_id, password_hash FROM users WHERE id = ?", 
+                            (session_data.get('user_id'),))
+                user = cursor.fetchone()
+                conn.close()
+                
+                if not user:
+                    return None
+                
+                if user[5] != session_data.get('password_hash'):
+                    return None
+                
+                return {
+                    'id': user[0],
+                    'name': user[1],
+                    'email': user[2],
+                    'role': user[3],
+                    'company_id': user[4],
+                    'password_hash': user[5]
+                }
+                
+            except Exception as e:
+                print(f"Error getting saved user: {e}")
+                return None
+        
+        def clear_session():
+            """Clear saved session"""
+            import os
+            try:
+                session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
+                if os.path.exists(session_file):
+                    os.remove(session_file)
+                    print("✅ Session cleared")
+            except Exception as e:
+                print(f"Error clearing session: {e}")
+        
+        def show_sync_result(page, result):
+            """Show sync result"""
+            if result:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("✅ Users synced to cloud!"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+            else:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("⚠️ Sync had issues, check console"),
+                    bgcolor=self.warning_color,
+                    duration=3000
+                )
+            page.snack_bar.open = True
+            page.update()
         
         def authenticate_with_code(email, login_code, password):
             """Authenticate user with login code + password"""
@@ -3601,8 +3647,6 @@ class StoreApp:
                 user_dict = dict(user)
                 
                 print(f"✅ User found: {user_dict['name']} ({email})")
-                print(f"   Code used: {user_dict.get('code_used', 0)}")
-                print(f"   Password changed: {user_dict.get('password_changed', 0)}")
                 
                 hashed_input = hashlib.sha256(password.encode()).hexdigest()
                 stored_hash = user_dict.get('password_hash', '')
@@ -3614,7 +3658,6 @@ class StoreApp:
                         print("✅ Regular password matched!")
                         return user
                     else:
-                        print(f"❌ Password doesn't match stored hash")
                         conn.close()
                         return None
                 
@@ -3677,8 +3720,6 @@ class StoreApp:
                 
                 hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
                 
-                print(f"📝 Setting new password for user {user_dict.get('name')}")
-                
                 cursor.execute("""
                     UPDATE users 
                     SET password_hash = ?, 
@@ -3690,8 +3731,6 @@ class StoreApp:
                 
                 conn.commit()
                 conn.close()
-                
-                print(f"✅ Password updated successfully!")
                 
                 def sync_user():
                     try:
@@ -3804,20 +3843,18 @@ class StoreApp:
                 page.update()
         
         def on_demo_login(e):
-            """Auto-login with demo credentials"""
             self.email_field.value = "demo@store.com"
-            self.login_code_field.value = "LOGIN-AF9E4C7D"
-            self.password_field.value = "temp4123"
+            self.login_code_field.value = "LOGIN-DEMOADM"
+            self.password_field.value = "demo123"
             self.status_text.value = "🔄 Logging in with demo account..."
             self.status_text.color = self.accent_color
             page.update()
             handle_login(e)
         
         def on_admin_login(e):
-            """Auto-login with admin credentials"""
             self.email_field.value = "admin@store.com"
-            self.login_code_field.value = "LOGIN-B1A6EFE4"
-            self.password_field.value = "temp1123"
+            self.login_code_field.value = "LOGIN-ADMIN123"
+            self.password_field.value = "admin123"
             self.status_text.value = "🔄 Logging in as admin..."
             self.status_text.color = self.accent_color
             page.update()
@@ -3830,7 +3867,7 @@ class StoreApp:
             self.show_forgot_password_dialog(page)
         
         # ============================================================
-        # STEP 8: SET BUTTON HANDLERS
+        # STEP 9: SET BUTTON HANDLERS
         # ============================================================
         
         login_btn.on_click = handle_login
@@ -3838,7 +3875,7 @@ class StoreApp:
         admin_btn.on_click = on_admin_login
         
         # ============================================================
-        # STEP 9: BUILD UI
+        # STEP 10: BUILD UI
         # ============================================================
         
         logo_exists = os.path.exists(logo_path)
@@ -3892,10 +3929,18 @@ class StoreApp:
             ft.Text("Quick Login", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
             ft.Row([admin_btn, demo_btn], spacing=10),
             ft.Row([
-                ft.Text("Admin: admin@store.com / LOGIN-B1A6EFE4 / temp1123", size=10, color="#888888"),
+                ft.Text("Admin: admin@store.com / LOGIN-ADMIN123 / admin123", size=10, color="#888888"),
             ], alignment=ft.MainAxisAlignment.CENTER),
             ft.Row([
-                ft.Text("Demo: demo@store.com / LOGIN-AF9E4C7D / temp4123", size=10, color="#888888"),
+                ft.Text("Demo: demo@store.com / LOGIN-DEMOADM / demo123", size=10, color="#888888"),
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            
+            ft.Divider(height=10, color="#3C3C3C"),
+            
+            ft.Text("Cloud Sync", size=14, weight=ft.FontWeight.BOLD, color="#FF9800"),
+            ft.Row([sync_btn], spacing=10),
+            ft.Row([
+                ft.Text("💡 Click to sync users to cloud", size=10, color="#888888"),
             ], alignment=ft.MainAxisAlignment.CENTER),
             
             ft.Divider(height=10, color="#3C3C3C"),
@@ -9353,7 +9398,7 @@ class StoreApp:
         page.update()
 
     def ensure_demo_users_with_codes(self):
-        """Ensure demo users exist with login codes"""
+        """Ensure demo users exist with login codes and SYNC TO CLOUD"""
         import sqlite3
         import hashlib
         from database import DB_PATH
@@ -9398,6 +9443,7 @@ class StoreApp:
                 ('Demo User', 'user@store.com', 'demo123', 'LOGIN-USER', 'user'),
             ]
             
+            created_count = 0
             for name, email, password, login_code, role in demo_users:
                 cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
                 if cursor.fetchone():
@@ -9433,10 +9479,17 @@ class StoreApp:
                 
                 query = f"INSERT INTO users ({', '.join(fields)}) VALUES ({', '.join(placeholders)})"
                 cursor.execute(query, values)
+                created_count += 1
                 print(f"✅ Created demo user: {name} ({email}) with code {login_code}")
             
             conn.commit()
             conn.close()
+            
+            # ===== SYNC TO CLOUD IF ANY NEW USERS WERE CREATED =====
+            if created_count > 0:
+                print(f"📤 Syncing {created_count} new demo users to cloud...")
+                self._sync_all_users_to_cloud()
+            
             return True
             
         except Exception as e:
@@ -9444,9 +9497,64 @@ class StoreApp:
             import traceback
             traceback.print_exc()
             return False
-    
+        
+    def _sync_all_users_to_cloud(self, callback=None):
+        """Sync ALL users to cloud - Runs in background"""
+        import threading
+        
+        def do_sync():
+            try:
+                company_id = 1
+                
+                import sqlite3
+                from database import DB_PATH
+                
+                conn = sqlite3.connect(DB_PATH)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, name, email, password_hash, role, company_id, login_code, code_used, temp_password, password_changed FROM users")
+                users = cursor.fetchall()
+                conn.close()
+                
+                if not users:
+                    print("No users to sync")
+                    if callback:
+                        callback(False)
+                    return
+                
+                if not firebase_api.is_ready():
+                    print("Firebase not ready")
+                    if callback:
+                        callback(False)
+                    return
+                
+                print(f"📤 Syncing {len(users)} users to cloud...")
+                
+                success_count = 0
+                for user in users:
+                    user_dict = dict(user)
+                    if firebase_api.sync_user_full(company_id, user_dict):
+                        success_count += 1
+                    else:
+                        print(f"  ❌ Failed: {user_dict.get('name')}")
+                
+                print(f"✅ Synced {success_count}/{len(users)} users to cloud")
+                
+                if callback:
+                    callback(success_count == len(users))
+                
+            except Exception as e:
+                print(f"Sync users error: {e}")
+                if callback:
+                    callback(False)
+        
+        # Run in background thread
+        thread = threading.Thread(target=do_sync, daemon=True)
+        thread.start()
+        return thread
+        
     def create_default_admin_with_code(self):
-        """Create default admin with login code"""
+        """Create default admin with login code and SYNC TO CLOUD"""
         import sqlite3
         import hashlib
         from database import DB_PATH
@@ -9493,8 +9601,12 @@ class StoreApp:
             
             # Check if admin already exists
             cursor.execute("SELECT id FROM users WHERE email = ?", ("admin@store.com",))
-            if cursor.fetchone():
+            admin = cursor.fetchone()
+            
+            if admin:
                 print("✅ Admin already exists")
+                # ===== SYNC EXISTING ADMIN TO CLOUD =====
+                self._sync_all_users_to_cloud()
                 conn.close()
                 return True
             
@@ -9560,7 +9672,12 @@ class StoreApp:
             
             conn.commit()
             conn.close()
+            
             print(f"✅ Default admin created: admin@store.com / {login_code} / admin123")
+            
+            # ===== SYNC TO CLOUD IMMEDIATELY =====
+            self._sync_all_users_to_cloud()
+            
             return True
             
         except Exception as e:
