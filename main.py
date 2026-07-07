@@ -5,6 +5,7 @@ import warnings
 import traceback
 import sqlite3
 from database import DB_PATH
+
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
@@ -558,7 +559,239 @@ class FirebaseRestAPI:
             return False    
 # Create Firebase instance
 firebase_api = FirebaseRestAPI()
-
+class ActivationManager:
+    """Manages activation codes for customers who buy the app"""
+    
+    @staticmethod
+    def ensure_tables():
+        """Ensure activation tables exist"""
+        import sqlite3
+        from database import DB_PATH
+        
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Activation codes table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS activation_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                company_name TEXT NOT NULL,
+                customer_name TEXT NOT NULL,
+                customer_email TEXT NOT NULL,
+                login_code TEXT NOT NULL,
+                temp_password TEXT NOT NULL,
+                company_id TEXT NOT NULL,
+                used INTEGER DEFAULT 0,
+                used_by INTEGER,
+                used_at TEXT,
+                created_at TEXT,
+                expires_at TEXT
+            )
+        ''')
+        
+        # Companies table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS companies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                company_id TEXT UNIQUE NOT NULL,
+                created_at TEXT,
+                activated_at TEXT
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        print("✅ Activation tables ready")
+    
+    @staticmethod
+    def generate_activation_code():
+        """Generate a unique activation code"""
+        import random
+        import string
+        prefix = "ACT"
+        random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        return f"{prefix}-{random_part}"
+    
+    @staticmethod
+    def generate_login_code():
+        """Generate a unique login code"""
+        import random
+        import string
+        prefix = "LOGIN"
+        random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        return f"{prefix}-{random_part}"
+    
+    @staticmethod
+    def generate_temp_password():
+        """Generate a temporary password"""
+        import random
+        import string
+        return ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+    
+    @staticmethod
+    def generate_company_id():
+        """Generate a unique company ID"""
+        import random
+        import string
+        return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    
+    @staticmethod
+    def create_activation(customer_name, customer_email, company_name):
+        """Create a new activation for a customer"""
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime, timedelta
+        
+        ActivationManager.ensure_tables()
+        
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Generate all codes
+        activation_code = ActivationManager.generate_activation_code()
+        login_code = ActivationManager.generate_login_code()
+        temp_password = ActivationManager.generate_temp_password()
+        company_id = ActivationManager.generate_company_id()
+        
+        # Create activation record
+        expires_at = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+        created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        cursor.execute('''
+            INSERT INTO activation_codes (
+                code, company_name, customer_name, customer_email,
+                login_code, temp_password, company_id,
+                created_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            activation_code, company_name, customer_name, customer_email,
+            login_code, temp_password, company_id,
+            created_at, expires_at
+        ))
+        
+        activation_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Activation created:")
+        print(f"   Activation Code: {activation_code}")
+        print(f"   Login Code: {login_code}")
+        print(f"   Temp Password: {temp_password}")
+        print(f"   Company ID: {company_id}")
+        
+        return {
+            'activation_id': activation_id,
+            'activation_code': activation_code,
+            'login_code': login_code,
+            'temp_password': temp_password,
+            'company_id': company_id,
+            'company_name': company_name,
+            'customer_name': customer_name,
+            'customer_email': customer_email
+        }
+    
+    @staticmethod
+    def verify_activation_code(code):
+        """Verify if an activation code is valid"""
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime
+        
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, company_id, company_name, customer_name, customer_email,
+                   login_code, temp_password, used, expires_at
+            FROM activation_codes 
+            WHERE code = ?
+        ''', (code,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        if not result:
+            return None, "Invalid activation code"
+        
+        (activation_id, company_id, company_name, customer_name, 
+         customer_email, login_code, temp_password, used, expires_at) = result
+        
+        if used == 1:
+            return None, "Activation code already used"
+        
+        if expires_at and datetime.now() > datetime.strptime(expires_at, '%Y-%m-%d %H:%M:%S'):
+            return None, "Activation code has expired"
+        
+        return {
+            'activation_id': activation_id,
+            'company_id': company_id,
+            'company_name': company_name,
+            'customer_name': customer_name,
+            'customer_email': customer_email,
+            'login_code': login_code,
+            'temp_password': temp_password
+        }, "Valid"
+    
+    @staticmethod
+    def use_activation_code(code, user_id):
+        """Mark an activation code as used"""
+        import sqlite3
+        from database import DB_PATH
+        
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE activation_codes 
+            SET used = 1, used_by = ?, used_at = datetime('now')
+            WHERE code = ?
+        ''', (user_id, code))
+        
+        conn.commit()
+        conn.close()
+        return True
+    
+    @staticmethod
+    def get_all_activations():
+        """Get all activation codes"""
+        import sqlite3
+        from database import DB_PATH
+        
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, code, company_name, customer_name, customer_email,
+                   login_code, temp_password, company_id, used, 
+                   created_at, expires_at, used_at
+            FROM activation_codes 
+            ORDER BY created_at DESC
+        ''')
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        activations = []
+        for row in results:
+            activations.append({
+                'id': row[0],
+                'code': row[1],
+                'company_name': row[2],
+                'customer_name': row[3],
+                'customer_email': row[4],
+                'login_code': row[5],
+                'temp_password': row[6],
+                'company_id': row[7],
+                'used': row[8],
+                'created_at': row[9],
+                'expires_at': row[10],
+                'used_at': row[11]
+            })
+        
+        return activations
+    
 class CloudSyncManager:
     """Manages cloud sync for all company data"""
     
@@ -990,7 +1223,18 @@ class StoreApp:
             "Damaged": "#FF5252",
             "Repaired": "#1976D2",
         }
-    
+    def get_device_id(self):
+        """Get a unique device ID for trial tracking"""
+        import hashlib
+        import os
+        import platform
+        
+        # Create a unique ID based on system information
+        system_info = f"{platform.node()}-{platform.system()}-{platform.machine()}"
+        hash_obj = hashlib.sha256(system_info.encode())
+        device_id = hash_obj.hexdigest()[:16]
+        
+        return device_id
     def dict_list(self, rows):
         """Convert sqlite3.Row to dict - FIXED to include all columns"""
         if rows is None:
@@ -2264,59 +2508,87 @@ class StoreApp:
         page.update()    
 
     def main(self, page: ft.Page):
-        # Initialize scale helper
-        self.scale_helper = ScaleHelper(page)
-        self.page_ref = page
-        
-        # FORCE FULL SCREEN
-        page.window_width = None
-        page.window_height = None
-        page.window_maximized = True
-        page.window_resizable = True
-        page.window_min_width = None
-        page.window_min_height = None
-        
-        page.title = "Store Management System"
-        page.theme_mode = ft.ThemeMode.DARK
-        page.bgcolor = self.bg_color
-        page.padding = 0
-        page.spacing = 0
-        
-        # Track zoom level
-        self.zoom_level = 1.0
-        #self.request_permissions(page)
-        # FORCE INITIAL PAGE UPDATE to get proper width
-        page.update()
-        
-        # Now get width after update
-        print(f"Initial page width: {page.width}")
-        
-        # Handle resize to update scale and refresh views
-        def on_resize(e):
-            self.scale_helper.update_scale()
-            print(f"Resize - new width: {page.width}")
-            if self.current_user:
-                # Refresh current view with new size
+        """Main entry point - Show dashboard directly"""
+        try:
+            # Initialize scale helper
+            self.scale_helper = ScaleHelper(page)
+            self.page_ref = page
+            
+            # Page settings
+            page.title = "Store Management System"
+            page.theme_mode = ft.ThemeMode.DARK
+            page.bgcolor = self.bg_color
+            page.padding = 0
+            page.spacing = 0
+            
+            # Track zoom level
+            self.zoom_level = 1.0
+            
+            # Handle resize
+            def on_resize(e):
+                self.scale_helper.update_scale()
                 if self.current_view == "dashboard":
                     self.show_dashboard(page)
-                elif self.current_view == "materials":
-                    self.show_materials_screen(page)
-                elif self.current_view == "accessories":
-                    self.show_accessories(page)
-                elif self.current_view == "inventory":
-                    self.show_inventory(page)
-                elif self.current_view == "users":
-                    self.show_users(page)
-                elif self.current_view == "settings":
-                    self.show_settings(page)
-                elif self.current_view == "barcode_scanner":
-                    self.show_barcode_scanner(page)
-        
-        page.on_resize = on_resize
-        
-        init_database()
-        self.show_login(page)
-        page.update()
+            
+            page.on_resize = on_resize
+            
+            # Initialize database
+            init_database()
+            
+            # ===== SHOW DASHBOARD DIRECTLY (NO LOGIN) =====
+            # Check if already activated or trial active
+            self.current_user = self.get_saved_user()
+            
+            if not self.current_user:
+                # First time user - start trial automatically
+                device_id = self.get_device_id()
+                self.current_user = {
+                    'email': 'trial@user.com',
+                    'trial': True,
+                    'activated': False,
+                    'days_left': 30,
+                    'device_id': device_id
+                }
+                self.save_user_session(self.current_user)
+                self.save_trial_info('trial@user.com')
+                print("✅ New trial started for device:", device_id)
+            else:
+                # Check if trial expired
+                if not self.current_user.get('activated', False):
+                    trial_active, days_left = self.check_trial_status()
+                    if trial_active:
+                        self.current_user['days_left'] = days_left
+                    else:
+                        self.current_user['days_left'] = 0
+                        print("⚠️ Trial expired for device:", self.current_user.get('device_id'))
+            
+            # Show dashboard
+            self.show_dashboard(page)
+            page.update()
+            print("✅ App started successfully")
+            
+        except Exception as e:
+            print(f"❌ App startup error: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Show error on screen
+            try:
+                page.controls.clear()
+                page.add(
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Text("❌ App Error", size=24, color="red"),
+                            ft.Text(str(e), size=14, color="white"),
+                            ft.ElevatedButton("Retry", on_click=lambda e: self.main(page)),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15),
+                        alignment=ft.alignment.center,
+                        expand=True,
+                    )
+                )
+                page.update()
+            except:
+                pass
 
     def is_mobile(self, page: ft.Page):
         """Check if running on mobile device"""
@@ -2341,98 +2613,115 @@ class StoreApp:
                     self.zoom_level = new_zoom
                     self.apply_zoom_to_current_view(e.control.page)
 
-    def show_activation_dialog(self, page: ft.Page, user_id=None, email=None):
-        """Show activation dialog for expired trial with working close button"""
-        import sqlite3
-        from database import DB_PATH
+    def show_activation_dialog(self, page: ft.Page):
+        """Show activation dialog for user to enter email + activation code"""
         
-        activation_field = ft.TextField(label="Activation Code", hint_text="Enter your 16-digit code", width=300, bgcolor=self.card_color)
-        status_text = ft.Text("", size=12)
+        email_field = ft.TextField(
+            label="Email *",
+            hint_text="your@email.com",
+            width=350,
+            bgcolor="#2C2C2C",
+        )
         
-        def close_dialog():
+        code_field = ft.TextField(
+            label="Activation Code *",
+            hint_text="Enter code sent after purchase",
+            width=350,
+            bgcolor="#2C2C2C",
+            border_color="#FF9800",
+            prefix_icon=ft.icons.VERIFIED,
+        )
+        
+        status_text = ft.Text("", size=12, color="#888888")
+        loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
+        
+        def close_dialog(e):
             page.dialog.open = False
             page.update()
         
-        def verify_activation(e):
-            code = activation_field.value.strip().upper()
+        def activate(e):
+            email = email_field.value.strip()
+            code = code_field.value.strip().upper()
             
-            if not code:
-                status_text.value = "❌ Please enter activation code"
+            if not email:
+                status_text.value = "❌ Please enter your email!"
                 status_text.color = self.danger_color
                 page.update()
                 return
             
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            if user_id:
-                cursor.execute("SELECT activation_code FROM users WHERE id = ?", (user_id,))
-            elif email:
-                cursor.execute("SELECT activation_code FROM users WHERE email = ?", (email,))
-            else:
-                status_text.value = "❌ User not found"
+            if not code:
+                status_text.value = "❌ Please enter activation code!"
+                status_text.color = self.danger_color
                 page.update()
                 return
             
-            result = cursor.fetchone()
+            loading_indicator.visible = True
+            status_text.value = "🔄 Verifying activation code..."
+            status_text.color = self.accent_color
+            page.update()
             
-            if result and result[0] == code:
-                cursor.execute("UPDATE users SET is_activated = 1, account_type = 'full' WHERE id = ?", (user_id,))
-                conn.commit()
-                conn.close()
+            # Verify code
+            result, message = ActivationManager.verify_activation_code(code)
+            
+            if result:
+                # Activation successful
+                loading_indicator.visible = False
+                status_text.value = "✅ Activation successful!"
+                status_text.color = self.success_color
                 
-                close_dialog()
+                # Save activation
+                self.save_activation_info(email, code)
+                
+                # Update user
+                self.current_user['email'] = email
+                self.current_user['activated'] = True
+                self.current_user['trial'] = False
+                self.save_user_session(self.current_user)
+                
+                page.dialog.open = False
                 
                 page.snack_bar = ft.SnackBar(
-                    ft.Text("✓ Account activated! You now have full access. Please login again."),
+                    ft.Text(f"✅ Full version activated! Welcome {email}!"),
                     bgcolor=self.success_color,
                     duration=4000
                 )
                 page.snack_bar.open = True
                 page.update()
-                self.show_login(page)
+                
+                self.show_dashboard(page)
             else:
-                status_text.value = "❌ Invalid activation code"
+                loading_indicator.visible = False
+                status_text.value = f"❌ {message}"
                 status_text.color = self.danger_color
                 page.update()
-                conn.close()
         
-        def buy_license(e):
-            close_dialog()
-            page.snack_bar = ft.SnackBar(
-                ft.Text("📧 Please email support@storemanagement.com to purchase a license"),
-                bgcolor=self.accent_color,
-                duration=5000
-            )
-            page.snack_bar.open = True
-            page.update()
+        dialog_content = ft.Column([
+            ft.Row([
+                ft.Text("🔑 Activate Full Version", size=20, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ]),
+            ft.Divider(),
+            ft.Text("Enter the activation code sent to you after purchase:", size=13, color="#888888"),
+            ft.Container(height=10),
+            email_field,
+            ft.Container(height=10),
+            code_field,
+            ft.Container(height=10),
+            ft.Row([status_text, loading_indicator], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+            ft.Container(height=10),
+            ft.Row([
+                ft.TextButton("Cancel", on_click=close_dialog, expand=True),
+                ft.FilledButton("Activate", on_click=activate, 
+                            style=ft.ButtonStyle(bgcolor="#4CAF50", color="white"), expand=True),
+            ], spacing=10),
+            ft.Divider(),
+            ft.Text("💡 Need an activation code? Contact support@storemanagement.com", size=10, color="#888888"),
+        ], spacing=8)
         
         dialog = ft.AlertDialog(
-            title=ft.Row([
-                ft.Text("Activate Full Access", size=18, weight=ft.FontWeight.BOLD, color=self.accent_color, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=lambda e: close_dialog()),
-            ]),
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Text("Your trial has expired.", size=13, color="#888888"),
-                    ft.Text("Enter your activation code to continue:", size=12),
-                    ft.Container(height=10),
-                    activation_field,
-                    status_text,
-                    ft.Divider(),
-                    ft.Text("Don't have a code?", size=13, weight=ft.FontWeight.BOLD),
-                    ft.Text("Email us at support@storemanagement.com", size=11, color=self.accent_color),
-                    ft.Text("to purchase a license.", size=11, color=self.accent_color),
-                ], spacing=8),
-                width=380,
-                height=400,
-                padding=20,
-            ),
-            actions=[
-                ft.TextButton("Buy License", on_click=buy_license),
-                ft.TextButton("Cancel", on_click=lambda e: close_dialog()),
-                ft.FilledButton("Activate", on_click=verify_activation, style=ft.ButtonStyle(bgcolor=self.success_color)),
-            ],
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=400, height=450, padding=20),
+            modal=True,
         )
         
         page.dialog = dialog
@@ -3182,7 +3471,7 @@ class StoreApp:
         page.update()
 
     def clear_session(self):
-        """Clear saved session"""
+        """Clear saved session - CLASS METHOD"""
         import os
         try:
             session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
@@ -3305,8 +3594,6 @@ class StoreApp:
         """Get saved user from session - CLASS METHOD"""
         import json
         import os
-        import sqlite3
-        from database import DB_PATH
         
         try:
             session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
@@ -3316,566 +3603,361 @@ class StoreApp:
             with open(session_file, 'r') as f:
                 session_data = json.load(f)
             
-            if not session_data.get('remember_me', False):
-                return None
-            
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, name, email, role, company_id, password_hash FROM users WHERE id = ?", 
-                         (session_data.get('user_id'),))
-            user = cursor.fetchone()
-            conn.close()
-            
-            if not user:
-                return None
-            
-            if user[5] != session_data.get('password_hash'):
+            # Check if session data is valid
+            if not session_data:
                 return None
             
             return {
-                'id': user[0],
-                'name': user[1],
-                'email': user[2],
-                'role': user[3],
-                'company_id': user[4],
-                'password_hash': user[5]
+                'email': session_data.get('email', 'trial@user.com'),
+                'trial': session_data.get('trial', True),
+                'activated': session_data.get('activated', False),
+                'days_left': session_data.get('days_left', 30),
+                'device_id': session_data.get('device_id', self.get_device_id())
             }
             
         except Exception as e:
             print(f"Error getting saved user: {e}")
             return None
-    
+        
+    def check_trial_status(self):
+        """Check if trial is active and days left"""
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Check if trial info exists
+            cursor.execute("SELECT email, trial_start, trial_end FROM trial_info LIMIT 1")
+            result = cursor.fetchone()
+            conn.close()
+            
+            if not result:
+                return False, 0
+            
+            email, trial_start, trial_end = result
+            
+            if not trial_end:
+                return False, 0
+            
+            trial_end_date = datetime.strptime(trial_end, '%Y-%m-%d %H:%M:%S')
+            days_left = (trial_end_date - datetime.now()).days
+            
+            if days_left <= 0:
+                return False, 0
+            
+            return True, days_left
+            
+        except Exception as e:
+            print(f"Check trial error: {e}")
+            return False, 0
+
+    def save_trial_info(self, email):
+        """Save trial info to database"""
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime, timedelta
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Create trial_info table if not exists
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS trial_info (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL,
+                    trial_start TEXT,
+                    trial_end TEXT,
+                    activated INTEGER DEFAULT 0,
+                    activation_code TEXT
+                )
+            ''')
+            
+            # Delete existing trial info
+            cursor.execute("DELETE FROM trial_info")
+            
+            # Insert new trial
+            trial_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            trial_end = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+            
+            cursor.execute('''
+                INSERT INTO trial_info (email, trial_start, trial_end)
+                VALUES (?, ?, ?)
+            ''', (email, trial_start, trial_end))
+            
+            conn.commit()
+            conn.close()
+            print(f"✅ Trial started for {email} (ends: {trial_end})")
+            
+        except Exception as e:
+            print(f"Save trial error: {e}")
+
+    def save_activation_info(self, email, activation_code):
+        """Save activation info to database"""
+        import sqlite3
+        from database import DB_PATH
+        from datetime import datetime
+        
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            # Create trial_info table if not exists
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS trial_info (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL,
+                    trial_start TEXT,
+                    trial_end TEXT,
+                    activated INTEGER DEFAULT 0,
+                    activation_code TEXT
+                )
+            ''')
+            
+            # Check if trial_info exists
+            cursor.execute("SELECT id FROM trial_info LIMIT 1")
+            result = cursor.fetchone()
+            
+            if result:
+                cursor.execute('''
+                    UPDATE trial_info 
+                    SET email = ?, activated = 1, activation_code = ?
+                    WHERE id = ?
+                ''', (email, activation_code, result[0]))
+            else:
+                cursor.execute('''
+                    INSERT INTO trial_info (email, activated, activation_code)
+                    VALUES (?, 1, ?)
+                ''', (email, activation_code))
+            
+            conn.commit()
+            conn.close()
+            print(f"✅ Activation saved for {email}")
+            
+        except Exception as e:
+            print(f"Save activation error: {e}")
+
+    def get_user_email(self):
+        """Get user email from saved session"""
+        import json
+        import os
+        
+        try:
+            session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
+            if os.path.exists(session_file):
+                with open(session_file, 'r') as f:
+                    data = json.load(f)
+                    return data.get('email', '')
+            return ''
+        except:
+            return ''
+
+    def has_used_app_before(self):
+        """Check if user has used app before"""
+        import os
+        session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
+        return os.path.exists(session_file)
 
     def show_login(self, page: ft.Page):
-        """Login screen with auto-creation of admin user - NON-BLOCKING"""
+        """Simplified login - Just Email + Activation Code"""
         page.controls.clear()
         self.page_ref = page
         
         # ============================================================
-        # STEP 1: ENSURE ADMIN USER EXISTS (LOCAL ONLY - FAST)
-        # ============================================================
-        
-        self.ensure_admin_user_on_start()
-        
-        # ============================================================
-        # STEP 2: SYNC USERS TO CLOUD (BACKGROUND - NON-BLOCKING)
-        # ============================================================
-        
-        def on_sync_complete(result):
-            if result:
-                print("✅ Users synced to cloud successfully")
-            else:
-                print("⚠️ User sync had issues, but app continues")
-        
-        # Run in background - UI won't freeze
-        self._sync_all_users_to_cloud(callback=on_sync_complete)
-        
-        # ============================================================
-        # STEP 3: CHECK IF USER IS ALREADY LOGGED IN
+        # CHECK IF USER IS ALREADY ACTIVATED
         # ============================================================
         
         saved_user = self.get_saved_user()
         if saved_user:
-            print(f"🔐 Auto-login for user: {saved_user.get('name')}")
+            print(f"🔐 Auto-login for: {saved_user.get('email')}")
             self.current_user = saved_user
             self.show_dashboard(page)
             return
         
         # ============================================================
-        # STEP 4: INITIALIZE DATABASE (LOCAL ONLY - FAST)
+        # CHECK TRIAL STATUS
         # ============================================================
         
-        self.migrate_login_code_system()
-        self.create_default_admin_with_code()
-        self.ensure_demo_users_with_codes()
-        self.ensure_all_users_have_codes()
+        trial_active, days_left = self.check_trial_status()
+        
+        # If trial is active and user has used the app before, auto-login
+        if trial_active and self.has_used_app_before():
+            self.current_user = {'email': self.get_user_email(), 'trial': True, 'days_left': days_left}
+            self.show_dashboard(page)
+            return
+        
+        field_width = 320
         
         # ============================================================
-        # STEP 5: SYNC AGAIN (BACKGROUND - NON-BLOCKING)
+        # CREATE UI ELEMENTS
         # ============================================================
         
-        self._sync_all_users_to_cloud(callback=on_sync_complete)
+        # Trial banner
+        if trial_active:
+            banner_text = f"🚀 Free Trial: {days_left} days remaining"
+            banner_color = self.success_color
+        else:
+            banner_text = "⏰ Trial Expired - Enter Activation Code"
+            banner_color = self.danger_color
         
-        # ============================================================
-        # STEP 6: BUILD UI (WILL SHOW IMMEDIATELY)
-        # ============================================================
+        trial_banner = ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.icons.INFO_OUTLINE, color="white", size=20),
+                ft.Text(banner_text, color="white", size=14, weight=ft.FontWeight.BOLD),
+            ], spacing=10),
+            padding=12,
+            bgcolor=banner_color,
+            border_radius=10,
+            margin=ft.margin.only(bottom=15),
+        )
         
-        field_width = 280
-        
-        # ===== LOGIN FIELDS =====
         self.email_field = ft.TextField(
             label="Email", 
             hint_text="your@email.com", 
             width=field_width, 
             bgcolor="#2C2C2C", 
-            border_color=self.accent_color
+            border_color=self.accent_color,
+            value=self.get_user_email() or "",
         )
         
-        self.login_code_field = ft.TextField(
-            label="Login Code", 
-            hint_text="Enter code from admin (e.g., LOGIN-XXXXXX)", 
+        self.activation_field = ft.TextField(
+            label="Activation Code", 
+            hint_text="Enter code sent after purchase", 
             width=field_width, 
             bgcolor="#2C2C2C", 
-            border_color=self.accent_color,
+            border_color="#FF9800",
             prefix_icon=ft.icons.VERIFIED,
         )
         
-        self.password_field = ft.TextField(
-            label="Password", 
-            hint_text="••••••••", 
-            password=True, 
-            can_reveal_password=True, 
-            width=field_width, 
-            bgcolor="#2C2C2C", 
-            border_color=self.accent_color
-        )
-        
-        # ===== NEW PASSWORD SETUP (first time) =====
-        self.new_password_field = ft.TextField(
-            label="Set New Password", 
-            hint_text="Choose your new password", 
-            password=True, 
-            can_reveal_password=True, 
-            width=field_width, 
-            bgcolor="#2C2C2C", 
-            border_color=self.accent_color,
-            visible=False,
-        )
-        
-        self.confirm_password_field = ft.TextField(
-            label="Confirm New Password", 
-            hint_text="Re-enter password", 
-            password=True, 
-            can_reveal_password=True, 
-            width=field_width, 
-            bgcolor="#2C2C2C", 
-            border_color=self.accent_color,
-            visible=False,
-        )
-        
-        # ===== REMEMBER ME CHECKBOX =====
-        self.remember_me = ft.Checkbox(
-            label="Remember me",
-            value=True,
-            fill_color=self.accent_color,
-            check_color="white",
-        )
-        
-        # ===== STATUS AND LOADING =====
         self.status_text = ft.Text("", color="red", size=12)
         self.loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
         
         # ============================================================
-        # STEP 7: BUTTONS
+        # BUTTONS
         # ============================================================
         
-        login_btn = ft.FilledButton(
-            "Sign In",
-            width=140,
-            height=45,
-            on_click=None,
-            style=ft.ButtonStyle(
-                bgcolor=self.accent_color,
-                color="white",
-            ),
-        )
-        
-        demo_btn = ft.ElevatedButton(
-            "▶️ Demo Login",
+        trial_btn = ft.ElevatedButton(
+            "🚀 Start Free Trial",
             on_click=None,
             icon=ft.icons.PLAY_ARROW,
             style=ft.ButtonStyle(
                 bgcolor="#4CAF50",
                 color="white",
-                padding=10,
+                padding=15,
             ),
-            expand=True,
+            width=field_width,
+            height=50,
         )
         
-        admin_btn = ft.ElevatedButton(
-            "👑 Admin Login",
+        activate_btn = ft.ElevatedButton(
+            "🔑 Activate Full Version",
             on_click=None,
-            icon=ft.icons.ADMIN_PANEL_SETTINGS,
+            icon=ft.icons.VERIFIED,
             style=ft.ButtonStyle(
-                bgcolor="#9C27B0",
+                bgcolor="#FF9800",
                 color="white",
-                padding=10,
+                padding=15,
             ),
-            expand=True,
-        )
-        
-        sync_btn = ft.ElevatedButton(
-            "☁️ Sync Users",
-            on_click=lambda e: self._sync_all_users_to_cloud(callback=lambda r: self.show_sync_result(page, r)),
-            style=ft.ButtonStyle(bgcolor="#FF9800", color="white"),
-            expand=True,
-        )
-        
-        debug_btn = ft.ElevatedButton(
-            "🔍 Debug Users",
-            on_click=lambda e: self.debug_users_on_mobile(page),
-            style=ft.ButtonStyle(bgcolor="#9C27B0", color="white"),
-            expand=True,
+            width=field_width,
+            height=50,
         )
         
         # ============================================================
-        # STEP 8: FUNCTIONS
+        # FUNCTIONS (All defined BEFORE they're called)
         # ============================================================
         
-        def save_user_session(user_dict):
-            """Save user session for auto-login"""
-            import json
-            import os
-            
-            try:
-                session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
-                session_data = {
-                    'user_id': user_dict.get('id'),
-                    'name': user_dict.get('name'),
-                    'email': user_dict.get('email'),
-                    'role': user_dict.get('role'),
-                    'company_id': user_dict.get('company_id'),
-                    'password_hash': user_dict.get('password_hash'),
-                    'remember_me': self.remember_me.value if hasattr(self, 'remember_me') else True
-                }
-                
-                with open(session_file, 'w') as f:
-                    json.dump(session_data, f)
-                
-                print(f"✅ Session saved for user: {user_dict.get('name')}")
-            except Exception as e:
-                print(f"Error saving session: {e}")
-        
-        def get_saved_user():
-            """Get saved user from session"""
-            import json
-            import os
-            
-            try:
-                session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
-                if not os.path.exists(session_file):
-                    return None
-                
-                with open(session_file, 'r') as f:
-                    session_data = json.load(f)
-                
-                if not session_data.get('remember_me', False):
-                    return None
-                
-                import sqlite3
-                from database import DB_PATH
-                
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, name, email, role, company_id, password_hash FROM users WHERE id = ?", 
-                            (session_data.get('user_id'),))
-                user = cursor.fetchone()
-                conn.close()
-                
-                if not user:
-                    return None
-                
-                if user[5] != session_data.get('password_hash'):
-                    return None
-                
-                return {
-                    'id': user[0],
-                    'name': user[1],
-                    'email': user[2],
-                    'role': user[3],
-                    'company_id': user[4],
-                    'password_hash': user[5]
-                }
-                
-            except Exception as e:
-                print(f"Error getting saved user: {e}")
-                return None
-        
-        def clear_session():
-            """Clear saved session"""
-            import os
-            try:
-                session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
-                if os.path.exists(session_file):
-                    os.remove(session_file)
-                    print("✅ Session cleared")
-            except Exception as e:
-                print(f"Error clearing session: {e}")
-        
-        def show_sync_result(page, result):
-            """Show sync result"""
-            if result:
-                page.snack_bar = ft.SnackBar(
-                    ft.Text("✅ Users synced to cloud!"),
-                    bgcolor=self.success_color,
-                    duration=3000
-                )
-            else:
-                page.snack_bar = ft.SnackBar(
-                    ft.Text("⚠️ Sync had issues, check console"),
-                    bgcolor=self.warning_color,
-                    duration=3000
-                )
-            page.snack_bar.open = True
-            page.update()
-        
-        def authenticate_with_code(email, login_code, password):
-            """Authenticate user with login code + password"""
-            import sqlite3
-            import hashlib
-            from database import DB_PATH
-            
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                
-                cursor.execute("""
-                    SELECT id, name, email, role, company_id, login_code, code_used, 
-                        password_hash, password_changed, temp_password
-                    FROM users 
-                    WHERE email = ? AND login_code = ?
-                """, (email, login_code))
-                
-                user = cursor.fetchone()
-                
-                if not user:
-                    conn.close()
-                    print(f"❌ User not found: {email} with code {login_code}")
-                    return None
-                
-                user_dict = dict(user)
-                
-                print(f"✅ User found: {user_dict['name']} ({email})")
-                
-                hashed_input = hashlib.sha256(password.encode()).hexdigest()
-                stored_hash = user_dict.get('password_hash', '')
-                
-                if user_dict.get('code_used', 0) == 1:
-                    print("🔐 Code already used, checking regular password...")
-                    if stored_hash == hashed_input:
-                        conn.close()
-                        print("✅ Regular password matched!")
-                        return user
-                    else:
-                        conn.close()
-                        return None
-                
-                temp_password = user_dict.get('temp_password', '')
-                if temp_password and temp_password == password:
-                    print("✅ First login with temp password")
-                    conn.close()
-                    return user
-                
-                if stored_hash == hashed_input:
-                    print("✅ Login with regular password (code not marked used yet)")
-                    conn.close()
-                    return user
-                
-                print("❌ Authentication failed - invalid password")
-                conn.close()
-                return None
-                
-            except Exception as e:
-                print(f"Authentication error: {e}")
-                import traceback
-                traceback.print_exc()
-                return None
-        
-        def set_new_password(e, user_dict):
-            """Set new password for first-time user"""
-            new_password = self.new_password_field.value
-            confirm_password = self.confirm_password_field.value
-            
-            if not new_password:
-                self.status_text.value = "❌ Please enter a new password!"
-                self.status_text.color = self.danger_color
-                page.update()
-                return
-            
-            if new_password != confirm_password:
-                self.status_text.value = "❌ Passwords do not match!"
-                self.status_text.color = self.danger_color
-                page.update()
-                return
-            
-            if len(new_password) < 4:
-                self.status_text.value = "❌ Password must be at least 4 characters!"
-                self.status_text.color = self.danger_color
-                page.update()
-                return
-            
-            self.loading_indicator.visible = True
-            self.status_text.value = "🔄 Setting new password..."
-            self.status_text.color = self.accent_color
-            page.update()
-            
-            import sqlite3
-            import hashlib
-            from database import DB_PATH
-            
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                
-                hashed_password = hashlib.sha256(new_password.encode()).hexdigest()
-                
-                cursor.execute("""
-                    UPDATE users 
-                    SET password_hash = ?, 
-                        password_changed = 1, 
-                        code_used = 1,
-                        temp_password = NULL
-                    WHERE id = ?
-                """, (hashed_password, user_dict['id']))
-                
-                conn.commit()
-                conn.close()
-                
-                def sync_user():
-                    try:
-                        CloudSyncManager.sync_users_to_cloud(user_dict.get('company_id', 1))
-                        print(f"✅ Password synced to cloud")
-                    except Exception as e:
-                        print(f"Sync error: {e}")
-                
-                import threading
-                threading.Thread(target=sync_user, daemon=True).start()
-                
-                self.loading_indicator.visible = False
-                
-                user_dict['password_changed'] = 1
-                user_dict['code_used'] = 1
-                
-                if self.remember_me.value:
-                    save_user_session(user_dict)
-                
-                self.current_user = user_dict
-                
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✅ Password set! Welcome {user_dict.get('name')}!"),
-                    bgcolor=self.success_color,
-                    duration=3000
-                )
-                page.snack_bar.open = True
-                page.update()
-                
-                self.auto_sync_on_start(page)
-                self.show_dashboard(page)
-                
-            except Exception as ex:
-                self.loading_indicator.visible = False
-                self.status_text.value = f"❌ Error: {str(ex)[:50]}"
-                self.status_text.color = self.danger_color
-                page.update()
-                print(f"Set password error: {ex}")
-                import traceback
-                traceback.print_exc()
-        
-        def handle_login(e):
-            """Handle login with Remember Me"""
+        def start_trial(e):
+            """Start 30-day free trial"""
             email = self.email_field.value.strip()
-            login_code = self.login_code_field.value.strip().upper()
-            password = self.password_field.value
             
             if not email:
-                self.status_text.value = "Please enter email!"
-                self.status_text.color = self.danger_color
-                page.update()
-                return
-            
-            if not login_code:
-                self.status_text.value = "Please enter login code!"
-                self.status_text.color = self.danger_color
-                page.update()
-                return
-            
-            if not password:
-                self.status_text.value = "Please enter password!"
+                self.status_text.value = "❌ Please enter your email!"
                 self.status_text.color = self.danger_color
                 page.update()
                 return
             
             self.loading_indicator.visible = True
-            self.status_text.value = "🔄 Authenticating..."
+            self.status_text.value = "🔄 Starting trial..."
             self.status_text.color = self.accent_color
             page.update()
             
-            user = authenticate_with_code(email, login_code, password)
+            self.save_trial_info(email)
             
-            if user:
-                user_dict = dict(user)
-                company_id = user_dict.get('company_id', 1)
-                user_dict['company_id'] = company_id
-                
-                if user_dict.get('password_changed', 0) == 0 and user_dict.get('code_used', 0) == 0:
-                    self.loading_indicator.visible = False
-                    self.status_text.value = "✅ First login! Set your new password."
-                    self.status_text.color = self.success_color
-                    self.new_password_field.visible = True
-                    self.confirm_password_field.visible = True
-                    page.update()
-                    
-                    login_btn.text = "Set Password"
-                    login_btn.on_click = lambda e: set_new_password(e, user_dict)
-                    return
-                
-                if self.remember_me.value:
-                    save_user_session(user_dict)
-                
-                self.current_user = user_dict
+            self.loading_indicator.visible = False
+            self.status_text.value = "✅ Trial started! 30 days free."
+            self.status_text.color = self.success_color
+            
+            self.current_user = {'email': email, 'trial': True, 'days_left': 30}
+            self.save_user_session(self.current_user)  # ✅ Class method
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"✅ Welcome! Your 30-day trial has started."),
+                bgcolor=self.success_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            self.show_dashboard(page)
+        
+        def activate_full(e):
+            """Activate full version with activation code"""
+            email = self.email_field.value.strip()
+            activation_code = self.activation_field.value.strip().upper()
+            
+            if not email:
+                self.status_text.value = "❌ Please enter your email!"
+                self.status_text.color = self.danger_color
+                page.update()
+                return
+            
+            if not activation_code:
+                self.status_text.value = "❌ Please enter activation code!"
+                self.status_text.color = self.danger_color
+                page.update()
+                return
+            
+            self.loading_indicator.visible = True
+            self.status_text.value = "🔄 Verifying activation code..."
+            self.status_text.color = self.accent_color
+            page.update()
+            
+            result, message = ActivationManager.verify_activation_code(activation_code)
+            
+            if result:
                 self.loading_indicator.visible = False
+                self.status_text.value = "✅ Activation successful! Full access granted."
+                self.status_text.color = self.success_color
+                
+                self.save_activation_info(email, activation_code)
+                
+                self.current_user = {'email': email, 'activated': True}
+                self.save_user_session(self.current_user)  # ✅ Class method
                 
                 page.snack_bar = ft.SnackBar(
-                    ft.Text(f"✅ Welcome {user_dict.get('name', 'User')}!"),
+                    ft.Text(f"✅ Full version activated! Welcome!"),
                     bgcolor=self.success_color,
                     duration=3000
                 )
                 page.snack_bar.open = True
                 page.update()
                 
-                self.auto_sync_on_start(page)
                 self.show_dashboard(page)
             else:
                 self.loading_indicator.visible = False
-                self.status_text.value = "Invalid login code or password!"
+                self.status_text.value = f"❌ {message}"
                 self.status_text.color = self.danger_color
                 page.update()
         
-        def on_demo_login(e):
-            self.email_field.value = "demo@store.com"
-            self.login_code_field.value = "LOGIN-DEMOADM"
-            self.password_field.value = "demo123"
-            self.status_text.value = "🔄 Logging in with demo account..."
-            self.status_text.color = self.accent_color
-            page.update()
-            handle_login(e)
-        
-        def on_admin_login(e):
-            self.email_field.value = "admin@store.com"
-            self.login_code_field.value = "LOGIN-ADMIN123"
-            self.password_field.value = "admin123"
-            self.status_text.value = "🔄 Logging in as admin..."
-            self.status_text.color = self.accent_color
-            page.update()
-            handle_login(e)
-        
-        def on_create_account(e):
-            self.show_register_dialog(page)
-        
-        def on_forgot_password(e):
-            self.show_forgot_password_dialog(page)
+        # Set button handlers
+        trial_btn.on_click = start_trial
+        activate_btn.on_click = activate_full
         
         # ============================================================
-        # STEP 9: SET BUTTON HANDLERS
-        # ============================================================
-        
-        login_btn.on_click = handle_login
-        demo_btn.on_click = on_demo_login
-        admin_btn.on_click = on_admin_login
-        
-        # ============================================================
-        # STEP 10: BUILD UI
+        # BUILD UI
         # ============================================================
         
         logo_exists = os.path.exists(logo_path)
@@ -3883,27 +3965,16 @@ class StoreApp:
         
         main_layout = ft.Column([
             ft.Text("Welcome", size=28, weight=ft.FontWeight.BOLD, color=self.text_color),
-            ft.Text("Sign in with your login code", size=13, color="#AAAAAA"),
+            ft.Text("Manage your inventory anywhere", size=13, color="#AAAAAA"),
             ft.Container(height=20),
-            ft.Container(width=50, height=2, bgcolor=self.accent_color, border_radius=1),
-            ft.Container(height=20),
+            
+            trial_banner,
+            
+            ft.Divider(height=10, color="#3C3C3C"),
             
             self.email_field,
             ft.Container(height=10),
-            self.login_code_field,
-            ft.Container(height=10),
-            self.password_field,
-            ft.Container(height=10),
-            
-            ft.Row([
-                self.remember_me,
-                ft.Text("Stay logged in", size=12, color="#888888"),
-            ], spacing=5),
-            ft.Container(height=10),
-            
-            self.new_password_field,
-            ft.Container(height=5),
-            self.confirm_password_field,
+            self.activation_field,
             ft.Container(height=10),
             
             ft.Row([self.status_text, self.loading_indicator], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
@@ -3912,43 +3983,24 @@ class StoreApp:
             ft.Row([
                 logo,
                 ft.Container(width=15),
-                login_btn,
+                trial_btn,
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            
+            ft.Container(height=10),
+            ft.Text("or", size=12, color="#888888"),
+            ft.Container(height=10),
+            
+            ft.Row([
+                logo,
+                ft.Container(width=15),
+                activate_btn,
             ], alignment=ft.MainAxisAlignment.CENTER),
             
             ft.Divider(height=20, color="#3C3C3C"),
             
-            ft.Row([
-                ft.TextButton("Create Account", on_click=on_create_account, 
-                            style=ft.ButtonStyle(color=self.success_color)),
-                ft.TextButton("Forgot Password?", on_click=on_forgot_password, 
-                            style=ft.ButtonStyle(color="#888888")),
-            ], alignment=ft.MainAxisAlignment.CENTER, spacing=20),
-            
-            ft.Divider(height=10, color="#3C3C3C"),
-            
-            ft.Text("Quick Login", size=14, weight=ft.FontWeight.BOLD, color=self.accent_color),
-            ft.Row([admin_btn, demo_btn], spacing=10),
-            ft.Row([
-                ft.Text("Admin: admin@store.com / LOGIN-ADMIN123 / admin123", size=10, color="#888888"),
-            ], alignment=ft.MainAxisAlignment.CENTER),
-            ft.Row([
-                ft.Text("Demo: demo@store.com / LOGIN-DEMOADM / demo123", size=10, color="#888888"),
-            ], alignment=ft.MainAxisAlignment.CENTER),
-            
-            ft.Divider(height=10, color="#3C3C3C"),
-            
-            ft.Text("Cloud Sync", size=14, weight=ft.FontWeight.BOLD, color="#FF9800"),
-            ft.Row([sync_btn], spacing=10),
-            ft.Row([
-                ft.Text("💡 Click to sync users to cloud", size=10, color="#888888"),
-            ], alignment=ft.MainAxisAlignment.CENTER),
-            
-            ft.Divider(height=10, color="#3C3C3C"),
-            ft.Row([debug_btn], spacing=10),
-            
             ft.Container(height=10),
-            ft.Text("💡 Check 'Remember me' to stay logged in", size=10, color="#888888"),
-            ft.Text("💡 First time: Use temp password then set your own", size=10, color="#888888"),
+            ft.Text("💡 Try 30 days free with your email", size=10, color="#888888"),
+            ft.Text("💡 Already purchased? Enter your activation code", size=10, color="#888888"),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0)
         
         login_card = ft.Container(
@@ -6595,12 +6647,99 @@ class StoreApp:
             page.snack_bar.open = True
             page.update()
 
-                            # ============ DASHBOARD ============
+    def show_account_settings(self, page: ft.Page):
+        """Show account settings dialog"""
+        
+        email = self.current_user.get('email', '')
+        activated = self.current_user.get('activated', False)
+        
+        def close_dialog(e):
+            page.dialog.open = False
+            page.update()
+        
+        def logout(e):
+            page.dialog.open = False
+            self.confirm_logout(page)
+        
+        dialog_content = ft.Column([
+            ft.Row([
+                ft.Text("👤 Account Settings", size=20, weight=ft.FontWeight.BOLD, expand=True),
+                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+            ]),
+            ft.Divider(),
+            ft.Row([
+                ft.Icon(ft.icons.EMAIL, color=self.accent_color, size=20),
+                ft.Column([
+                    ft.Text("Email", size=12, color="#888888"),
+                    ft.Text(email, size=14, weight=ft.FontWeight.BOLD),
+                ], spacing=2),
+            ], spacing=12),
+            ft.Row([
+                ft.Icon(ft.icons.CHECK_CIRCLE, color="#4CAF50", size=20),
+                ft.Column([
+                    ft.Text("Status", size=12, color="#888888"),
+                    ft.Text("✅ Full Version Activated", size=14, weight=ft.FontWeight.BOLD, color="#4CAF50"),
+                ], spacing=2),
+            ], spacing=12),
+            ft.Divider(),
+            ft.ElevatedButton(
+                "📧 Change Email",
+                on_click=lambda e: self.show_change_email_dialog(page),
+                icon=ft.icons.EDIT,
+                expand=True,
+            ),
+            ft.ElevatedButton(
+                "🔑 Change Activation Code",
+                on_click=lambda e: self.show_activation_dialog(page),
+                icon=ft.icons.KEY,
+                expand=True,
+                style=ft.ButtonStyle(bgcolor="#FF9800", color="white"),
+            ),
+            ft.ElevatedButton(
+                "🚪 Logout",
+                on_click=logout,
+                icon=ft.icons.LOGOUT,
+                expand=True,
+                style=ft.ButtonStyle(bgcolor=self.danger_color, color="white"),
+            ),
+        ], spacing=10)
+        
+        dialog = ft.AlertDialog(
+            title=ft.Text(""),
+            content=ft.Container(content=dialog_content, width=400, height=420, padding=20),
+        )
+        
+        page.dialog = dialog
+        dialog.open = True
+        page.update()
+                                    # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Dashboard with cloud sync button, admin controls, and logout"""
+        """Dashboard with trial banner and activate button"""
         page.controls.clear()
         
         is_mobile = page.width < 800 if page.width else False
+        
+        # Get user info
+        user = self.current_user or {}
+        is_activated = user.get('activated', False)
+        is_trial = user.get('trial', True)
+        days_left = user.get('days_left', 30)
+        email = user.get('email', 'User')
+        
+        # Check if trial expired
+        if not is_activated:
+            trial_active, days_left = self.check_trial_status()
+            if not trial_active and not is_activated:
+                days_left = 0
+        
+        # Get data
+        materials = self.dict_list(MaterialManager.get_all())
+        accessories = self.dict_list(AccessoryManager.get_all())
+        
+        total_materials = len(materials)
+        total_accessories = len(accessories)
+        total_items = total_materials + total_accessories
+        total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
         
         # Navigation
         if is_mobile:
@@ -6610,72 +6749,91 @@ class StoreApp:
             sidebar = self.create_sidebar(page)
             nav = None
         
-        # Get data
-        materials = self.dict_list(MaterialManager.get_all())
-        accessories = self.dict_list(AccessoryManager.get_all())
-        users = self.dict_list(UserManager.get_all())
-        
-        # Check if admin
-        is_admin = self.current_user.get('role') == 'admin' if self.current_user else False
-        
-        # Calculate statistics
-        total_materials = len(materials)
-        total_accessories = len(accessories)
-        total_items = total_materials + total_accessories
-        total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
-        total_users = len(users)
-        total_low_stock = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
-        
-        # Quality distribution
-        quality_counts = {"New": 0, "Used": 0, "Damaged": 0, "Repaired": 0}
-        for m in materials:
-            q = m.get('quality', 'Used')
-            quality_counts[q] = quality_counts.get(q, 0) + 1
-        for a in accessories:
-            q = a.get('quality', 'Used')
-            quality_counts[q] = quality_counts.get(q, 0) + 1
-        
-        # Get recent items
-        recent_materials = sorted(materials, key=lambda x: x.get('created_at', ''), reverse=True)[:3]
-        recent_accessories = sorted(accessories, key=lambda x: x.get('created_at', ''), reverse=True)[:3]
-        
-        # Font sizes for mobile
-        if is_mobile:
-            font_title = 24
-            font_normal = 16
-            font_small = 14
-            padding_size = 12
-        else:
-            font_title = 28
-            font_normal = 18
-            font_small = 14
-            padding_size = 20
-        
-        # Create main column
-        main_column = ft.Column(spacing=15, expand=True)
+        # Main column
+        main_column = ft.Column(spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
         
         # ============================================================
-        # 1. USER GREETING WITH ROLE
+        # TOP BANNER - Trial or Activated
         # ============================================================
         
-        user_name = self.current_user.get('name', 'User') if self.current_user else 'User'
-        role = self.current_user.get('role', 'user') if self.current_user else 'user'
-        role_emoji = "👑" if role == 'admin' else "📊" if role == 'manager' else "👤"
-        role_color = self.danger_color if role == 'admin' else self.warning_color if role == 'manager' else self.success_color
-        
-        greeting = ft.Row([
-            ft.Column([
-                ft.Text(f"📊 Dashboard", size=font_title, weight=ft.FontWeight.BOLD, color=self.text_color),
-                ft.Row([
-                    ft.Text(f"{role_emoji} {user_name}", size=14, color=role_color),
-                    ft.Container(
-                        content=ft.Text(role.upper(), size=10, color="white"),
-                        bgcolor=role_color,
-                        border_radius=8,
-                        padding=ft.padding.symmetric(horizontal=8, vertical=2),
+        if is_activated:
+            # Full version activated
+            top_banner = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CHECK_CIRCLE, color="#4CAF50", size=24),
+                    ft.Column([
+                        ft.Text("✅ Full Version Activated", size=16, weight=ft.FontWeight.BOLD, color="#4CAF50"),
+                        ft.Text(f"Welcome {email}!", size=12, color="#888888"),
+                    ], spacing=2, expand=True),
+                    ft.ElevatedButton(
+                        "🔑 Manage Account",
+                        on_click=lambda e: self.show_account_settings(page),
+                        style=ft.ButtonStyle(bgcolor="#4CAF50", color="white"),
                     ),
-                ], spacing=8),
-            ], spacing=2),
+                ], spacing=12),
+                padding=12,
+                bgcolor="#1A3A1A",
+                border_radius=10,
+                margin=ft.margin.only(bottom=8),
+            )
+        elif days_left > 0:
+            # Trial active
+            days_text = f"{days_left} days remaining"
+            if days_left <= 5:
+                days_color = self.danger_color
+                days_emoji = "⚠️"
+            else:
+                days_color = "#FF9800"
+                days_emoji = "🚀"
+            
+            top_banner = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.TIMER, color="#FF9800", size=24),
+                    ft.Column([
+                        ft.Text(f"{days_emoji} Free Trial: {days_text}", size=16, weight=ft.FontWeight.BOLD, color="#FF9800"),
+                        ft.Text("Full access for 30 days. No credit card required.", size=12, color="#888888"),
+                    ], spacing=2, expand=True),
+                    ft.ElevatedButton(
+                        "🔑 Activate Now",
+                        on_click=lambda e: self.show_activation_dialog(page),
+                        style=ft.ButtonStyle(bgcolor="#4CAF50", color="white"),
+                    ),
+                ], spacing=12),
+                padding=12,
+                bgcolor="#2C2C2C",
+                border_radius=10,
+                margin=ft.margin.only(bottom=8),
+            )
+        else:
+            # Trial expired
+            top_banner = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.WARNING, color=self.danger_color, size=24),
+                    ft.Column([
+                        ft.Text("⚠️ Trial Expired", size=16, weight=ft.FontWeight.BOLD, color=self.danger_color),
+                        ft.Text("Please activate to continue using the app.", size=12, color="#888888"),
+                    ], spacing=2, expand=True),
+                    ft.ElevatedButton(
+                        "🔑 Activate Now",
+                        on_click=lambda e: self.show_activation_dialog(page),
+                        style=ft.ButtonStyle(bgcolor="#FF9800", color="white"),
+                    ),
+                ], spacing=12),
+                padding=12,
+                bgcolor="#3A1A1A",
+                border_radius=10,
+                margin=ft.margin.only(bottom=8),
+            )
+        
+        main_column.controls.append(top_banner)
+        
+        # ============================================================
+        # HEADER
+        # ============================================================
+        
+        header_row = ft.Row([
+            ft.Text("📊 Dashboard", size=28 if not is_mobile else 24, 
+                weight=ft.FontWeight.BOLD, color=self.text_color),
             ft.Container(expand=True),
             ft.IconButton(
                 icon=ft.icons.CLOUD_SYNC,
@@ -6691,404 +6849,160 @@ class StoreApp:
                 on_click=lambda e: self.show_dashboard(page),
                 tooltip="Refresh",
             ),
+            # Logout button (only if activated)
+            ft.IconButton(
+                icon=ft.icons.LOGOUT,
+                icon_size=24,
+                icon_color="#888888",
+                on_click=lambda e: self.confirm_logout(page),
+                tooltip="Logout",
+                visible=is_activated,
+            ),
         ])
-        main_column.controls.append(greeting)
+        main_column.controls.append(header_row)
         main_column.controls.append(ft.Divider(height=1, color="#3C3C3C"))
         main_column.controls.append(ft.Container(height=5))
         
         # ============================================================
-        # 2. ADMIN CONTROLS (Only for admin)
-        # ============================================================
-        
-        if is_admin:
-            admin_panel = ft.Card(
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Row([
-                            ft.Icon(ft.icons.ADMIN_PANEL_SETTINGS, color="#FFD700", size=24),
-                            ft.Text("👑 Admin Controls", size=16, weight=ft.FontWeight.BOLD, color="#FFD700"),
-                            ft.Container(expand=True),
-                            ft.Text("Full Access", size=10, color="#888888"),
-                        ]),
-                        ft.Divider(),
-                        ft.Row([
-                            ft.ElevatedButton(
-                                "👥 Manage Users",
-                                on_click=lambda e: self.show_users(page),
-                                icon=ft.icons.PEOPLE,
-                                expand=True,
-                                style=ft.ButtonStyle(bgcolor="#9C27B0", color="white"),
-                            ),
-                            ft.ElevatedButton(
-                                "📋 View All Data",
-                                on_click=lambda e: self.show_inventory(page),
-                                icon=ft.icons.LIST_ALT,
-                                expand=True,
-                                style=ft.ButtonStyle(bgcolor="#2196F3", color="white"),
-                            ),
-                        ], spacing=8),
-                        ft.Row([
-                            ft.ElevatedButton(
-                                "📤 Export All Data",
-                                on_click=lambda e: self.export_all_data_simple(page),
-                                icon=ft.icons.UPLOAD_FILE,
-                                expand=True,
-                                style=ft.ButtonStyle(bgcolor="#FF9800", color="white"),
-                            ),
-                            ft.ElevatedButton(
-                                "📱 Invite Users",
-                                on_click=lambda e: self.open_add_user_modal(page),
-                                icon=ft.icons.GROUP_ADD,
-                                expand=True,
-                                style=ft.ButtonStyle(bgcolor=self.success_color, color="white"),
-                            ),
-                        ], spacing=8),
-                    ], spacing=10),
-                    padding=15,
-                ),
-                elevation=2,
-                margin=ft.margin.only(bottom=10),
-            )
-            main_column.controls.append(admin_panel)
-        
-        # ============================================================
-        # 3. CLOUD STATUS INDICATOR
-        # ============================================================
-        
-        cloud_status = ft.Container(
-            content=ft.Row([
-                ft.Icon(
-                    ft.icons.CLOUD_DONE if firebase_api.is_ready() else ft.icons.CLOUD_OFF, 
-                    size=16, 
-                    color=self.success_color if firebase_api.is_ready() else self.warning_color
-                ),
-                ft.Text(
-                    "Cloud Connected" if firebase_api.is_ready() else "Local Mode", 
-                    size=12, 
-                    color=self.success_color if firebase_api.is_ready() else self.warning_color
-                ),
-                ft.Text("•", size=12, color="#888888"),
-                ft.Text(f"Items: {total_items}", size=11, color="#888888"),
-                ft.Text(f"Users: {total_users}", size=11, color="#888888"),
-                ft.Container(expand=True),
-                ft.Text(f"Today {datetime.now().strftime('%H:%M')}", size=9, color="#888888"),
-            ], spacing=8),
-            padding=8,
-            bgcolor="#2C2C2C",
-            border_radius=8,
-            margin=ft.margin.only(bottom=5),
-        )
-        main_column.controls.append(cloud_status)
-        main_column.controls.append(ft.Container(height=5))
-        
-        # ============================================================
-        # 4. STATISTICS CARDS
+        # STATS CARDS
         # ============================================================
         
         stats_row = ft.Row([
             self._create_stat_card("📦", str(total_items), "Items"),
             self._create_stat_card("📊", str(total_stock), "Stock"),
-            self._create_stat_card("⚠️", str(total_low_stock), "Low Stock", 
-                                self.danger_color if total_low_stock > 0 else None),
-            self._create_stat_card("👥", str(total_users), "Users"),
-        ], spacing=8)
+            self._create_stat_card("📈", str(len(materials) + len(accessories)), "Total"),
+        ], spacing=10)
         main_column.controls.append(stats_row)
         main_column.controls.append(ft.Container(height=5))
         
         # ============================================================
-        # 5. QUALITY DISTRIBUTION
+        # QUICK ACTIONS
         # ============================================================
         
-        main_column.controls.append(ft.Text("📊 Quality Distribution", size=font_normal, weight=ft.FontWeight.BOLD))
-        
-        quality_row1 = ft.Row([
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#4CAF50"),
-                    ft.Text(f"New: {quality_counts.get('New', 0)}", size=font_small, color=self.text_color),
-                ], spacing=8),
-                padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                bgcolor=self.card_color,
-                border_radius=8,
-                expand=True,
-            ),
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#FF9800"),
-                    ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=font_small, color=self.text_color),
-                ], spacing=8),
-                padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                bgcolor=self.card_color,
-                border_radius=8,
-                expand=True,
-            ),
-        ], spacing=8)
-        main_column.controls.append(quality_row1)
-        
-        quality_row2 = ft.Row([
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#F44336"),
-                    ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=font_small, color=self.text_color),
-                ], spacing=8),
-                padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                bgcolor=self.card_color,
-                border_radius=8,
-                expand=True,
-            ),
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.CIRCLE, size=16, color="#2196F3"),
-                    ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=font_small, color=self.text_color),
-                ], spacing=8),
-                padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                bgcolor=self.card_color,
-                border_radius=8,
-                expand=True,
-            ),
-        ], spacing=8)
-        main_column.controls.append(quality_row2)
-        main_column.controls.append(ft.Container(height=5))
-        
-        # ============================================================
-        # 6. STOCK HEALTH
-        # ============================================================
-        
-        if total_stock > 0:
-            healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100))
-            healthy_percentage = max(0, min(healthy_percentage, 100))
-        else:
-            healthy_percentage = 100
-        
-        stock_color = self.success_color if healthy_percentage > 70 else self.warning_color if healthy_percentage > 40 else self.danger_color
-        
-        main_column.controls.append(ft.Text("💪 Stock Health", size=font_normal, weight=ft.FontWeight.BOLD))
-        main_column.controls.append(
-            ft.Container(
-                content=ft.Column([
-                    ft.Row([
-                        ft.Text(f"{healthy_percentage}%", size=24, weight=ft.FontWeight.BOLD, color=stock_color),
-                        ft.Container(expand=True),
-                        ft.Text(f"Low Stock: {total_low_stock} items", size=12, color=self.warning_color),
-                    ]),
-                    ft.ProgressBar(
-                        value=healthy_percentage/100, 
-                        color=stock_color, 
-                        bgcolor="#3C3C3C", 
-                        height=6
-                    ),
-                ], spacing=5),
-                padding=12, 
-                bgcolor=self.card_color, 
-                border_radius=10,
-            )
-        )
-        main_column.controls.append(ft.Container(height=5))
-        
-        # ============================================================
-        # 7. QUICK ACTIONS
-        # ============================================================
-        
-        main_column.controls.append(ft.Text("⚡ Quick Actions", size=font_normal, weight=ft.FontWeight.BOLD))
+        main_column.controls.append(ft.Text("⚡ Quick Actions", size=18, weight=ft.FontWeight.BOLD))
         
         # Row 1
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton(
-                    "📦 Add Material", 
-                    on_click=lambda e: self.open_add_modal(page), 
-                    expand=True,
-                    style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color),
-                    icon=ft.icons.ADD,
-                ),
-                ft.ElevatedButton(
-                    "🔧 Add Part", 
-                    on_click=lambda e: self.open_add_accessory_modal(page), 
-                    expand=True,
-                    style=ft.ButtonStyle(bgcolor=self.success_color, color=self.text_color),
-                    icon=ft.icons.ADD,
-                ),
-            ], spacing=8)
+                ft.ElevatedButton("📦 Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
+                ft.ElevatedButton("🔧 Add Part", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
+            ], spacing=10)
         )
         
         # Row 2
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton(
-                    "📷 Scan", 
-                    on_click=lambda e: self.show_barcode_scanner(page), 
-                    expand=True,
-                    style=ft.ButtonStyle(bgcolor="#FF9800", color=self.text_color),
-                    icon=ft.icons.QR_CODE_SCANNER,
-                ),
-                ft.ElevatedButton(
-                    "📊 Inventory", 
-                    on_click=lambda e: self.show_inventory(page), 
-                    expand=True,
-                    style=ft.ButtonStyle(bgcolor="#9C27B0", color=self.text_color),
-                    icon=ft.icons.LIST_ALT,
-                ),
-            ], spacing=8)
+                ft.ElevatedButton("📷 Scan", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
+                ft.ElevatedButton("📊 Inventory", on_click=lambda e: self.show_inventory(page), expand=True),
+            ], spacing=10)
         )
         
-        # Row 3 - Import/Export
+        # Row 3
         main_column.controls.append(
             ft.Row([
-                ft.ElevatedButton(
-                    "📤 Export Data", 
-                    on_click=lambda e: self.export_all_data_simple(page), 
-                    expand=True,
-                    style=ft.ButtonStyle(bgcolor="#2196F3", color=self.text_color),
-                    icon=ft.icons.UPLOAD_FILE,
-                ),
-                ft.ElevatedButton(
-                    "📁 Backups", 
-                    on_click=lambda e: self.show_backup_list(page), 
-                    expand=True,
-                    style=ft.ButtonStyle(bgcolor="#607D8B", color=self.text_color),
-                    icon=ft.icons.BACKUP,
-                ),
-            ], spacing=8)
+                ft.ElevatedButton("📤 Export Data", on_click=lambda e: self.export_all_data_simple(page), expand=True),
+                ft.ElevatedButton("📁 Backups", on_click=lambda e: self.show_backup_list(page), expand=True),
+            ], spacing=10)
         )
-        main_column.controls.append(ft.Container(height=5))
+        
+        # Row 4 - Activation button (if not activated)
+        if not is_activated:
+            main_column.controls.append(
+                ft.Row([
+                    ft.ElevatedButton(
+                        "🔑 Activate Full Version",
+                        on_click=lambda e: self.show_activation_dialog(page),
+                        expand=True,
+                        style=ft.ButtonStyle(
+                            bgcolor="#FF9800",
+                            color="white",
+                        ),
+                        icon=ft.icons.VERIFIED,
+                    ),
+                ], spacing=10)
+            )
+        
+        main_column.controls.append(ft.Container(height=15))
         
         # ============================================================
-        # 8. RECENT MATERIALS
+        # RECENT MATERIALS
         # ============================================================
         
-        main_column.controls.append(ft.Text("📦 Recent Materials", size=font_normal, weight=ft.FontWeight.BOLD))
-        if recent_materials:
-            for m in recent_materials:
-                quality_color = self.get_quality_color(m.get('quality', 'Used'))
-                qty = m.get('quantity', 0)
-                qty_color = self.danger_color if qty < 10 else self.text_color
-                
+        main_column.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
+        if materials:
+            for m in materials[:5]:
                 main_column.controls.append(
                     ft.Container(
                         content=ft.Row([
                             ft.Text("📦", size=18),
-                            ft.Column([
-                                ft.Text(m.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD),
-                                ft.Text(f"📍 {m.get('location_ids', 'N/A')}", size=font_small - 2, color="#888888"),
-                            ], spacing=2, expand=True),
-                            ft.Text(f"Qty: {qty}", size=font_small, color=qty_color),
-                            ft.Container(
-                                content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
-                                bgcolor=quality_color,
-                                border_radius=8,
-                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
-                            ),
+                            ft.Text(m.get('name', 'N/A'), size=14, expand=True),
+                            ft.Text(f"Qty: {m.get('quantity', 0)}", size=14),
                         ]),
                         padding=10,
                         bgcolor="#2C2C2C",
                         border_radius=8,
                         margin=ft.margin.only(bottom=5),
-                        on_click=lambda e, mat=m: self.show_material_detail_dialog(page, dict(mat)),
-                        ink=True,
                     )
                 )
-            
-            main_column.controls.append(
-                ft.TextButton("View All Materials", on_click=lambda e: self.show_materials_screen(page))
-            )
-            main_column.controls.append(ft.Container(height=5))
         else:
             main_column.controls.append(
                 ft.Container(
-                    content=ft.Text("No materials added yet. Click 'Add Material' to get started!", size=12, color="#888888"),
+                    content=ft.Text("No materials yet. Click 'Add Material' to get started!", 
+                                size=12, color="#888888"),
                     padding=10,
                     bgcolor="#2C2C2C",
                     border_radius=8,
                 )
             )
-            main_column.controls.append(ft.Container(height=5))
+        
+        main_column.controls.append(ft.Container(height=15))
         
         # ============================================================
-        # 9. RECENT ACCESSORIES
+        # RECENT ACCESSORIES
         # ============================================================
         
-        main_column.controls.append(ft.Text("🔧 Recent Accessories", size=font_normal, weight=ft.FontWeight.BOLD))
-        if recent_accessories:
-            for a in recent_accessories:
-                quality_color = self.get_quality_color(a.get('quality', 'Used'))
-                qty = a.get('quantity', 0)
-                qty_color = self.danger_color if qty < 10 else self.text_color
+        main_column.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
+        if accessories:
+            for a in accessories[:5]:
                 price = a.get('price', 0)
                 price_text = f"${price:.2f}" if price else ""
-                
                 main_column.controls.append(
                     ft.Container(
                         content=ft.Row([
                             ft.Text("🔧", size=18),
-                            ft.Column([
-                                ft.Text(a.get('name', 'N/A'), size=font_small, weight=ft.FontWeight.BOLD),
-                                ft.Text(f"📍 {a.get('location', 'N/A')}", size=font_small - 2, color="#888888"),
-                            ], spacing=2, expand=True),
-                            ft.Text(f"Qty: {qty}", size=font_small, color=qty_color),
-                            ft.Text(price_text, size=font_small, color="#4CAF50") if price_text else ft.Container(),
-                            ft.Container(
-                                content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
-                                bgcolor=quality_color,
-                                border_radius=8,
-                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
-                            ),
+                            ft.Text(a.get('name', 'N/A'), size=14, expand=True),
+                            ft.Text(f"Qty: {a.get('quantity', 0)}", size=14),
+                            ft.Text(price_text, size=12, color="#4CAF50"),
                         ]),
                         padding=10,
                         bgcolor="#2C2C2C",
                         border_radius=8,
                         margin=ft.margin.only(bottom=5),
-                        on_click=lambda e, acc=a: self.show_accessory_detail_dialog(page, dict(acc)),
-                        ink=True,
                     )
                 )
-            
-            main_column.controls.append(
-                ft.TextButton("View All Accessories", on_click=lambda e: self.show_accessories(page))
-            )
-            main_column.controls.append(ft.Container(height=5))
         else:
             main_column.controls.append(
                 ft.Container(
-                    content=ft.Text("No accessories added yet. Click 'Add Part' to get started!", size=12, color="#888888"),
+                    content=ft.Text("No accessories yet. Click 'Add Part' to get started!", 
+                                size=12, color="#888888"),
                     padding=10,
                     bgcolor="#2C2C2C",
                     border_radius=8,
                 )
             )
-            main_column.controls.append(ft.Container(height=5))
         
         # ============================================================
-        # 10. LOGOUT BUTTON
+        # FOOTER
         # ============================================================
         
         main_column.controls.append(ft.Divider())
         main_column.controls.append(ft.Container(height=5))
         
-        # In show_dashboard, the logout button should be:
-        logout_row = ft.Row([
-            ft.ElevatedButton(
-                "🚪 Logout",
-                on_click=lambda e: self.confirm_logout(page),  # <-- Calls confirm_logout
-                style=ft.ButtonStyle(
-                    bgcolor=self.danger_color,
-                    color="white",
-                    padding=12,
-                ),
-                icon=ft.icons.LOGOUT,
-                expand=True,
-            ),
-        ], spacing=8)
-        main_column.controls.append(logout_row)
-        
-        # ============================================================
-        # 11. FOOTER
-        # ============================================================
-        
-        company_info = self.get_company_info()
-        company_name = company_info.get('company_name', 'Store Management')
+        status_text = "✅ Full Version" if is_activated else f"🚀 Trial: {days_left} days left" if days_left > 0 else "⚠️ Trial Expired"
+        status_color = "#4CAF50" if is_activated else "#FF9800" if days_left > 0 else self.danger_color
         
         footer_row = ft.Row([
-            ft.Text(f"🏢 {company_name}", size=11, color="#888888"),
+            ft.Text(f"📱 {status_text}", size=11, color=status_color),
             ft.Container(expand=True),
             ft.Text(f"v2.0.0", size=11, color="#888888"),
             ft.Text("•", size=11, color="#888888"),
@@ -7098,7 +7012,7 @@ class StoreApp:
         main_column.controls.append(ft.Container(height=10))
         
         # ============================================================
-        # 12. BOTTOM SPACING (for mobile nav)
+        # BOTTOM SPACING
         # ============================================================
         
         if is_mobile:
@@ -7107,23 +7021,19 @@ class StoreApp:
             main_column.controls.append(ft.Container(height=20))
         
         # ============================================================
-        # WRAP IN SCROLLABLE CONTAINER
+        # WRAP AND DISPLAY
         # ============================================================
         
         scroll_container = ft.Container(
             content=main_column,
             expand=True,
-            padding=padding_size,
+            padding=15 if is_mobile else 20,
         )
         
         scrollable = ft.Container(
             content=ft.Column([scroll_container], scroll=ft.ScrollMode.AUTO, expand=True),
             expand=True,
         )
-        
-        # ============================================================
-        # FINAL LAYOUT
-        # ============================================================
         
         if is_mobile and nav:
             page.add(ft.Column([scrollable, nav], spacing=0, expand=True))
@@ -15147,21 +15057,55 @@ class StoreApp:
         self.current_view = "settings"
         page.update()
 
+    def save_user_session(self, user_dict):
+        """Save user session for auto-login - CLASS METHOD"""
+        import json
+        import os
+        
+        try:
+            session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
+            
+            # Ensure we have all required fields
+            session_data = {
+                'email': user_dict.get('email', 'trial@user.com'),
+                'trial': user_dict.get('trial', True),
+                'activated': user_dict.get('activated', False),
+                'days_left': user_dict.get('days_left', 30),
+                'device_id': user_dict.get('device_id', self.get_device_id())
+            }
+            
+            with open(session_file, 'w') as f:
+                json.dump(session_data, f)
+            
+            print(f"✅ Session saved for: {session_data['email']}")
+            return True
+            
+        except Exception as e:
+            print(f"Error saving session: {e}")
+            return False
+    
     def confirm_logout(self, page: ft.Page):
-        """Show logout confirmation dialog and clear session"""
+        """Show logout confirmation dialog"""
         
         def do_logout(e):
-            # ===== CLEAR SAVED SESSION =====
+            # Clear session
             self.clear_session()
             
             # Close dialog
             page.dialog.open = False
             
-            # Clear user
-            self.current_user = None
+            # Reset user to trial mode
+            self.current_user = {
+                'email': 'trial@user.com',
+                'trial': True,
+                'activated': False,
+                'days_left': 30,
+                'device_id': self.get_device_id()
+            }
+            self.save_user_session(self.current_user)
             
-            # Go to login screen
-            self.show_login(page)
+            # Show dashboard (not login)
+            self.show_dashboard(page)
         
         def cancel_logout(e):
             page.dialog.open = False
@@ -15171,9 +15115,7 @@ class StoreApp:
             ft.Text("🚪 Logout", size=18, weight=ft.FontWeight.BOLD, color=self.danger_color),
             ft.Divider(),
             ft.Text("Are you sure you want to logout?", size=14),
-            ft.Text(f"You are currently logged in as:", size=12, color="#888888"),
-            ft.Text(f"{self.current_user.get('name', 'User')}", size=14, weight=ft.FontWeight.BOLD),
-            ft.Text("You will need to login again next time.", size=12, color="#888888"),
+            ft.Text("You can always continue with the free trial.", size=12, color="#888888"),
             ft.Container(height=15),
             ft.Row([
                 ft.TextButton("Cancel", on_click=cancel_logout),
@@ -15184,7 +15126,7 @@ class StoreApp:
         
         dialog = ft.AlertDialog(
             title=ft.Text("Confirm Logout"),
-            content=ft.Container(content=dialog_content, width=350, height=320, padding=20),
+            content=ft.Container(content=dialog_content, width=350, height=280, padding=20),
         )
         
         page.dialog = dialog
