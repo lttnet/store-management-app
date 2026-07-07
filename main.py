@@ -1751,19 +1751,13 @@ class StoreApp:
                         trial_active, days_left = self.check_trial_status()
                         if trial_active:
                             self.current_user['days_left'] = days_left
-                            self.current_user['trial'] = True
                         else:
                             self.current_user['days_left'] = 0
-                            self.current_user['trial'] = False
                             print("⚠️ Trial expired for device:", self.current_user.get('device_id'))
                     except Exception as e:
                         print(f"Error checking trial: {e}")
                         # Default to trial active with 30 days
                         self.current_user['days_left'] = 30
-                        self.current_user['trial'] = True
-            
-            # Print user info for debugging
-            print(f"Current user: activated={self.current_user.get('activated')}, trial={self.current_user.get('trial')}, days_left={self.current_user.get('days_left')}")
             
             # Show dashboard
             self.show_dashboard(page)
@@ -1792,7 +1786,6 @@ class StoreApp:
                 page.update()
             except:
                 pass
-
     def ensure_trial_table(self):
         """Ensure trial_info table exists"""
         import sqlite3
@@ -1902,25 +1895,19 @@ class StoreApp:
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='trial_info'")
             if not cursor.fetchone():
                 conn.close()
-                # Create trial_info table
-                self.save_trial_info('trial@user.com')
-                return True, 30
+                return False, 0
             
             cursor.execute("SELECT email, trial_start, trial_end FROM trial_info LIMIT 1")
             result = cursor.fetchone()
             conn.close()
             
             if not result:
-                # No trial info - start a new trial
-                self.save_trial_info('trial@user.com')
-                return True, 30
+                return False, 0
             
             email, trial_start, trial_end = result
             
             if not trial_end:
-                # No end date - start a new trial
-                self.save_trial_info('trial@user.com')
-                return True, 30
+                return False, 0
             
             trial_end_date = datetime.strptime(trial_end, '%Y-%m-%d %H:%M:%S')
             days_left = (trial_end_date - datetime.now()).days
@@ -1932,8 +1919,7 @@ class StoreApp:
             
         except Exception as e:
             print(f"Check trial error: {e}")
-            # Return default trial active with 30 days if there's an error
-            return True, 30
+            return False, 0
     
     def save_user_session(self, user_dict):
         """Save user session for auto-login"""
@@ -5136,314 +5122,344 @@ class StoreApp:
             )
             page.snack_bar.open = True
             page.update()
-
-                # ============ DASHBOARD ============
-    def show_dashboard(self, page: ft.Page):
-        """Dashboard with trial banner - FIXED FOR MOBILE"""
-        try:
-            page.controls.clear()
             
-            is_mobile = self.is_mobile(page)
-            
-            # Get user info with proper defaults
-            user = self.current_user or {}
-            is_activated = user.get('activated', False)
-            is_trial = user.get('trial', True)
-            days_left = user.get('days_left', 30)
-            email = user.get('email', 'User')
-            
-            # Debug - print user info
-            print(f"Dashboard User Info: activated={is_activated}, trial={is_trial}, days_left={days_left}")
-            
-            # Check if trial expired (only if not activated)
-            if not is_activated:
-                try:
-                    trial_active, days_left = self.check_trial_status()
-                    if not trial_active and not is_activated:
-                        days_left = 0
-                        print("Trial expired")
-                    else:
-                        print(f"Trial active: {days_left} days")
-                except Exception as e:
-                    print(f"Error checking trial: {e}")
-                    days_left = 30  # Default to 30 days if check fails
-            
-            # Get data
+    def create_trial_banner(self, page: ft.Page):
+        """Create trial/activation banner for dashboard"""
+        
+        user = self.current_user or {}
+        is_activated = user.get('activated', False)
+        days_left = user.get('days_left', 30)
+        
+        # Check trial status if not activated
+        if not is_activated:
             try:
-                materials = self.dict_list(MaterialManager.get_all())
-                accessories = self.dict_list(AccessoryManager.get_all())
+                trial_active, days_left = self.check_trial_status()
+                if not trial_active:
+                    days_left = 0
             except:
-                materials = []
-                accessories = []
+                days_left = 30
+        
+        if is_activated:
+            # Full version activated - Show small badge
+            return ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CHECK_CIRCLE, color="#4CAF50", size=16),
+                    ft.Text("✅ Full Version", size=12, color="#4CAF50", weight=ft.FontWeight.BOLD),
+                ], spacing=6),
+                padding=ft.padding.symmetric(horizontal=10, vertical=4),
+                bgcolor="#1A3A1A",
+                border_radius=12,
+                margin=ft.margin.only(bottom=5),
+            )
+        elif days_left > 0:
+            # Trial active - Show banner with days left
+            days_color = self.danger_color if days_left <= 5 else "#FF9800"
+            emoji = "⚠️" if days_left <= 5 else "🚀"
             
-            total_materials = len(materials)
-            total_accessories = len(accessories)
-            total_items = total_materials + total_accessories
-            total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
-            
-            # Navigation
-            if is_mobile:
-                nav = self.create_bottom_nav(page)
-                sidebar = None
-            else:
-                sidebar = self.create_sidebar(page)
-                nav = None
-            
-            # Main column
-            main_column = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
-            
-            # ===== TOP BANNER - ALWAYS SHOW =====
-            if is_activated:
-                # Full version activated
-                top_banner = ft.Container(
-                    content=ft.Row([
-                        ft.Icon(ft.icons.CHECK_CIRCLE, color="#4CAF50", size=24),
-                        ft.Column([
-                            ft.Text("✅ Full Version Activated", size=14, weight=ft.FontWeight.BOLD, color="#4CAF50"),
-                            ft.Text(f"Welcome {email}!", size=11, color="#888888"),
-                        ], spacing=1, expand=True),
-                    ], spacing=10),
-                    padding=12,
-                    bgcolor="#1A3A1A",
-                    border_radius=10,
-                    margin=ft.margin.only(bottom=8),
-                )
-            elif days_left > 0:
-                # Trial active
-                days_color = self.danger_color if days_left <= 5 else "#FF9800"
-                emoji = "⚠️" if days_left <= 5 else "🚀"
-                days_text = f"{days_left} days remaining"
-                
-                top_banner = ft.Container(
-                    content=ft.Row([
-                        ft.Icon(ft.icons.TIMER, color="#FF9800", size=24),
-                        ft.Column([
-                            ft.Text(f"{emoji} Free Trial: {days_text}", size=14, weight=ft.FontWeight.BOLD, color="#FF9800"),
-                            ft.Text("Full access for 30 days. No credit card required.", size=10, color="#888888"),
-                        ], spacing=1, expand=True),
-                        ft.ElevatedButton(
-                            "🔑 Activate",
-                            on_click=lambda e: self.show_activation_dialog(page),
-                            style=ft.ButtonStyle(bgcolor="#4CAF50", color="white"),
-                            height=36,
-                        ),
-                    ], spacing=10),
-                    padding=12,
-                    bgcolor="#2C2C2C",
-                    border_radius=10,
-                    margin=ft.margin.only(bottom=8),
-                )
-            else:
-                # Trial expired
-                top_banner = ft.Container(
-                    content=ft.Row([
-                        ft.Icon(ft.icons.WARNING, color=self.danger_color, size=24),
-                        ft.Column([
-                            ft.Text("⚠️ Trial Expired", size=14, weight=ft.FontWeight.BOLD, color=self.danger_color),
-                            ft.Text("Please activate to continue using the app.", size=10, color="#888888"),
-                        ], spacing=1, expand=True),
-                        ft.ElevatedButton(
-                            "🔑 Activate",
-                            on_click=lambda e: self.show_activation_dialog(page),
-                            style=ft.ButtonStyle(bgcolor="#FF9800", color="white"),
-                            height=36,
-                        ),
-                    ], spacing=10),
-                    padding=12,
-                    bgcolor="#3A1A1A",
-                    border_radius=10,
-                    margin=ft.margin.only(bottom=8),
-                )
-            
-            main_column.controls.append(top_banner)
-            
-            # ===== HEADER =====
-            header_row = ft.Row([
-                ft.Text("📊 Dashboard", size=20 if is_mobile else 24, weight=ft.FontWeight.BOLD),
-                ft.Container(expand=True),
-                ft.IconButton(
-                    icon=ft.icons.REFRESH,
-                    icon_size=20,
-                    icon_color="#888888",
-                    on_click=lambda e: self.show_dashboard(page),
-                ),
-            ])
-            main_column.controls.append(header_row)
-            main_column.controls.append(ft.Divider(height=1, color="#3C3C3C"))
-            main_column.controls.append(ft.Container(height=5))
-            
-            # ===== STATS CARDS =====
-            stats_row = ft.Row([
+            return ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.TIMER, color="#FF9800", size=18),
+                    ft.Text(f"{emoji} Trial: {days_left} days", size=12, color="#FF9800", weight=ft.FontWeight.BOLD),
+                    ft.Container(width=5),
+                    ft.ElevatedButton(
+                        "Activate",
+                        on_click=lambda e: self.show_activation_dialog(page),
+                        style=ft.ButtonStyle(bgcolor="#4CAF50", color="white", padding=5),
+                        height=28,
+                    ),
+                ], spacing=6),
+                padding=ft.padding.symmetric(horizontal=10, vertical=4),
+                bgcolor="#2C2C2C",
+                border_radius=12,
+                margin=ft.margin.only(bottom=5),
+            )
+        else:
+            # Trial expired - Show warning banner
+            return ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.WARNING, color=self.danger_color, size=18),
+                    ft.Text("⚠️ Trial Expired", size=12, color=self.danger_color, weight=ft.FontWeight.BOLD),
+                    ft.Container(width=5),
+                    ft.ElevatedButton(
+                        "Activate Now",
+                        on_click=lambda e: self.show_activation_dialog(page),
+                        style=ft.ButtonStyle(bgcolor="#FF9800", color="white", padding=5),
+                        height=28,
+                    ),
+                ], spacing=6),
+                padding=ft.padding.symmetric(horizontal=10, vertical=4),
+                bgcolor="#3A1A1A",
+                border_radius=12,
+                margin=ft.margin.only(bottom=5),
+            )
+    
+                    # ============ DASHBOARD ============
+    def show_dashboard(self, page: ft.Page):
+        """Dashboard with cloud sync button - ORIGINAL WORKING VERSION with trial banner added"""
+        page.controls.clear()
+        
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Navigation
+        if is_mobile:
+            nav = self.create_bottom_nav(page)
+            sidebar = None
+        else:
+            sidebar = self.create_sidebar(page)
+            nav = None
+        
+        # Get data
+        materials = self.dict_list(MaterialManager.get_all())
+        accessories = self.dict_list(AccessoryManager.get_all())
+        users = self.dict_list(UserManager.get_all())
+        
+        # Calculate statistics
+        total_materials = len(materials)
+        total_accessories = len(accessories)
+        total_items = total_materials + total_accessories
+        total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
+        total_users = len(users)
+        total_low_stock = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
+        
+        quality_counts = {"New": 0, "Used": 0, "Damaged": 0, "Repaired": 0}
+        for m in materials:
+            q = m.get('quality', 'Used')
+            quality_counts[q] = quality_counts.get(q, 0) + 1
+        for a in accessories:
+            q = a.get('quality', 'Used')
+            quality_counts[q] = quality_counts.get(q, 0) + 1
+        
+        # Create main column
+        main_column = ft.Column(spacing=15, expand=True)
+        
+        # ===== HEADER WITH TRIAL BANNER =====
+        # Create trial banner
+        trial_banner = self.create_trial_banner(page)
+        
+        header_row = ft.Row([
+            ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color, expand=True),
+            trial_banner,  # <-- TRIAL BANNER ADDED HERE
+            ft.IconButton(
+                icon=ft.icons.CLOUD_SYNC,
+                icon_size=24,
+                icon_color=self.accent_color,
+                on_click=lambda e: self.manual_sync(page),
+                tooltip="Sync with Cloud",
+            ),
+        ])
+        main_column.controls.append(header_row)
+        main_column.controls.append(ft.Text("Welcome back!", size=14, color="#888888"))
+        
+        # Stats cards
+        main_column.controls.append(
+            ft.Row([
                 self._create_stat_card("📦", str(total_items), "Items"),
                 self._create_stat_card("📊", str(total_stock), "Stock"),
-                self._create_stat_card("📈", str(total_items), "Total"),
+                self._create_stat_card("⚠️", str(total_low_stock), "Low Stock"),
+                self._create_stat_card("👥", str(total_users), "Users"),
             ], spacing=8)
-            main_column.controls.append(stats_row)
-            main_column.controls.append(ft.Container(height=5))
-            
-            # ===== QUICK ACTIONS =====
-            main_column.controls.append(ft.Text("⚡ Quick Actions", size=16, weight=ft.FontWeight.BOLD))
-            
-            main_column.controls.append(
-                ft.Row([
-                    ft.ElevatedButton("📦 Add Material", on_click=lambda e: self.open_add_modal(page), expand=True, height=40),
-                    ft.ElevatedButton("🔧 Add Part", on_click=lambda e: self.open_add_accessory_modal(page), expand=True, height=40),
-                ], spacing=8)
+        )
+        
+        # Quality Distribution
+        main_column.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
+        
+        quality_row1 = ft.Row([
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#4CAF50"),
+                    ft.Text(f"New: {quality_counts.get('New', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#FF9800"),
+                    ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+        ], spacing=8)
+        main_column.controls.append(quality_row1)
+        
+        quality_row2 = ft.Row([
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#F44336"),
+                    ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#2196F3"),
+                    ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+        ], spacing=8)
+        main_column.controls.append(quality_row2)
+        
+        # Stock Health
+        if total_stock > 0:
+            healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100))
+            healthy_percentage = max(0, min(healthy_percentage, 100))
+        else:
+            healthy_percentage = 100
+        
+        main_column.controls.append(ft.Text("💪 Stock Health", size=16, weight=ft.FontWeight.BOLD))
+        main_column.controls.append(
+            ft.Container(
+                content=ft.Column([
+                    ft.Text(f"{healthy_percentage}%", size=24, weight=ft.FontWeight.BOLD, color=self.success_color),
+                    ft.ProgressBar(value=healthy_percentage/100, color=self.success_color, bgcolor="#3C3C3C", height=6),
+                    ft.Text(f"Low Stock: {total_low_stock} items", size=12, color=self.warning_color),
+                ], spacing=5),
+                padding=12, bgcolor=self.card_color, border_radius=10,
             )
-            main_column.controls.append(
-                ft.Row([
-                    ft.ElevatedButton("📷 Scan", on_click=lambda e: self.show_barcode_scanner(page), expand=True, height=40),
-                    ft.ElevatedButton("📊 Inventory", on_click=lambda e: self.show_inventory(page), expand=True, height=40),
-                ], spacing=8)
-            )
-            
-            # ===== ACTIVATION BUTTON (if not activated) =====
-            if not is_activated:
-                main_column.controls.append(
-                    ft.ElevatedButton(
-                        "🔑 Activate Full Version",
-                        on_click=lambda e: self.show_activation_dialog(page),
-                        expand=True,
-                        style=ft.ButtonStyle(bgcolor="#FF9800", color="white"),
-                        height=40,
-                    )
-                )
-            
-            main_column.controls.append(ft.Container(height=10))
-            
-            # ===== RECENT MATERIALS =====
-            main_column.controls.append(ft.Text("📦 Recent Materials", size=15, weight=ft.FontWeight.BOLD))
-            
-            recent_mats = materials[:5] if materials else []
-            if recent_mats:
-                for m in recent_mats:
-                    main_column.controls.append(
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Text("📦", size=16),
-                                ft.Text(m.get('name', 'N/A'), size=13, expand=True),
-                                ft.Text(f"Qty: {m.get('quantity', 0)}", size=12),
-                            ]),
-                            padding=8,
-                            bgcolor="#2C2C2C",
-                            border_radius=6,
-                            margin=ft.margin.only(bottom=3),
-                        )
-                    )
-            else:
+        )
+        
+        # Recent Materials
+        main_column.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
+        if materials:
+            for m in materials[:3]:
                 main_column.controls.append(
                     ft.Container(
-                        content=ft.Text("No materials yet. Click 'Add Material' to get started!", 
-                                    size=11, color="#888888"),
-                        padding=8,
-                        bgcolor="#2C2C2C",
-                        border_radius=6,
+                        content=ft.Row([
+                            ft.Text("📦", size=18),
+                            ft.Text(m.get('name', 'N/A'), size=14, expand=True),
+                            ft.Text(f"Qty: {m.get('quantity', 0)}", size=14),
+                            ft.Container(
+                                content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
+                                bgcolor=self.get_quality_color(m.get('quality', 'Used')),
+                                border_radius=8,
+                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                            ),
+                        ]),
+                        padding=10, bgcolor="#2C2C2C", border_radius=8,
                     )
                 )
-            
-            main_column.controls.append(ft.Container(height=10))
-            
-            # ===== RECENT ACCESSORIES =====
-            main_column.controls.append(ft.Text("🔧 Recent Accessories", size=15, weight=ft.FontWeight.BOLD))
-            
-            recent_accs = accessories[:5] if accessories else []
-            if recent_accs:
-                for a in recent_accs:
-                    price = a.get('price', 0)
-                    price_text = f"${price:.2f}" if price else ""
-                    main_column.controls.append(
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Text("🔧", size=16),
-                                ft.Text(a.get('name', 'N/A'), size=13, expand=True),
-                                ft.Text(f"Qty: {a.get('quantity', 0)}", size=12),
-                                ft.Text(price_text, size=11, color="#4CAF50") if price_text else ft.Container(),
-                            ]),
-                            padding=8,
-                            bgcolor="#2C2C2C",
-                            border_radius=6,
-                            margin=ft.margin.only(bottom=3),
-                        )
-                    )
-            else:
+            main_column.controls.append(ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)))
+        else:
+            main_column.controls.append(ft.Text("No materials", size=12, color="#888888"))
+        
+        # Recent Accessories
+        main_column.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
+        if accessories:
+            for a in accessories[:3]:
+                price = a.get('price', 0)
+                price_text = f"${price:.2f}" if price else ""
                 main_column.controls.append(
                     ft.Container(
-                        content=ft.Text("No accessories yet. Click 'Add Part' to get started!", 
-                                    size=11, color="#888888"),
-                        padding=8,
-                        bgcolor="#2C2C2C",
-                        border_radius=6,
+                        content=ft.Row([
+                            ft.Text("🔧", size=18),
+                            ft.Text(a.get('name', 'N/A'), size=14, expand=True),
+                            ft.Text(f"Qty: {a.get('quantity', 0)}", size=14),
+                            ft.Text(price_text, size=12, color="#4CAF50"),
+                            ft.Container(
+                                content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
+                                bgcolor=self.get_quality_color(a.get('quality', 'Used')),
+                                border_radius=8,
+                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                            ),
+                        ]),
+                        padding=10, bgcolor="#2C2C2C", border_radius=8,
                     )
                 )
-            
-            # ===== FOOTER =====
-            main_column.controls.append(ft.Divider())
-            main_column.controls.append(ft.Container(height=5))
-            
-            status_text = "✅ Full Version" if is_activated else f"🚀 Trial: {days_left} days" if days_left > 0 else "⚠️ Expired"
-            status_color = "#4CAF50" if is_activated else "#FF9800" if days_left > 0 else self.danger_color
-            
-            footer_row = ft.Row([
-                ft.Text(f"📱 {status_text}", size=10, color=status_color),
-                ft.Container(expand=True),
-                ft.Text("v2.0.0", size=10, color="#888888"),
-            ])
-            main_column.controls.append(footer_row)
-            
-            # ===== BOTTOM SPACING =====
-            if is_mobile:
-                main_column.controls.append(ft.Container(height=70))
-            
-            # ===== WRAP AND DISPLAY =====
-            scroll_container = ft.Container(
-                content=main_column,
-                expand=True,
-                padding=12 if is_mobile else 20,
+            main_column.controls.append(ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)))
+        else:
+            main_column.controls.append(ft.Text("No accessories", size=12, color="#888888"))
+        
+        # Quick Actions
+        main_column.controls.append(ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD))
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton("Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
+                ft.ElevatedButton("Add Part", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
+            ], spacing=8)
+        )
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton("Scan", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
+                ft.ElevatedButton("Export Data", on_click=lambda e: self.export_all_data_simple(page), expand=True),
+            ], spacing=8)
+        )
+        
+        # Import/Export
+        main_column.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton("🌐 Export HTML", on_click=lambda e: self.export_html_simple(page), expand=True),
+                ft.ElevatedButton("📁 View Exports", on_click=lambda e: self.show_exported_files_simple(page), expand=True),
+            ], spacing=8)
+        )
+        
+        # Cloud Status
+        if firebase_api.is_ready():
+            cloud_status = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CLOUD_DONE, size=16, color=self.success_color),
+                    ft.Text("Cloud Connected", size=12, color=self.success_color),
+                ], spacing=6),
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                bgcolor="#2C2C2C",
+                border_radius=12,
             )
-            
-            scrollable = ft.Container(
-                content=ft.Column([scroll_container], scroll=ft.ScrollMode.AUTO, expand=True),
-                expand=True,
+        else:
+            cloud_status = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CLOUD_OFF, size=16, color=self.warning_color),
+                    ft.Text("Local Mode", size=12, color=self.warning_color),
+                ], spacing=6),
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                bgcolor="#2C2C2C",
+                border_radius=12,
             )
-            
-            if is_mobile and nav:
-                page.add(ft.Column([scrollable, nav], spacing=0, expand=True))
-            else:
-                page.add(ft.Row([sidebar, scrollable], spacing=0, expand=True))
-            
-            self.current_view = "dashboard"
-            page.update()
-            
-        except Exception as e:
-            print(f"Dashboard error: {e}")
-            import traceback
-            traceback.print_exc()
-            # Show error on screen
-            page.controls.clear()
-            page.add(
-                ft.Container(
-                    content=ft.Column([
-                        ft.Text("❌ Dashboard Error", size=20, color="red"),
-                        ft.Text(str(e), size=12, color="white"),
-                        ft.ElevatedButton("Retry", on_click=lambda e: self.show_dashboard(page)),
-                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
-                    alignment=ft.alignment.center,
-                    expand=True,
-                )
-            )
-            page.update()
+        main_column.controls.append(cloud_status)
+        
+        # Wrap in scrollable container
+        scroll_container = ft.Container(
+            content=main_column,
+            expand=True,
+            padding=15,
+        )
+        
+        scrollable = ft.Container(
+            content=ft.Column([scroll_container], scroll=ft.ScrollMode.AUTO, expand=True),
+            expand=True,
+        )
+        
+        # Layout
+        if is_mobile and nav:
+            page.add(ft.Column([scrollable, nav], spacing=0, expand=True))
+        else:
+            page.add(ft.Row([sidebar, scrollable], spacing=0, expand=True))
+        
+        self.current_view = "dashboard"
+        page.update()
 
     def _create_stat_card(self, icon, value, label):
         """Create a statistics card"""
         return ft.Container(
             content=ft.Column([
-                ft.Text(icon, size=18),
-                ft.Text(value, size=20, weight=ft.FontWeight.BOLD),
+                ft.Text(icon, size=20),
+                ft.Text(value, size=24, weight=ft.FontWeight.BOLD),
                 ft.Text(label, size=10, color="#CCCCCC"),
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
-            padding=8,
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=3),
+            padding=10,
             bgcolor=self.accent_color,
-            border_radius=8,
+            border_radius=10,
             expand=True,
         )
     
