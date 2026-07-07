@@ -1223,18 +1223,41 @@ class StoreApp:
             "Damaged": "#FF5252",
             "Repaired": "#1976D2",
         }
+
     def get_device_id(self):
         """Get a unique device ID for trial tracking"""
-        import hashlib
+        import uuid
         import os
-        import platform
         
-        # Create a unique ID based on system information
-        system_info = f"{platform.node()}-{platform.system()}-{platform.machine()}"
-        hash_obj = hashlib.sha256(system_info.encode())
-        device_id = hash_obj.hexdigest()[:16]
+        try:
+            # Try to get a persistent device ID from a file
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            device_file = os.path.join(base_dir, ".device_id")
+            
+            if os.path.exists(device_file):
+                with open(device_file, 'r') as f:
+                    device_id = f.read().strip()
+                    if device_id:
+                        return device_id
+            
+            # Generate a new device ID
+            device_id = str(uuid.uuid4())
+            
+            # Save it for future use
+            try:
+                with open(device_file, 'w') as f:
+                    f.write(device_id)
+            except:
+                pass  # If we can't save, just return the generated ID
+            
+            return device_id
+            
+        except Exception as e:
+            print(f"Error getting device ID: {e}")
+            # Fallback: generate a temporary ID based on timestamp
+            import time
+            return f"device_{int(time.time())}_{hash(str(time.time()))}"
         
-        return device_id
     def dict_list(self, rows):
         """Convert sqlite3.Row to dict - FIXED to include all columns"""
         if rows is None:
@@ -2526,7 +2549,8 @@ class StoreApp:
             
             # Handle resize
             def on_resize(e):
-                self.scale_helper.update_scale()
+                if self.scale_helper:
+                    self.scale_helper.update_scale()
                 if self.current_view == "dashboard":
                     self.show_dashboard(page)
             
@@ -2535,12 +2559,41 @@ class StoreApp:
             # Initialize database
             init_database()
             
-            # ===== SHOW DASHBOARD DIRECTLY (NO LOGIN) =====
-            # Check if already activated or trial active
-            self.current_user = self.get_saved_user()
+            # Ensure admin user exists for login
+            self.ensure_admin_user()
             
-            if not self.current_user:
-                # First time user - start trial automatically
+            # ===== CHECK FOR SAVED USER SESSION =====
+            saved_user = self.get_saved_user()
+            
+            if saved_user:
+                print(f"🔐 Found saved user: {saved_user.get('email')}")
+                self.current_user = saved_user
+                self.show_dashboard(page)
+                page.update()
+                return
+            
+            # ===== CHECK TRIAL STATUS =====
+            trial_active, days_left = self.check_trial_status()
+            
+            if trial_active:
+                print(f"🚀 Trial active: {days_left} days remaining")
+                # Auto-start trial
+                device_id = self.get_device_id()
+                self.current_user = {
+                    'email': 'trial@user.com',
+                    'trial': True,
+                    'activated': False,
+                    'days_left': days_left,
+                    'device_id': device_id
+                }
+                self.save_user_session(self.current_user)
+                self.show_dashboard(page)
+                page.update()
+                return
+            
+            # ===== CHECK IF USER HAS USED APP BEFORE =====
+            if self.has_used_app_before():
+                print("📱 Returning user, starting trial...")
                 device_id = self.get_device_id()
                 self.current_user = {
                     'email': 'trial@user.com',
@@ -2551,16 +2604,22 @@ class StoreApp:
                 }
                 self.save_user_session(self.current_user)
                 self.save_trial_info('trial@user.com')
-                print("✅ New trial started for device:", device_id)
-            else:
-                # Check if trial expired
-                if not self.current_user.get('activated', False):
-                    trial_active, days_left = self.check_trial_status()
-                    if trial_active:
-                        self.current_user['days_left'] = days_left
-                    else:
-                        self.current_user['days_left'] = 0
-                        print("⚠️ Trial expired for device:", self.current_user.get('device_id'))
+                self.show_dashboard(page)
+                page.update()
+                return
+            
+            # ===== FIRST TIME USER - START TRIAL AUTOMATICALLY =====
+            print("🆕 First time user - starting trial")
+            device_id = self.get_device_id()
+            self.current_user = {
+                'email': 'trial@user.com',
+                'trial': True,
+                'activated': False,
+                'days_left': 30,
+                'device_id': device_id
+            }
+            self.save_user_session(self.current_user)
+            self.save_trial_info('trial@user.com')
             
             # Show dashboard
             self.show_dashboard(page)
@@ -2592,7 +2651,7 @@ class StoreApp:
 
     def is_mobile(self, page: ft.Page):
         """Check if running on mobile device"""
-        return page.width < 800 if page.width else False        
+        return page.width < 800 if page.width else False      
         
     def wrap_with_touch_zoom(self, content):
             """Wrap content to enable touch pinch-to-zoom"""
@@ -3151,7 +3210,7 @@ class StoreApp:
             return False
         
     def ensure_admin_user(self):
-        """Ensure admin user exists - CLASS METHOD"""
+        """Ensure admin user exists"""
         import sqlite3
         import hashlib
         from database import DB_PATH
@@ -3164,43 +3223,49 @@ class StoreApp:
             # Check if users table exists
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
             if not cursor.fetchone():
-                print("❌ Users table doesn't exist!")
+                print("❌ Users table doesn't exist! Creating...")
                 conn.close()
-                return False
+                # Tables will be created by init_database()
+                return
             
-            # Check if admin user exists
-            cursor.execute("SELECT id FROM users WHERE email = ?", ("admin@store.com",))
-            admin = cursor.fetchone()
+            # Check if any users exist
+            cursor.execute("SELECT COUNT(*) FROM users")
+            count = cursor.fetchone()[0]
             
-            if not admin:
-                # Check if default company exists
-                cursor.execute("SELECT id FROM companies WHERE name = 'Default Company'")
-                company = cursor.fetchone()
-                if not company:
-                    cursor.execute(
-                        "INSERT INTO companies (name, created_at) VALUES (?, ?)",
-                        ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-                    )
-                    company_id = cursor.lastrowid
-                else:
-                    company_id = company[0]
-                
-                # Create admin user
-                hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
-                cursor.execute("""
-                    INSERT INTO users (name, email, password_hash, role, company_id, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id,
-                      datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                conn.commit()
-                print("✅ Created admin user: admin@store.com / admin123")
+            if count > 0:
+                conn.close()
+                print(f"✅ Users exist: {count} users")
+                return
             
+            # Create default company
+            cursor.execute("SELECT id FROM companies WHERE name = 'Default Company'")
+            company = cursor.fetchone()
+            if not company:
+                cursor.execute(
+                    "INSERT INTO companies (name, created_at) VALUES (?, ?)",
+                    ('Default Company', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                )
+                company_id = cursor.lastrowid
+            else:
+                company_id = company[0]
+            
+            # Create admin user
+            hashed_password = hashlib.sha256("admin123".encode()).hexdigest()
+            cursor.execute("""
+                INSERT INTO users (name, email, password_hash, role, company_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, ('Administrator', 'admin@store.com', hashed_password, 'admin', company_id,
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            
+            conn.commit()
             conn.close()
-            return True
+            print("✅ Created admin user: admin@store.com / admin123")
             
         except Exception as e:
             print(f"Error ensuring admin user: {e}")
-            return False
+            import traceback
+            traceback.print_exc()
+
     def ensure_admin_user_on_start(self):
         """Ensure admin user exists when app starts - CRITICAL FOR MOBILE"""
         import sqlite3
@@ -3591,7 +3656,7 @@ class StoreApp:
         page.update()
 
     def get_saved_user(self):
-        """Get saved user from session - CLASS METHOD"""
+        """Get saved user from session"""
         import json
         import os
         
@@ -3603,7 +3668,6 @@ class StoreApp:
             with open(session_file, 'r') as f:
                 session_data = json.load(f)
             
-            # Check if session data is valid
             if not session_data:
                 return None
             
@@ -15058,14 +15122,13 @@ class StoreApp:
         page.update()
 
     def save_user_session(self, user_dict):
-        """Save user session for auto-login - CLASS METHOD"""
+        """Save user session for auto-login"""
         import json
         import os
         
         try:
             session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "session.json")
             
-            # Ensure we have all required fields
             session_data = {
                 'email': user_dict.get('email', 'trial@user.com'),
                 'trial': user_dict.get('trial', True),
