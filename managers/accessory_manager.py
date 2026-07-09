@@ -4,13 +4,19 @@ import sys
 import os
 from datetime import datetime
 
-# Fix import paths - go up one level to parent directory
+# Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Now import from parent directory (NO circular imports)
 from database import DB_PATH
-from firebase_client import firebase_api
-from cloud_sync_manager import CloudSyncManager
+
+# Lazy imports to avoid circular references
+def get_firebase_api():
+    from firebase_client import firebase_api
+    return firebase_api
+
+def get_cloud_sync_manager():
+    from cloud_sync_manager import CloudSyncManager
+    return CloudSyncManager
 
 class AccessoryManager:
     
@@ -102,22 +108,21 @@ class AccessoryManager:
             conn.close()
             
             # AUTO-SYNC: Sync immediately in background
-            if firebase_api.is_ready():
-                import threading
-                def sync():
-                    try:
-                        import time
-                        time.sleep(0.5)
-                        success = CloudSyncManager.sync_single_accessory_to_cloud(company_id, accessory_id)
-                        if success:
-                            print(f"✅ [AUTO-SYNC] Accessory '{data.get('name')}' synced to cloud")
-                        else:
-                            print(f"⚠️ [AUTO-SYNC] Accessory '{data.get('name')}' failed to sync")
-                    except Exception as e:
-                        print(f"[AUTO-SYNC] Error: {e}")
-                threading.Thread(target=sync, daemon=True).start()
-            else:
-                print("⚠️ [AUTO-SYNC] Firebase not ready - accessory saved locally only")
+            try:
+                firebase_api = get_firebase_api()
+                if firebase_api.is_ready():
+                    import threading
+                    def sync():
+                        try:
+                            import time
+                            time.sleep(0.3)
+                            CloudSyncManager = get_cloud_sync_manager()
+                            CloudSyncManager.sync_single_accessory_to_cloud(company_id, accessory_id)
+                        except Exception as e:
+                            print(f"[AUTO-SYNC] Error: {e}")
+                    threading.Thread(target=sync, daemon=True).start()
+            except Exception as e:
+                print(f"Auto-sync setup error: {e}")
             
             return accessory_id
             
@@ -125,8 +130,6 @@ class AccessoryManager:
             print(f"Create accessory error: {e}")
             return None
     
-# managers/accessory_manager.py
-
     @staticmethod
     def update(accessory_id, data):
         """Update accessory and auto-sync to cloud"""
@@ -141,6 +144,7 @@ class AccessoryManager:
                 return False
             company_id = result[0]
             
+            # Build update query
             set_clause = []
             values = []
             
@@ -157,27 +161,27 @@ class AccessoryManager:
             
             conn.commit()
             
+            # Get the updated accessory data
             cursor.execute("SELECT * FROM accessories WHERE id = ?", (accessory_id,))
             updated_accessory = cursor.fetchone()
             conn.close()
             
             if updated_accessory:
                 # AUTO-SYNC: Sync immediately in background
-                if firebase_api.is_ready():
-                    import threading
-                    def sync():
-                        try:
-                            accessory_dict = dict(updated_accessory)
-                            success = firebase_api.sync_accessory(company_id, accessory_dict)
-                            if success:
-                                print(f"✅ [AUTO-SYNC] Accessory '{accessory_dict.get('name')}' updated and synced to cloud")
-                            else:
-                                print(f"⚠️ [AUTO-SYNC] Accessory '{accessory_dict.get('name')}' failed to sync")
-                        except Exception as e:
-                            print(f"[AUTO-SYNC] Error: {e}")
-                    threading.Thread(target=sync, daemon=True).start()
-                else:
-                    print("⚠️ [AUTO-SYNC] Firebase not ready - accessory updated locally only")
+                try:
+                    firebase_api = get_firebase_api()
+                    if firebase_api.is_ready():
+                        import threading
+                        def sync():
+                            try:
+                                accessory_dict = dict(updated_accessory)
+                                CloudSyncManager = get_cloud_sync_manager()
+                                CloudSyncManager.sync_single_accessory_to_cloud(company_id, accessory_id)
+                            except Exception as e:
+                                print(f"[AUTO-SYNC] Error: {e}")
+                        threading.Thread(target=sync, daemon=True).start()
+                except Exception as e:
+                    print(f"Auto-sync setup error: {e}")
                 
                 return True
             
@@ -186,7 +190,6 @@ class AccessoryManager:
         except Exception as e:
             print(f"Update accessory error: {e}")
             return False
-
     
     @staticmethod
     def delete(accessory_id):
@@ -208,20 +211,18 @@ class AccessoryManager:
             conn.close()
             
             # AUTO-SYNC: Delete from cloud
-            if firebase_api.is_ready():
-                import threading
-                def sync():
-                    try:
-                        success = firebase_api.delete_accessory(company_id, accessory_id)
-                        if success:
-                            print(f"✅ [AUTO-SYNC] Accessory '{accessory_name}' deleted from cloud")
-                        else:
-                            print(f"⚠️ [AUTO-SYNC] Accessory '{accessory_name}' failed to delete from cloud")
-                    except Exception as e:
-                        print(f"[AUTO-SYNC] Error: {e}")
-                threading.Thread(target=sync, daemon=True).start()
-            else:
-                print("⚠️ [AUTO-SYNC] Firebase not ready - accessory deleted locally only")
+            try:
+                firebase_api = get_firebase_api()
+                if firebase_api.is_ready():
+                    import threading
+                    def sync():
+                        try:
+                            firebase_api.delete_accessory(company_id, accessory_id)
+                        except Exception as e:
+                            print(f"[AUTO-SYNC] Error: {e}")
+                    threading.Thread(target=sync, daemon=True).start()
+            except Exception as e:
+                print(f"Auto-sync setup error: {e}")
             
             return True
             
