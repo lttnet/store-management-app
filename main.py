@@ -6068,12 +6068,12 @@ class StoreApp:
                                         on_click=lambda e: self.open_add_modal(page), 
                                         expand=True,
                                         height=36,
-                                        style=ft.ButtonStyle(text_style=ft.TextStyle(size=12))),
+                                        style=ft.ButtonStyle()),
                         ft.ElevatedButton("🔧 Part", 
                                         on_click=lambda e: self.open_add_accessory_modal(page), 
                                         expand=True,
                                         height=36,
-                                        style=ft.ButtonStyle(text_style=ft.TextStyle(size=12))),
+                                        style=ft.ButtonStyle()),
                     ], spacing=6)
                 )
                 main_column.controls.append(
@@ -6082,12 +6082,12 @@ class StoreApp:
                                         on_click=lambda e: self.show_barcode_scanner(page), 
                                         expand=True,
                                         height=36,
-                                        style=ft.ButtonStyle(text_style=ft.TextStyle(size=12))),
+                                        style=ft.ButtonStyle()),
                         ft.ElevatedButton("📊 Inventory", 
                                         on_click=lambda e: self.show_inventory(page), 
                                         expand=True,
                                         height=36,
-                                        style=ft.ButtonStyle(text_style=ft.TextStyle(size=12))),
+                                        style=ft.ButtonStyle()),
                     ], spacing=6)
                 )
                 # Import/Export buttons
@@ -6097,12 +6097,12 @@ class StoreApp:
                                         on_click=lambda e: self.export_html_simple(page), 
                                         expand=True,
                                         height=36,
-                                        style=ft.ButtonStyle(text_style=ft.TextStyle(size=12))),
+                                        style=ft.ButtonStyle()),
                         ft.ElevatedButton("📁 View", 
                                         on_click=lambda e: self.show_exported_files_simple(page), 
                                         expand=True,
                                         height=36,
-                                        style=ft.ButtonStyle(text_style=ft.TextStyle(size=12))),
+                                        style=ft.ButtonStyle()),
                     ], spacing=6)
                 )
             else:
