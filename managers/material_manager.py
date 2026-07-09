@@ -4,13 +4,19 @@ import sys
 import os
 from datetime import datetime
 
-# Fix import paths - go up one level to parent directory
+# Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Now import from parent directory (NO circular imports)
 from database import DB_PATH
-from firebase_client import firebase_api
-from cloud_sync_manager import CloudSyncManager
+
+# Lazy imports to avoid circular references
+def get_firebase_api():
+    from firebase_client import firebase_api
+    return firebase_api
+
+def get_cloud_sync_manager():
+    from cloud_sync_manager import CloudSyncManager
+    return CloudSyncManager
 
 class MaterialManager:
     
@@ -105,23 +111,21 @@ class MaterialManager:
             conn.close()
             
             # AUTO-SYNC: Sync immediately in background
-            if firebase_api.is_ready():
-                import threading
-                def sync():
-                    try:
-                        # Wait a moment for the database to be ready
-                        import time
-                        time.sleep(0.5)
-                        success = CloudSyncManager.sync_single_material_to_cloud(company_id, material_id)
-                        if success:
-                            print(f"✅ [AUTO-SYNC] Material '{data.get('name')}' synced to cloud")
-                        else:
-                            print(f"⚠️ [AUTO-SYNC] Material '{data.get('name')}' failed to sync")
-                    except Exception as e:
-                        print(f"[AUTO-SYNC] Error: {e}")
-                threading.Thread(target=sync, daemon=True).start()
-            else:
-                print("⚠️ [AUTO-SYNC] Firebase not ready - material saved locally only")
+            try:
+                firebase_api = get_firebase_api()
+                if firebase_api.is_ready():
+                    import threading
+                    def sync():
+                        try:
+                            import time
+                            time.sleep(0.3)
+                            CloudSyncManager = get_cloud_sync_manager()
+                            CloudSyncManager.sync_single_material_to_cloud(company_id, material_id)
+                        except Exception as e:
+                            print(f"[AUTO-SYNC] Error: {e}")
+                    threading.Thread(target=sync, daemon=True).start()
+            except Exception as e:
+                print(f"Auto-sync setup error: {e}")
             
             return material_id
             
@@ -167,21 +171,20 @@ class MaterialManager:
             
             if updated_material:
                 # AUTO-SYNC: Sync immediately in background
-                if firebase_api.is_ready():
-                    import threading
-                    def sync():
-                        try:
-                            material_dict = dict(updated_material)
-                            success = firebase_api.sync_material(company_id, material_dict)
-                            if success:
-                                print(f"✅ [AUTO-SYNC] Material '{material_dict.get('name')}' updated and synced to cloud")
-                            else:
-                                print(f"⚠️ [AUTO-SYNC] Material '{material_dict.get('name')}' failed to sync")
-                        except Exception as e:
-                            print(f"[AUTO-SYNC] Error: {e}")
-                    threading.Thread(target=sync, daemon=True).start()
-                else:
-                    print("⚠️ [AUTO-SYNC] Firebase not ready - material updated locally only")
+                try:
+                    firebase_api = get_firebase_api()
+                    if firebase_api.is_ready():
+                        import threading
+                        def sync():
+                            try:
+                                material_dict = dict(updated_material)
+                                CloudSyncManager = get_cloud_sync_manager()
+                                CloudSyncManager.sync_single_material_to_cloud(company_id, material_id)
+                            except Exception as e:
+                                print(f"[AUTO-SYNC] Error: {e}")
+                        threading.Thread(target=sync, daemon=True).start()
+                except Exception as e:
+                    print(f"Auto-sync setup error: {e}")
                 
                 return True
             
@@ -211,20 +214,18 @@ class MaterialManager:
             conn.close()
             
             # AUTO-SYNC: Delete from cloud
-            if firebase_api.is_ready():
-                import threading
-                def sync():
-                    try:
-                        success = firebase_api.delete_material(company_id, material_id)
-                        if success:
-                            print(f"✅ [AUTO-SYNC] Material '{material_name}' deleted from cloud")
-                        else:
-                            print(f"⚠️ [AUTO-SYNC] Material '{material_name}' failed to delete from cloud")
-                    except Exception as e:
-                        print(f"[AUTO-SYNC] Error: {e}")
-                threading.Thread(target=sync, daemon=True).start()
-            else:
-                print("⚠️ [AUTO-SYNC] Firebase not ready - material deleted locally only")
+            try:
+                firebase_api = get_firebase_api()
+                if firebase_api.is_ready():
+                    import threading
+                    def sync():
+                        try:
+                            firebase_api.delete_material(company_id, material_id)
+                        except Exception as e:
+                            print(f"[AUTO-SYNC] Error: {e}")
+                    threading.Thread(target=sync, daemon=True).start()
+            except Exception as e:
+                print(f"Auto-sync setup error: {e}")
             
             return True
             
