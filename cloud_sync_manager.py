@@ -2,12 +2,16 @@
 import sqlite3
 import hashlib
 from datetime import datetime
-from firebase_client import firebase_api
+
+# Lazy import to avoid circular references
+def get_firebase_api():
+    from firebase_client import firebase_api
+    return firebase_api
 
 class CloudSyncManager:
     
     # ============================================================
-    # MATERIAL SYNC
+    # MATERIAL SYNC METHODS
     # ============================================================
     
     @staticmethod
@@ -24,20 +28,24 @@ class CloudSyncManager:
             local_ids = {m['id'] for m in local_materials}
             print(f"📊 Local materials: {len(local_ids)}")
             
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
             
+            # Get cloud materials
             cloud_materials = firebase_api.get_materials(company_id)
             cloud_ids = {m['id'] for m in cloud_materials}
             print(f"📊 Cloud materials: {len(cloud_ids)}")
             
+            # DELETE from cloud what's not in local
             deleted_count = 0
             for mat_id in cloud_ids - local_ids:
                 if firebase_api.delete_material(company_id, mat_id):
                     deleted_count += 1
                     print(f"  🗑️ Deleted material {mat_id} from cloud")
             
+            # UPLOAD local materials to cloud
             uploaded_count = 0
             for material in local_materials:
                 material_dict = dict(material)
@@ -49,6 +57,8 @@ class CloudSyncManager:
             
         except Exception as e:
             print(f"❌ Sync materials error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     @staticmethod
@@ -66,6 +76,7 @@ class CloudSyncManager:
                 print(f"❌ Material {material_id} not found in local database")
                 return False
             
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
@@ -80,6 +91,7 @@ class CloudSyncManager:
     def delete_material_from_cloud(company_id, material_id):
         """Delete a single material from cloud"""
         try:
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
@@ -94,6 +106,7 @@ class CloudSyncManager:
     def download_materials_from_cloud(company_id):
         """Download materials from cloud - UPDATES local with cloud"""
         try:
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 return False
             
@@ -107,6 +120,7 @@ class CloudSyncManager:
             conn = sqlite3.connect("store_management.db")
             cursor = conn.cursor()
             
+            # Get local IDs
             cursor.execute("SELECT id FROM materials WHERE company_id = ?", (company_id,))
             local_ids = {row[0] for row in cursor.fetchall()}
             
@@ -114,15 +128,18 @@ class CloudSyncManager:
             updated_count = 0
             deleted_count = 0
             
+            # DELETE local materials not in cloud
             for mat_id in local_ids - {m['id'] for m in cloud_materials}:
                 cursor.execute("DELETE FROM materials WHERE id = ? AND company_id = ?", (mat_id, company_id))
                 deleted_count += 1
                 print(f"  🗑️ Deleted material {mat_id} from local (not in cloud)")
             
+            # INSERT or UPDATE cloud materials
             for material in cloud_materials:
                 material_id = material.get('id')
                 
                 if material_id in local_ids:
+                    # UPDATE existing
                     cursor.execute('''UPDATE materials SET 
                         name = ?, category_id = ?, quantity = ?, quality = ?, location_ids = ?,
                         size = ?, length = ?, colors = ?, notes = ?, barcode_value = ?,
@@ -137,6 +154,7 @@ class CloudSyncManager:
                          material_id, company_id))
                     updated_count += 1
                 else:
+                    # INSERT new
                     cursor.execute('''INSERT INTO materials 
                         (id, name, category_id, quantity, quality, location_ids,
                          size, length, colors, notes, barcode_value, image_path, company_id,
@@ -160,10 +178,12 @@ class CloudSyncManager:
             
         except Exception as e:
             print(f"❌ Download materials error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     # ============================================================
-    # ACCESSORY SYNC
+    # ACCESSORY SYNC METHODS
     # ============================================================
     
     @staticmethod
@@ -180,20 +200,24 @@ class CloudSyncManager:
             local_ids = {a['id'] for a in local_accessories}
             print(f"📊 Local accessories: {len(local_ids)}")
             
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
             
+            # Get cloud accessories
             cloud_accessories = firebase_api.get_accessories(company_id)
             cloud_ids = {a['id'] for a in cloud_accessories}
             print(f"📊 Cloud accessories: {len(cloud_ids)}")
             
+            # DELETE from cloud what's not in local
             deleted_count = 0
             for acc_id in cloud_ids - local_ids:
                 if firebase_api.delete_accessory(company_id, acc_id):
                     deleted_count += 1
                     print(f"  🗑️ Deleted accessory {acc_id} from cloud")
             
+            # UPLOAD local accessories to cloud
             uploaded_count = 0
             for accessory in local_accessories:
                 accessory_dict = dict(accessory)
@@ -205,6 +229,8 @@ class CloudSyncManager:
             
         except Exception as e:
             print(f"❌ Sync accessories error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     @staticmethod
@@ -222,6 +248,7 @@ class CloudSyncManager:
                 print(f"❌ Accessory {accessory_id} not found in local database")
                 return False
             
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
@@ -236,6 +263,7 @@ class CloudSyncManager:
     def delete_accessory_from_cloud(company_id, accessory_id):
         """Delete a single accessory from cloud"""
         try:
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
@@ -250,6 +278,7 @@ class CloudSyncManager:
     def download_accessories_from_cloud(company_id):
         """Download accessories from cloud - UPDATES local with cloud"""
         try:
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 return False
             
@@ -263,6 +292,7 @@ class CloudSyncManager:
             conn = sqlite3.connect("store_management.db")
             cursor = conn.cursor()
             
+            # Get local IDs
             cursor.execute("SELECT id FROM accessories WHERE company_id = ?", (company_id,))
             local_ids = {row[0] for row in cursor.fetchall()}
             
@@ -270,15 +300,18 @@ class CloudSyncManager:
             updated_count = 0
             deleted_count = 0
             
+            # DELETE local accessories not in cloud
             for acc_id in local_ids - {a['id'] for a in cloud_accessories}:
                 cursor.execute("DELETE FROM accessories WHERE id = ? AND company_id = ?", (acc_id, company_id))
                 deleted_count += 1
                 print(f"  🗑️ Deleted accessory {acc_id} from local (not in cloud)")
             
+            # INSERT or UPDATE cloud accessories
             for accessory in cloud_accessories:
                 accessory_id = accessory.get('id')
                 
                 if accessory_id in local_ids:
+                    # UPDATE existing
                     cursor.execute('''UPDATE accessories SET 
                         name = ?, category_id = ?, quantity = ?, price = ?, quality = ?,
                         location = ?, notes = ?, barcode_value = ?, image_path = ?, updated_at = ?
@@ -291,6 +324,7 @@ class CloudSyncManager:
                          accessory_id, company_id))
                     updated_count += 1
                 else:
+                    # INSERT new
                     cursor.execute('''INSERT INTO accessories 
                         (id, name, category_id, quantity, price, quality, location,
                          notes, barcode_value, image_path, company_id, created_at, updated_at)
@@ -312,6 +346,8 @@ class CloudSyncManager:
             
         except Exception as e:
             print(f"❌ Download accessories error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     # ============================================================
@@ -332,20 +368,24 @@ class CloudSyncManager:
             local_ids = {u['id'] for u in local_users}
             print(f"📊 Local users: {len(local_ids)}")
             
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
             
+            # Get cloud users
             cloud_users = firebase_api.get_users(company_id)
             cloud_ids = {u['id'] for u in cloud_users}
             print(f"📊 Cloud users: {len(cloud_ids)}")
             
+            # DELETE from cloud what's not in local
             deleted_count = 0
             for user_id in cloud_ids - local_ids:
                 if firebase_api.delete_user(company_id, user_id):
                     deleted_count += 1
                     print(f"  🗑️ Deleted user {user_id} from cloud")
             
+            # UPLOAD local users to cloud
             uploaded_count = 0
             for user in local_users:
                 user_dict = dict(user)
@@ -357,6 +397,8 @@ class CloudSyncManager:
             
         except Exception as e:
             print(f"❌ Sync users error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     @staticmethod
@@ -374,6 +416,7 @@ class CloudSyncManager:
                 print(f"❌ User {user_id} not found in local database")
                 return False
             
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
@@ -388,6 +431,7 @@ class CloudSyncManager:
     def delete_user_from_cloud(company_id, user_id):
         """Delete a single user from cloud"""
         try:
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
@@ -402,6 +446,7 @@ class CloudSyncManager:
     def download_users_from_cloud(company_id):
         """Download users from cloud - UPDATES local with cloud"""
         try:
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 return False
             
@@ -415,6 +460,7 @@ class CloudSyncManager:
             conn = sqlite3.connect("store_management.db")
             cursor = conn.cursor()
             
+            # Get local IDs
             cursor.execute("SELECT id FROM users WHERE company_id = ?", (company_id,))
             local_ids = {row[0] for row in cursor.fetchall()}
             
@@ -464,6 +510,8 @@ class CloudSyncManager:
             
         except Exception as e:
             print(f"❌ Download users error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     # ============================================================
@@ -484,6 +532,8 @@ class CloudSyncManager:
             return material_result and accessory_result and user_result
         except Exception as e:
             print(f"Full sync error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     @staticmethod
@@ -500,6 +550,8 @@ class CloudSyncManager:
             return material_result and accessory_result and user_result
         except Exception as e:
             print(f"Full download error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     # ============================================================
@@ -510,6 +562,7 @@ class CloudSyncManager:
     def get_sync_status(company_id):
         """Get sync status"""
         try:
+            firebase_api = get_firebase_api()
             if not firebase_api.is_ready():
                 return {'status': 'offline', 'last_sync': 'Never'}
             
