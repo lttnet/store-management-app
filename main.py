@@ -2984,7 +2984,7 @@ class StoreApp:
             page.add(centered_login)
         page.update()
     
-        # ============ SIDEBAR WITH ZOOM ============
+            # ============ SIDEBAR WITH ZOOM ============
     def create_sidebar(self, page: ft.Page):
         """Create sidebar navigation - NO ZOOM BUTTONS"""
         
@@ -3081,7 +3081,7 @@ class StoreApp:
             (ft.icons.LIST_ALT, "Inventory", "inventory"),
             (ft.icons.PEOPLE, "Users", "users"),
             (ft.icons.SETTINGS, "Settings", "settings"),
-            (ft.icons.LOGOUT, "Logout", "logout"),  # Added Logout
+            (ft.icons.LOGOUT, "Logout", "logout"),
         ]
         
         def navigate(e):
@@ -5647,639 +5647,259 @@ class StoreApp:
                 border_radius=10,
             )
     
-                            # ============ DASHBOARD ============
+                                # ============ DASHBOARD ============
     def show_dashboard(self, page: ft.Page):
-        """Dashboard with auto-sync status - FIXED FOR MOBILE"""
-        try:
-            page.controls.clear()
-            
-            is_mobile = self.is_mobile(page) if hasattr(self, 'is_mobile') else False
-            
-            # Navigation
-            if is_mobile:
-                nav = self.create_bottom_nav(page)
-                sidebar = None
-            else:
-                sidebar = self.create_sidebar(page)
-                nav = None
-            
-            # Get data with error handling
-            try:
-                materials = self.dict_list(MaterialManager.get_all())
-                accessories = self.dict_list(AccessoryManager.get_all())
-                users = self.dict_list(UserManager.get_all())
-            except Exception as e:
-                print(f"Error getting data: {e}")
-                materials = []
-                accessories = []
-                users = []
-            
-            # Calculate statistics
-            total_materials = len(materials)
-            total_accessories = len(accessories)
-            total_items = total_materials + total_accessories
-            total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
-            total_users = len(users)
-            total_low_stock = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
-            
-            quality_counts = {"New": 0, "Used": 0, "Damaged": 0, "Repaired": 0}
-            for m in materials:
-                q = m.get('quality', 'Used')
-                quality_counts[q] = quality_counts.get(q, 0) + 1
-            for a in accessories:
-                q = a.get('quality', 'Used')
-                quality_counts[q] = quality_counts.get(q, 0) + 1
-            
-            # Create main column
-            main_column = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
-            padding_value = 10 if is_mobile else 20
-            
-            # ============================================================
-            # HEADER
-            # ============================================================
-            
-            try:
-                # Check if Firebase is ready
-                cloud_ready = firebase_api.is_ready() if hasattr(firebase_api, 'is_ready') else False
-                cloud_status_text = "☁️ Connected" if cloud_ready else "📡 Local"
-                cloud_status_color = self.success_color if cloud_ready else self.warning_color
-                cloud_icon = ft.icons.CLOUD_DONE if cloud_ready else ft.icons.CLOUD_OFF
-                
-                # Create trial banner
-                trial_banner = self.create_trial_banner_safe(page)
-                
-                # Header row
-                if is_mobile:
-                    header_row = ft.Column([
-                        ft.Row([
-                            ft.Text("📊 Dashboard", size=20, weight=ft.FontWeight.BOLD, color=self.text_color, expand=True),
+        """Dashboard with cloud sync button - ORIGINAL WORKING VERSION"""
+        page.controls.clear()
+        
+        is_mobile = page.width < 800 if page.width else False
+        
+        # Navigation
+        if is_mobile:
+            nav = self.create_bottom_nav(page)
+            sidebar = None
+        else:
+            sidebar = self.create_sidebar(page)
+            nav = None
+        
+        # Get data
+        materials = self.dict_list(MaterialManager.get_all())
+        accessories = self.dict_list(AccessoryManager.get_all())
+        users = self.dict_list(UserManager.get_all())
+        
+        # Calculate statistics
+        total_materials = len(materials)
+        total_accessories = len(accessories)
+        total_items = total_materials + total_accessories
+        total_stock = sum(m.get('quantity', 0) for m in materials) + sum(a.get('quantity', 0) for a in accessories)
+        total_users = len(users)
+        total_low_stock = len([m for m in materials if m.get('quantity', 0) < 10]) + len([a for a in accessories if a.get('quantity', 0) < 10])
+        
+        quality_counts = {"New": 0, "Used": 0, "Damaged": 0, "Repaired": 0}
+        for m in materials:
+            q = m.get('quality', 'Used')
+            quality_counts[q] = quality_counts.get(q, 0) + 1
+        for a in accessories:
+            q = a.get('quality', 'Used')
+            quality_counts[q] = quality_counts.get(q, 0) + 1
+        
+        # Create main column
+        main_column = ft.Column(spacing=15, expand=True)
+        
+        # Header with sync button
+        sync_button = ft.IconButton(
+            icon=ft.icons.CLOUD_SYNC,
+            icon_size=24,
+            icon_color=self.accent_color,
+            on_click=lambda e: self.manual_sync(page),
+            tooltip="Sync with Cloud",
+        )
+        
+        header_row = ft.Row([
+            ft.Text("Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color, expand=True),
+            sync_button,
+        ])
+        main_column.controls.append(header_row)
+        main_column.controls.append(ft.Text("Welcome back!", size=14, color="#888888"))
+        
+        # Stats cards
+        main_column.controls.append(
+            ft.Row([
+                self._create_stat_card("📦", str(total_items), "Items"),
+                self._create_stat_card("📊", str(total_stock), "Stock"),
+                self._create_stat_card("⚠️", str(total_low_stock), "Low Stock"),
+                self._create_stat_card("👥", str(total_users), "Users"),
+            ], spacing=8)
+        )
+        
+        # Quality Distribution
+        main_column.controls.append(ft.Text("📊 Quality Distribution", size=16, weight=ft.FontWeight.BOLD))
+        
+        quality_row1 = ft.Row([
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#4CAF50"),
+                    ft.Text(f"New: {quality_counts.get('New', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#FF9800"),
+                    ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+        ], spacing=8)
+        main_column.controls.append(quality_row1)
+        
+        quality_row2 = ft.Row([
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#F44336"),
+                    ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CIRCLE, size=16, color="#2196F3"),
+                    ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=14, color=self.text_color),
+                ], spacing=8),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                bgcolor=self.card_color,
+                border_radius=8,
+                expand=True,
+            ),
+        ], spacing=8)
+        main_column.controls.append(quality_row2)
+        
+        # Stock Health
+        if total_stock > 0:
+            healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100))
+            healthy_percentage = max(0, min(healthy_percentage, 100))
+        else:
+            healthy_percentage = 100
+        
+        main_column.controls.append(ft.Text("💪 Stock Health", size=16, weight=ft.FontWeight.BOLD))
+        main_column.controls.append(
+            ft.Container(
+                content=ft.Column([
+                    ft.Text(f"{healthy_percentage}%", size=24, weight=ft.FontWeight.BOLD, color=self.success_color),
+                    ft.ProgressBar(value=healthy_percentage/100, color=self.success_color, bgcolor="#3C3C3C", height=6),
+                    ft.Text(f"Low Stock: {total_low_stock} items", size=12, color=self.warning_color),
+                ], spacing=5),
+                padding=12, bgcolor=self.card_color, border_radius=10,
+            )
+        )
+        
+        # Recent Materials
+        main_column.controls.append(ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
+        if materials:
+            for m in materials[:3]:
+                main_column.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Text("📦", size=18),
+                            ft.Text(m.get('name', 'N/A'), size=14, expand=True),
+                            ft.Text(f"Qty: {m.get('quantity', 0)}", size=14),
                             ft.Container(
-                                content=ft.Row([
-                                    ft.Icon(cloud_icon, size=14, color=cloud_status_color),
-                                    ft.Text(cloud_status_text, size=9, color=cloud_status_color),
-                                ], spacing=3),
-                                padding=ft.padding.symmetric(horizontal=6, vertical=3),
-                                bgcolor=self.card_color,
+                                content=ft.Text(m.get('quality', 'Used'), size=10, color="white"),
+                                bgcolor=self.get_quality_color(m.get('quality', 'Used')),
                                 border_radius=8,
+                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
                             ),
                         ]),
-                        ft.Row([
-                            trial_banner if trial_banner else ft.Container(),
-                            ft.Container(expand=True),
-                            ft.IconButton(
-                                icon=ft.icons.CLOUD_SYNC,
-                                icon_size=20,
-                                icon_color=self.accent_color,
-                                on_click=lambda e: self.manual_sync(page),
-                                tooltip="Manual Sync",
-                            ),
-                            ft.IconButton(
-                                icon=ft.icons.REFRESH,
-                                icon_size=20,
-                                icon_color="#888888",
-                                on_click=lambda e: self.show_dashboard(page),
-                                tooltip="Refresh",
+                        padding=10, bgcolor="#2C2C2C", border_radius=8,
+                    )
+                )
+            main_column.controls.append(ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)))
+        else:
+            main_column.controls.append(ft.Text("No materials", size=12, color="#888888"))
+        
+        # Recent Accessories
+        main_column.controls.append(ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
+        if accessories:
+            for a in accessories[:3]:
+                price = a.get('price', 0)
+                price_text = f"${price:.2f}" if price else ""
+                main_column.controls.append(
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Text("🔧", size=18),
+                            ft.Text(a.get('name', 'N/A'), size=14, expand=True),
+                            ft.Text(f"Qty: {a.get('quantity', 0)}", size=14),
+                            ft.Text(price_text, size=12, color="#4CAF50"),
+                            ft.Container(
+                                content=ft.Text(a.get('quality', 'Used'), size=10, color="white"),
+                                bgcolor=self.get_quality_color(a.get('quality', 'Used')),
+                                border_radius=8,
+                                padding=ft.padding.symmetric(horizontal=8, vertical=2),
                             ),
                         ]),
-                        ft.Text("⚡ Auto-sync enabled", size=10, color="#888888"),
-                    ], spacing=4)
-                else:
-                    header_row = ft.Row([
-                        ft.Text("📊 Dashboard", size=28, weight=ft.FontWeight.BOLD, color=self.text_color, expand=True),
-                        trial_banner if trial_banner else ft.Container(),
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Icon(cloud_icon, size=16, color=cloud_status_color),
-                                ft.Text(cloud_status_text, size=11, color=cloud_status_color),
-                            ], spacing=4),
-                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                            bgcolor=self.card_color,
-                            border_radius=12,
-                        ),
-                        ft.IconButton(
-                            icon=ft.icons.CLOUD_SYNC,
-                            icon_size=24,
-                            icon_color=self.accent_color,
-                            on_click=lambda e: self.manual_sync(page),
-                            tooltip="Manual Sync",
-                        ),
-                        ft.IconButton(
-                            icon=ft.icons.REFRESH,
-                            icon_size=24,
-                            icon_color="#888888",
-                            on_click=lambda e: self.show_dashboard(page),
-                            tooltip="Refresh",
-                        ),
-                    ])
-                    main_column.controls.append(
-                        ft.Text("⚡ Auto-sync enabled - changes saved to cloud automatically", 
-                            size=12, color="#888888")
-                    )
-                
-                main_column.controls.append(header_row)
-                main_column.controls.append(ft.Divider(height=1, color="#3C3C3C"))
-                main_column.controls.append(ft.Container(height=5))
-                
-            except Exception as e:
-                print(f"Header error: {e}")
-                # Fallback header
-                main_column.controls.append(
-                    ft.Row([
-                        ft.Text("📊 Dashboard", size=24, weight=ft.FontWeight.BOLD, color=self.text_color, expand=True),
-                        ft.IconButton(
-                            icon=ft.icons.REFRESH,
-                            icon_size=20,
-                            icon_color="#888888",
-                            on_click=lambda e: self.show_dashboard(page),
-                        ),
-                    ])
-                )
-                main_column.controls.append(ft.Divider(height=1, color="#3C3C3C"))
-            
-            # ============================================================
-            # STATS CARDS
-            # ============================================================
-            
-            try:
-                if is_mobile:
-                    # Mobile: 2x2 grid
-                    stats_row1 = ft.Row([
-                        self._create_stat_card_safe("📦", str(total_items), "Items"),
-                        self._create_stat_card_safe("📊", str(total_stock), "Stock"),
-                    ], spacing=8)
-                    stats_row2 = ft.Row([
-                        self._create_stat_card_safe("⚠️", str(total_low_stock), "Low Stock"),
-                        self._create_stat_card_safe("👥", str(total_users), "Users"),
-                    ], spacing=8)
-                    main_column.controls.append(stats_row1)
-                    main_column.controls.append(stats_row2)
-                else:
-                    stats_row = ft.Row([
-                        self._create_stat_card_safe("📦", str(total_items), "Items"),
-                        self._create_stat_card_safe("📊", str(total_stock), "Stock"),
-                        self._create_stat_card_safe("⚠️", str(total_low_stock), "Low Stock"),
-                        self._create_stat_card_safe("👥", str(total_users), "Users"),
-                    ], spacing=8)
-                    main_column.controls.append(stats_row)
-                
-                main_column.controls.append(ft.Container(height=5))
-                
-            except Exception as e:
-                print(f"Stats cards error: {e}")
-                main_column.controls.append(
-                    ft.Text("📊 Stats unavailable", size=14, color="#888888")
-                )
-            
-            # ============================================================
-            # QUALITY DISTRIBUTION
-            # ============================================================
-            
-            try:
-                main_column.controls.append(ft.Text("📊 Quality", size=14 if is_mobile else 16,
-                                                weight=ft.FontWeight.BOLD))
-                
-                if is_mobile:
-                    quality_row1 = ft.Row([
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Icon(ft.icons.CIRCLE, size=12, color="#4CAF50"),
-                                ft.Text(f"New: {quality_counts.get('New', 0)}", size=11, color=self.text_color),
-                            ], spacing=4),
-                            padding=ft.padding.symmetric(horizontal=8, vertical=5),
-                            bgcolor=self.card_color,
-                            border_radius=6,
-                            expand=True,
-                        ),
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Icon(ft.icons.CIRCLE, size=12, color="#FF9800"),
-                                ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=11, color=self.text_color),
-                            ], spacing=4),
-                            padding=ft.padding.symmetric(horizontal=8, vertical=5),
-                            bgcolor=self.card_color,
-                            border_radius=6,
-                            expand=True,
-                        ),
-                    ], spacing=6)
-                    quality_row2 = ft.Row([
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Icon(ft.icons.CIRCLE, size=12, color="#F44336"),
-                                ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=11, color=self.text_color),
-                            ], spacing=4),
-                            padding=ft.padding.symmetric(horizontal=8, vertical=5),
-                            bgcolor=self.card_color,
-                            border_radius=6,
-                            expand=True,
-                        ),
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Icon(ft.icons.CIRCLE, size=12, color="#2196F3"),
-                                ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=11, color=self.text_color),
-                            ], spacing=4),
-                            padding=ft.padding.symmetric(horizontal=8, vertical=5),
-                            bgcolor=self.card_color,
-                            border_radius=6,
-                            expand=True,
-                        ),
-                    ], spacing=6)
-                    main_column.controls.append(quality_row1)
-                    main_column.controls.append(quality_row2)
-                else:
-                    quality_row1 = ft.Row([
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Icon(ft.icons.CIRCLE, size=16, color="#4CAF50"),
-                                ft.Text(f"New: {quality_counts.get('New', 0)}", size=14, color=self.text_color),
-                            ], spacing=8),
-                            padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                            bgcolor=self.card_color,
-                            border_radius=8,
-                            expand=True,
-                        ),
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Icon(ft.icons.CIRCLE, size=16, color="#FF9800"),
-                                ft.Text(f"Used: {quality_counts.get('Used', 0)}", size=14, color=self.text_color),
-                            ], spacing=8),
-                            padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                            bgcolor=self.card_color,
-                            border_radius=8,
-                            expand=True,
-                        ),
-                    ], spacing=8)
-                    quality_row2 = ft.Row([
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Icon(ft.icons.CIRCLE, size=16, color="#F44336"),
-                                ft.Text(f"Damaged: {quality_counts.get('Damaged', 0)}", size=14, color=self.text_color),
-                            ], spacing=8),
-                            padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                            bgcolor=self.card_color,
-                            border_radius=8,
-                            expand=True,
-                        ),
-                        ft.Container(
-                            content=ft.Row([
-                                ft.Icon(ft.icons.CIRCLE, size=16, color="#2196F3"),
-                                ft.Text(f"Repaired: {quality_counts.get('Repaired', 0)}", size=14, color=self.text_color),
-                            ], spacing=8),
-                            padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                            bgcolor=self.card_color,
-                            border_radius=8,
-                            expand=True,
-                        ),
-                    ], spacing=8)
-                    main_column.controls.append(quality_row1)
-                    main_column.controls.append(quality_row2)
-                
-                main_column.controls.append(ft.Container(height=5))
-                
-            except Exception as e:
-                print(f"Quality distribution error: {e}")
-            
-            # ============================================================
-            # STOCK HEALTH
-            # ============================================================
-            
-            try:
-                if total_stock > 0:
-                    healthy_percentage = int(((total_stock - total_low_stock * 10) / total_stock * 100))
-                    healthy_percentage = max(0, min(healthy_percentage, 100))
-                else:
-                    healthy_percentage = 100
-                
-                main_column.controls.append(ft.Text("💪 Stock Health", size=14 if is_mobile else 16,
-                                                weight=ft.FontWeight.BOLD))
-                main_column.controls.append(
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Text(f"{healthy_percentage}%", size=20 if is_mobile else 24,
-                                weight=ft.FontWeight.BOLD, color=self.success_color),
-                            ft.ProgressBar(value=healthy_percentage/100, color=self.success_color, 
-                                        bgcolor="#3C3C3C", height=4 if is_mobile else 6),
-                            ft.Text(f"Low Stock: {total_low_stock} items", size=11 if is_mobile else 12,
-                                color=self.warning_color),
-                        ], spacing=4 if is_mobile else 5),
-                        padding=10 if is_mobile else 12,
-                        bgcolor=self.card_color,
-                        border_radius=8 if is_mobile else 10,
+                        padding=10, bgcolor="#2C2C2C", border_radius=8,
                     )
                 )
-                main_column.controls.append(ft.Container(height=5))
-                
-            except Exception as e:
-                print(f"Stock health error: {e}")
-            
-            # ============================================================
-            # RECENT MATERIALS AND ACCESSORIES
-            # ============================================================
-            
-            try:
-                if is_mobile:
-                    # Mobile: Stacked
-                    # Recent Materials
-                    main_column.controls.append(ft.Text("📦 Recent Materials", size=14, weight=ft.FontWeight.BOLD))
-                    if materials:
-                        for m in materials[:3]:
-                            main_column.controls.append(
-                                ft.Container(
-                                    content=ft.Row([
-                                        ft.Text("📦", size=14),
-                                        ft.Text(m.get('name', 'N/A'), size=12, expand=True),
-                                        ft.Text(f"Qty: {m.get('quantity', 0)}", size=12),
-                                        ft.Container(
-                                            content=ft.Text(m.get('quality', 'Used'), size=8, color="white"),
-                                            bgcolor=self.get_quality_color(m.get('quality', 'Used')),
-                                            border_radius=6,
-                                            padding=ft.padding.symmetric(horizontal=6, vertical=2),
-                                        ),
-                                    ]),
-                                    padding=8,
-                                    bgcolor="#2C2C2C",
-                                    border_radius=6,
-                                )
-                            )
-                        main_column.controls.append(
-                            ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page))
-                        )
-                    else:
-                        main_column.controls.append(
-                            ft.Text("No materials yet", size=11, color="#888888")
-                        )
-                    
-                    main_column.controls.append(ft.Container(height=8))
-                    
-                    # Recent Accessories
-                    main_column.controls.append(ft.Text("🔧 Recent Accessories", size=14, weight=ft.FontWeight.BOLD))
-                    if accessories:
-                        for a in accessories[:3]:
-                            price = a.get('price', 0)
-                            price_text = f"${price:.2f}" if price else ""
-                            main_column.controls.append(
-                                ft.Container(
-                                    content=ft.Row([
-                                        ft.Text("🔧", size=14),
-                                        ft.Text(a.get('name', 'N/A'), size=12, expand=True),
-                                        ft.Text(f"Qty: {a.get('quantity', 0)}", size=12),
-                                        ft.Text(price_text, size=11, color="#4CAF50") if price_text else ft.Container(),
-                                        ft.Container(
-                                            content=ft.Text(a.get('quality', 'Used'), size=8, color="white"),
-                                            bgcolor=self.get_quality_color(a.get('quality', 'Used')),
-                                            border_radius=6,
-                                            padding=ft.padding.symmetric(horizontal=6, vertical=2),
-                                        ),
-                                    ]),
-                                    padding=8,
-                                    bgcolor="#2C2C2C",
-                                    border_radius=6,
-                                )
-                            )
-                        main_column.controls.append(
-                            ft.TextButton("View All", on_click=lambda e: self.show_accessories(page))
-                        )
-                    else:
-                        main_column.controls.append(
-                            ft.Text("No accessories yet", size=11, color="#888888")
-                        )
-                else:
-                    # Desktop: Side by side
-                    recent_row = ft.Row([
-                        ft.Container(
-                            content=ft.Column([
-                                ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD),
-                                ft.Divider(),
-                                ft.Column([
-                                    self._create_recent_item_material(m) for m in materials[:3]
-                                ]) if materials else [ft.Text("No materials", size=12, color="#888888")],
-                                ft.TextButton("View All", on_click=lambda e: self.show_materials_screen(page)),
-                            ], spacing=8),
-                            expand=True,
-                        ),
-                        ft.VerticalDivider(width=1, color="#3C3C3C"),
-                        ft.Container(
-                            content=ft.Column([
-                                ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD),
-                                ft.Divider(),
-                                ft.Column([
-                                    self._create_recent_item_accessory(a) for a in accessories[:3]
-                                ]) if accessories else [ft.Text("No accessories", size=12, color="#888888")],
-                                ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)),
-                            ], spacing=8),
-                            expand=True,
-                        ),
-                    ], spacing=15)
-                    main_column.controls.append(recent_row)
-                
-                main_column.controls.append(ft.Container(height=5))
-                
-            except Exception as e:
-                print(f"Recent items error: {e}")
-            
-            # ============================================================
-            # QUICK ACTIONS
-            # ============================================================
-            
-            try:
-                main_column.controls.append(ft.Text("⚡ Quick Actions", size=14 if is_mobile else 16,
-                                                weight=ft.FontWeight.BOLD))
-                
-                if is_mobile:
-                    main_column.controls.append(
-                        ft.Row([
-                            ft.ElevatedButton("📦 Add", 
-                                            on_click=lambda e: self.open_add_modal(page), 
-                                            expand=True,
-                                            height=36),
-                            ft.ElevatedButton("🔧 Part", 
-                                            on_click=lambda e: self.open_add_accessory_modal(page), 
-                                            expand=True,
-                                            height=36),
-                        ], spacing=6)
-                    )
-                    main_column.controls.append(
-                        ft.Row([
-                            ft.ElevatedButton("📷 Scan", 
-                                            on_click=lambda e: self.show_barcode_scanner(page), 
-                                            expand=True,
-                                            height=36),
-                            ft.ElevatedButton("📊 Inventory", 
-                                            on_click=lambda e: self.show_inventory(page), 
-                                            expand=True,
-                                            height=36),
-                        ], spacing=6)
-                    )
-                    main_column.controls.append(
-                        ft.Row([
-                            ft.ElevatedButton("🌐 Export", 
-                                            on_click=lambda e: self.export_html_simple(page), 
-                                            expand=True,
-                                            height=36),
-                            ft.ElevatedButton("📁 View", 
-                                            on_click=lambda e: self.show_exported_files_simple(page), 
-                                            expand=True,
-                                            height=36),
-                        ], spacing=6)
-                    )
-                else:
-                    main_column.controls.append(
-                        ft.Row([
-                            ft.ElevatedButton("📦 Add Material", 
-                                            on_click=lambda e: self.open_add_modal(page), 
-                                            expand=True,
-                                            height=45),
-                            ft.ElevatedButton("🔧 Add Part", 
-                                            on_click=lambda e: self.open_add_accessory_modal(page), 
-                                            expand=True,
-                                            height=45),
-                            ft.ElevatedButton("📷 Scan", 
-                                            on_click=lambda e: self.show_barcode_scanner(page), 
-                                            expand=True,
-                                            height=45),
-                            ft.ElevatedButton("📊 Inventory", 
-                                            on_click=lambda e: self.show_inventory(page), 
-                                            expand=True,
-                                            height=45),
-                        ], spacing=8)
-                    )
-                    main_column.controls.append(
-                        ft.Row([
-                            ft.ElevatedButton("🌐 Export HTML", 
-                                            on_click=lambda e: self.export_html_simple(page), 
-                                            expand=True,
-                                            height=45),
-                            ft.ElevatedButton("📁 View Exports", 
-                                            on_click=lambda e: self.show_exported_files_simple(page), 
-                                            expand=True,
-                                            height=45),
-                        ], spacing=8)
-                    )
-                
-                main_column.controls.append(ft.Container(height=5))
-                
-            except Exception as e:
-                print(f"Quick actions error: {e}")
-            
-            # ============================================================
-            # CLOUD STATUS
-            # ============================================================
-            
-            try:
-                cloud_ready = firebase_api.is_ready() if hasattr(firebase_api, 'is_ready') else False
-                if cloud_ready:
-                    cloud_status = ft.Container(
-                        content=ft.Row([
-                            ft.Icon(ft.icons.CLOUD_DONE, size=14 if is_mobile else 16, color=self.success_color),
-                            ft.Text("Cloud Connected - Auto-sync active", size=11 if is_mobile else 12, color=self.success_color),
-                        ], spacing=4 if is_mobile else 6),
-                        padding=ft.padding.symmetric(horizontal=8 if is_mobile else 12, vertical=4 if is_mobile else 6),
-                        bgcolor="#1A3A1A",
-                        border_radius=8 if is_mobile else 12,
-                    )
-                else:
-                    cloud_status = ft.Container(
-                        content=ft.Row([
-                            ft.Icon(ft.icons.CLOUD_OFF, size=14 if is_mobile else 16, color=self.warning_color),
-                            ft.Text("Local Mode - Data saved locally", size=11 if is_mobile else 12, color=self.warning_color),
-                        ], spacing=4 if is_mobile else 6),
-                        padding=ft.padding.symmetric(horizontal=8 if is_mobile else 12, vertical=4 if is_mobile else 6),
-                        bgcolor="#2C2C2C",
-                        border_radius=8 if is_mobile else 12,
-                    )
-                main_column.controls.append(cloud_status)
-                
-            except Exception as e:
-                print(f"Cloud status error: {e}")
-            
-            # ============================================================
-            # FOOTER
-            # ============================================================
-            
-            try:
-                main_column.controls.append(ft.Divider())
-                main_column.controls.append(ft.Container(height=3 if is_mobile else 5))
-                
-                user = self.current_user or {}
-                is_activated = user.get('activated', False)
-                days_left = user.get('days_left', 30)
-                
-                status_text = "✅ Full" if is_activated else f"🚀 {days_left}d" if days_left > 0 else "⚠️ Expired"
-                status_color = "#4CAF50" if is_activated else "#FF9800" if days_left > 0 else self.danger_color
-                
-                if is_mobile:
-                    footer_row = ft.Row([
-                        ft.Text(f"📱 {status_text}", size=9, color=status_color),
-                        ft.Container(expand=True),
-                        ft.Text("⚡ Auto-sync", size=8, color="#888888"),
-                        ft.Text("•", size=8, color="#888888"),
-                        ft.Text("v2.0", size=8, color="#888888"),
-                    ])
-                else:
-                    footer_row = ft.Row([
-                        ft.Text(f"📱 {status_text}", size=11, color=status_color),
-                        ft.Container(expand=True),
-                        ft.Text("⚡ Auto-sync", size=10, color="#888888"),
-                        ft.Text("•", size=10, color="#888888"),
-                        ft.Text("v2.0.0", size=10, color="#888888"),
-                    ])
-                main_column.controls.append(footer_row)
-                
-            except Exception as e:
-                print(f"Footer error: {e}")
-            
-            # ============================================================
-            # BOTTOM SPACING
-            # ============================================================
-            
-            if is_mobile:
-                main_column.controls.append(ft.Container(height=60))
-            else:
-                main_column.controls.append(ft.Container(height=20))
-            
-            # ============================================================
-            # WRAP AND DISPLAY
-            # ============================================================
-            
-            scroll_container = ft.Container(
-                content=main_column,
-                expand=True,
-                padding=padding_value,
+            main_column.controls.append(ft.TextButton("View All", on_click=lambda e: self.show_accessories(page)))
+        else:
+            main_column.controls.append(ft.Text("No accessories", size=12, color="#888888"))
+        
+        # Quick Actions
+        main_column.controls.append(ft.Text("Quick Actions", size=16, weight=ft.FontWeight.BOLD))
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton("Add Material", on_click=lambda e: self.open_add_modal(page), expand=True),
+                ft.ElevatedButton("Add Part", on_click=lambda e: self.open_add_accessory_modal(page), expand=True),
+            ], spacing=8)
+        )
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton("Scan", on_click=lambda e: self.show_barcode_scanner(page), expand=True),
+                ft.ElevatedButton("Export Data", on_click=lambda e: self.export_all_data_simple(page), expand=True),
+            ], spacing=8)
+        )
+        
+        # Import/Export
+        main_column.controls.append(ft.Text("📁 Import / Export", size=16, weight=ft.FontWeight.BOLD))
+        main_column.controls.append(
+            ft.Row([
+                ft.ElevatedButton("🌐 Export HTML", on_click=lambda e: self.export_html_simple(page), expand=True),
+                ft.ElevatedButton("📁 View Exports", on_click=lambda e: self.show_exported_files_simple(page), expand=True),
+            ], spacing=8)
+        )
+        
+        # Cloud Status
+        if firebase_api.is_ready():
+            cloud_status = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CLOUD_DONE, size=16, color=self.success_color),
+                    ft.Text("Cloud Connected", size=12, color=self.success_color),
+                ], spacing=6),
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                bgcolor="#2C2C2C",
+                border_radius=12,
             )
-            
-            scrollable = ft.Container(
-                content=ft.Column([scroll_container], scroll=ft.ScrollMode.AUTO, expand=True),
-                expand=True,
+        else:
+            cloud_status = ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.icons.CLOUD_OFF, size=16, color=self.warning_color),
+                    ft.Text("Local Mode", size=12, color=self.warning_color),
+                ], spacing=6),
+                padding=ft.padding.symmetric(horizontal=12, vertical=6),
+                bgcolor="#2C2C2C",
+                border_radius=12,
             )
-            
-            if is_mobile and nav:
-                page.add(ft.Column([scrollable, nav], spacing=0, expand=True))
-            else:
-                page.add(ft.Row([sidebar, scrollable], spacing=0, expand=True))
-            
-            self.current_view = "dashboard"
-            page.update()
-            
-        except Exception as e:
-            print(f"Dashboard error: {e}")
-            import traceback
-            traceback.print_exc()
-            # Show error on screen
-            try:
-                page.controls.clear()
-                page.add(
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Text("❌ Dashboard Error", size=20, color="red"),
-                            ft.Text(str(e), size=12, color="white"),
-                            ft.ElevatedButton("Retry", on_click=lambda e: self.show_dashboard(page)),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
-                        alignment=ft.alignment.center,
-                        expand=True,
-                    )
-                )
-                page.update()
-            except:
-                pass
+        main_column.controls.append(cloud_status)
+        
+        # Wrap in scrollable container
+        scroll_container = ft.Container(
+            content=main_column,
+            expand=True,
+            padding=15,
+        )
+        
+        scrollable = ft.Container(
+            content=ft.Column([scroll_container], scroll=ft.ScrollMode.AUTO, expand=True),
+            expand=True,
+        )
+        
+        # Layout
+        if is_mobile and nav:
+            page.add(ft.Column([scrollable, nav], spacing=0, expand=True))
+        else:
+            page.add(ft.Row([sidebar, scrollable], spacing=0, expand=True))
+        
+        self.current_view = "dashboard"
+        page.update()
     def create_trial_banner_safe(self, page: ft.Page):
         """Create trial/activation banner - SAFE VERSION without any text_style"""
         try:
