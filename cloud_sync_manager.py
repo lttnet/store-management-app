@@ -5,8 +5,11 @@ from datetime import datetime
 
 # Lazy import to avoid circular references
 def get_firebase_api():
-    from firebase_client import firebase_api
-    return firebase_api
+    try:
+        from firebase_client import firebase_api
+        return firebase_api
+    except ImportError:
+        return None
 
 class CloudSyncManager:
     
@@ -29,7 +32,7 @@ class CloudSyncManager:
             print(f"📊 Local materials: {len(local_ids)}")
             
             firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
+            if not firebase_api or not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
             
@@ -77,7 +80,7 @@ class CloudSyncManager:
                 return False
             
             firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
+            if not firebase_api or not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
             
@@ -92,7 +95,7 @@ class CloudSyncManager:
         """Delete a single material from cloud"""
         try:
             firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
+            if not firebase_api or not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
             
@@ -107,7 +110,7 @@ class CloudSyncManager:
         """Download materials from cloud - UPDATES local with cloud"""
         try:
             firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
+            if not firebase_api or not firebase_api.is_ready():
                 return False
             
             cloud_materials = firebase_api.get_materials(company_id)
@@ -201,7 +204,7 @@ class CloudSyncManager:
             print(f"📊 Local accessories: {len(local_ids)}")
             
             firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
+            if not firebase_api or not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
             
@@ -249,7 +252,7 @@ class CloudSyncManager:
                 return False
             
             firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
+            if not firebase_api or not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
             
@@ -264,7 +267,7 @@ class CloudSyncManager:
         """Delete a single accessory from cloud"""
         try:
             firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
+            if not firebase_api or not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
             
@@ -279,7 +282,7 @@ class CloudSyncManager:
         """Download accessories from cloud - UPDATES local with cloud"""
         try:
             firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
+            if not firebase_api or not firebase_api.is_ready():
                 return False
             
             cloud_accessories = firebase_api.get_accessories(company_id)
@@ -311,7 +314,6 @@ class CloudSyncManager:
                 accessory_id = accessory.get('id')
                 
                 if accessory_id in local_ids:
-                    # UPDATE existing
                     cursor.execute('''UPDATE accessories SET 
                         name = ?, category_id = ?, quantity = ?, price = ?, quality = ?,
                         location = ?, notes = ?, barcode_value = ?, image_path = ?, updated_at = ?
@@ -324,7 +326,6 @@ class CloudSyncManager:
                          accessory_id, company_id))
                     updated_count += 1
                 else:
-                    # INSERT new
                     cursor.execute('''INSERT INTO accessories 
                         (id, name, category_id, quantity, price, quality, location,
                          notes, barcode_value, image_path, company_id, created_at, updated_at)
@@ -369,7 +370,7 @@ class CloudSyncManager:
             print(f"📊 Local users: {len(local_ids)}")
             
             firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
+            if not firebase_api or not firebase_api.is_ready():
                 print("❌ Firebase not ready")
                 return False
             
@@ -402,52 +403,11 @@ class CloudSyncManager:
             return False
     
     @staticmethod
-    def sync_single_user_to_cloud(company_id, user_id):
-        """Sync a single user to cloud"""
-        try:
-            conn = sqlite3.connect("store_management.db")
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, name, email, password_hash, role, company_id FROM users WHERE id = ? AND company_id = ?", (user_id, company_id))
-            user = cursor.fetchone()
-            conn.close()
-            
-            if not user:
-                print(f"❌ User {user_id} not found in local database")
-                return False
-            
-            firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
-                print("❌ Firebase not ready")
-                return False
-            
-            return firebase_api.sync_user(company_id, dict(user))
-            
-        except Exception as e:
-            print(f"Sync single user error: {e}")
-            return False
-    
-    @staticmethod
-    def delete_user_from_cloud(company_id, user_id):
-        """Delete a single user from cloud"""
-        try:
-            firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
-                print("❌ Firebase not ready")
-                return False
-            
-            return firebase_api.delete_user(company_id, user_id)
-            
-        except Exception as e:
-            print(f"Delete user from cloud error: {e}")
-            return False
-    
-    @staticmethod
     def download_users_from_cloud(company_id):
         """Download users from cloud - UPDATES local with cloud"""
         try:
             firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
+            if not firebase_api or not firebase_api.is_ready():
                 return False
             
             cloud_users = firebase_api.get_users(company_id)
@@ -515,6 +475,99 @@ class CloudSyncManager:
             return False
     
     # ============================================================
+    # ACTIVATION CODE SYNC METHODS
+    # ============================================================
+    
+    @staticmethod
+    def sync_activation_codes_to_cloud(company_id):
+        """Sync all activation codes to cloud"""
+        try:
+            conn = sqlite3.connect("store_management.db")
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM activation_codes ORDER BY created_at DESC")
+            codes = cursor.fetchall()
+            conn.close()
+            
+            codes_list = [dict(code) for code in codes]
+            
+            firebase_api = get_firebase_api()
+            if not firebase_api or not firebase_api.is_ready():
+                print("❌ Firebase not ready")
+                return False
+            
+            return firebase_api.sync_activation_codes(company_id, codes_list)
+            
+        except Exception as e:
+            print(f"Sync activation codes error: {e}")
+            return False
+
+    @staticmethod
+    def download_activation_codes_from_cloud(company_id):
+        """Download activation codes from cloud"""
+        try:
+            firebase_api = get_firebase_api()
+            if not firebase_api or not firebase_api.is_ready():
+                return False
+            
+            cloud_codes = firebase_api.get_activation_codes(company_id)
+            if not cloud_codes:
+                print(f"📦 No activation codes in cloud for company {company_id}")
+                return True
+            
+            print(f"📥 Downloading {len(cloud_codes)} activation codes from cloud...")
+            
+            conn = sqlite3.connect("store_management.db")
+            cursor = conn.cursor()
+            
+            # Clear existing codes
+            cursor.execute("DELETE FROM activation_codes")
+            
+            # Insert cloud codes
+            inserted_count = 0
+            for code in cloud_codes:
+                cursor.execute('''
+                    INSERT OR REPLACE INTO activation_codes 
+                    (code, customer_name, customer_email, company_name, is_used, device_id, activated_at, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    code.get('code'),
+                    code.get('customer_name', ''),
+                    code.get('customer_email', ''),
+                    code.get('company_name', ''),
+                    code.get('is_used', 0),
+                    code.get('device_id', ''),
+                    code.get('activated_at', ''),
+                    code.get('created_at', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                ))
+                inserted_count += 1
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"✅ Downloaded {inserted_count} activation codes from cloud")
+            return True
+            
+        except Exception as e:
+            print(f"Download activation codes error: {e}")
+            return False
+    
+    @staticmethod
+    def sync_single_activation_code_to_cloud(company_id, code_data):
+        """Sync a single activation code to cloud"""
+        try:
+            firebase_api = get_firebase_api()
+            if not firebase_api or not firebase_api.is_ready():
+                print("❌ Firebase not ready")
+                return False
+            
+            return firebase_api.sync_single_activation_code(company_id, code_data)
+            
+        except Exception as e:
+            print(f"Sync single activation code error: {e}")
+            return False
+    
+    # ============================================================
     # FULL SYNC METHODS
     # ============================================================
     
@@ -527,9 +580,10 @@ class CloudSyncManager:
             material_result = CloudSyncManager.sync_materials_to_cloud(company_id)
             accessory_result = CloudSyncManager.sync_accessories_to_cloud(company_id)
             user_result = CloudSyncManager.sync_users_to_cloud(company_id)
+            activation_result = CloudSyncManager.sync_activation_codes_to_cloud(company_id)
             
-            print(f"✅ Full sync complete: Materials={material_result}, Accessories={accessory_result}, Users={user_result}")
-            return material_result and accessory_result and user_result
+            print(f"✅ Full sync complete: Materials={material_result}, Accessories={accessory_result}, Users={user_result}, Activation={activation_result}")
+            return material_result and accessory_result and user_result and activation_result
         except Exception as e:
             print(f"Full sync error: {e}")
             import traceback
@@ -545,9 +599,10 @@ class CloudSyncManager:
             material_result = CloudSyncManager.download_materials_from_cloud(company_id)
             accessory_result = CloudSyncManager.download_accessories_from_cloud(company_id)
             user_result = CloudSyncManager.download_users_from_cloud(company_id)
+            activation_result = CloudSyncManager.download_activation_codes_from_cloud(company_id)
             
-            print(f"✅ Full download complete: Materials={material_result}, Accessories={accessory_result}, Users={user_result}")
-            return material_result and accessory_result and user_result
+            print(f"✅ Full download complete: Materials={material_result}, Accessories={accessory_result}, Users={user_result}, Activation={activation_result}")
+            return material_result and accessory_result and user_result and activation_result
         except Exception as e:
             print(f"Full download error: {e}")
             import traceback
@@ -563,7 +618,7 @@ class CloudSyncManager:
         """Get sync status"""
         try:
             firebase_api = get_firebase_api()
-            if not firebase_api.is_ready():
+            if not firebase_api or not firebase_api.is_ready():
                 return {'status': 'offline', 'last_sync': 'Never'}
             
             conn = sqlite3.connect("store_management.db")
