@@ -808,7 +808,47 @@ class StoreApp:
                 row_dict[key] = row[key]
             result.append(row_dict)
             return result
-        
+    def sync_activation_codes(self, page: ft.Page):
+        """Manually sync activation codes from cloud"""
+        try:
+            from cloud_sync_manager import CloudSyncManager
+            company_id = 1  # Default company
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text("🔄 Syncing activation codes..."),
+                bgcolor=self.accent_color,
+                duration=2000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            result = CloudSyncManager.download_activation_codes_from_cloud(company_id)
+            
+            if result:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("✅ Activation codes synced successfully!"),
+                    bgcolor=self.success_color,
+                    duration=3000
+                )
+            else:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("⚠️ No activation codes in cloud or sync failed"),
+                    bgcolor=self.warning_color,
+                    duration=3000
+                )
+            page.snack_bar.open = True
+            page.update()
+            
+        except Exception as e:
+            print(f"Sync activation codes error: {e}")
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ Sync error: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+
     def show_sync_confirmation(self, page: ft.Page, message, success=True):
         """Show a brief sync confirmation"""
         color = self.success_color if success else self.danger_color
@@ -2201,15 +2241,31 @@ class StoreApp:
             
             page.on_resize = on_resize
             
-            # Initialize database
+            # ===== INITIALIZE DATABASE =====
             init_database()
+            print("✅ Database initialized")
             
             # ===== ENSURE ACTIVATION TABLES EXIST =====
             from activation_manager import ActivationManager
             ActivationManager.ensure_tables()
             print("✅ Activation tables verified")
             
-            # Check if already activated or trial active
+            # ===== SYNC ACTIVATION CODES FROM CLOUD ON START =====
+            try:
+                from cloud_sync_manager import CloudSyncManager
+                company_id = 1  # Default company
+                
+                # Check if Firebase is ready
+                if firebase_api.is_ready():
+                    print("☁️ Firebase is ready, syncing activation codes...")
+                    CloudSyncManager.download_activation_codes_from_cloud(company_id)
+                    print("✅ Activation codes synced from cloud on startup")
+                else:
+                    print("⚠️ Firebase not ready, skipping cloud sync")
+            except Exception as e:
+                print(f"⚠️ Startup sync error (non-critical): {e}")
+            
+            # ===== CHECK USER SESSION =====
             self.current_user = self.get_saved_user()
             
             if not self.current_user:
@@ -2232,15 +2288,20 @@ class StoreApp:
                         trial_active, days_left = self.check_trial_status()
                         if trial_active:
                             self.current_user['days_left'] = days_left
+                            self.current_user['trial'] = True
                         else:
                             self.current_user['days_left'] = 0
+                            self.current_user['trial'] = False
                             print("⚠️ Trial expired for device:", self.current_user.get('device_id'))
                     except Exception as e:
                         print(f"Error checking trial: {e}")
                         # Default to trial active with 30 days
                         self.current_user['days_left'] = 30
+                        self.current_user['trial'] = True
             
-            # Show login screen
+            print(f"📊 User state: activated={self.current_user.get('activated')}, trial={self.current_user.get('trial')}, days_left={self.current_user.get('days_left')}")
+            
+            # ===== SHOW LOGIN SCREEN =====
             self.show_login(page)
             page.update()
             print("✅ App started successfully")
@@ -14054,7 +14115,7 @@ class StoreApp:
         page.dialog = dialog
         dialog.open = True
         page.update()
-        
+
     def show_settings(self, page: ft.Page):
         """Show settings screen - Customer Version (No Activation Admin)"""
         page.controls.clear()
