@@ -2250,20 +2250,27 @@ class StoreApp:
             ActivationManager.ensure_tables()
             print("✅ Activation tables verified")
             
-            # ===== SYNC ACTIVATION CODES FROM CLOUD ON START =====
+            # ===== AUTO-SYNC ACTIVATION CODES FROM CLOUD ON STARTUP =====
+            print("\n☁️ Auto-syncing activation codes from cloud...")
             try:
                 from cloud_sync_manager import CloudSyncManager
+                from firebase_client import firebase_api
                 company_id = 1  # Default company
                 
                 # Check if Firebase is ready
                 if firebase_api.is_ready():
-                    print("☁️ Firebase is ready, syncing activation codes...")
-                    CloudSyncManager.download_activation_codes_from_cloud(company_id)
-                    print("✅ Activation codes synced from cloud on startup")
+                    print("   Firebase is ready, downloading activation codes...")
+                    result = CloudSyncManager.download_activation_codes_from_cloud(company_id)
+                    if result:
+                        print("   ✅ Activation codes synced from cloud successfully!")
+                    else:
+                        print("   ⚠️ No activation codes found in cloud or sync failed")
                 else:
-                    print("⚠️ Firebase not ready, skipping cloud sync")
+                    print("   ⚠️ Firebase not ready, skipping cloud sync")
+                    print("   💡 App will work in offline mode with local data")
             except Exception as e:
-                print(f"⚠️ Startup sync error (non-critical): {e}")
+                print(f"   ⚠️ Auto-sync error (non-critical): {e}")
+                print("   💡 App will continue with local data")
             
             # ===== CHECK USER SESSION =====
             self.current_user = self.get_saved_user()
@@ -3151,8 +3158,56 @@ class StoreApp:
             print(f"Error creating default admin: {e}")
     # Add this method to your StoreApp class (outside show_login)
 
+    def manual_sync_codes(self, page: ft.Page):
+        """Manually sync activation codes from cloud"""
+        try:
+            from cloud_sync_manager import CloudSyncManager
+            from firebase_client import firebase_api
+            company_id = 1
+            
+            page.snack_bar = ft.SnackBar(
+                ft.Text("☁️ Syncing activation codes..."),
+                bgcolor=self.accent_color,
+                duration=2000
+            )
+            page.snack_bar.open = True
+            page.update()
+            
+            if firebase_api.is_ready():
+                result = CloudSyncManager.download_activation_codes_from_cloud(company_id)
+                if result:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("✅ Activation codes synced successfully!"),
+                        bgcolor=self.success_color,
+                        duration=3000
+                    )
+                else:
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("ℹ️ No activation codes found in cloud"),
+                        bgcolor=self.warning_color,
+                        duration=3000
+                    )
+            else:
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("⚠️ Firebase not available. Check your connection."),
+                    bgcolor=self.warning_color,
+                    duration=3000
+                )
+            page.snack_bar.open = True
+            page.update()
+            
+        except Exception as e:
+            print(f"Manual sync error: {e}")
+            page.snack_bar = ft.SnackBar(
+                ft.Text(f"❌ Sync error: {str(e)[:50]}"),
+                bgcolor=self.danger_color,
+                duration=3000
+            )
+            page.snack_bar.open = True
+            page.update()
+
     def activate_with_code(self, page: ft.Page, code):
-        """Activate app with activation code"""
+        """Activate app with activation code - Force cloud sync first"""
         from activation_manager import ActivationManager
         
         if not code or len(code.strip()) < 10:
@@ -3165,18 +3220,40 @@ class StoreApp:
             page.update()
             return
         
+        # Clean and uppercase the code
         code = code.strip().upper()
-        device_id = ActivationManager.get_device_id()
+        print(f"🔑 Activation code entered: {code}")
+        
+        # ===== FORCE CLOUD SYNC BEFORE VERIFICATION =====
+        print("\n☁️ Syncing activation codes from cloud...")
+        try:
+            from cloud_sync_manager import CloudSyncManager
+            from firebase_client import firebase_api
+            company_id = 1
+            
+            if firebase_api.is_ready():
+                print("   Firebase is ready, downloading latest codes...")
+                CloudSyncManager.download_activation_codes_from_cloud(company_id)
+                print("   ✅ Codes synced from cloud!")
+            else:
+                print("   ⚠️ Firebase not ready, using local data")
+        except Exception as e:
+            print(f"   ⚠️ Sync error: {e}")
+        # ==============================================
         
         # Show loading
         page.snack_bar = ft.SnackBar(
-            ft.Text("🔄 Activating..."),
+            ft.Text("🔄 Verifying code..."),
             bgcolor=self.accent_color,
             duration=2000
         )
         page.snack_bar.open = True
         page.update()
         
+        device_id = ActivationManager.get_device_id()
+        print(f"📱 Device ID: {device_id}")
+        
+        # Now activate with the code (will check cloud first)
         result = ActivationManager.activate_app(device_id, code)
         
         if result.get('success'):
@@ -3187,11 +3264,12 @@ class StoreApp:
             )
             page.snack_bar.open = True
             
+            # Update current user
             if self.current_user:
                 self.current_user['is_activated'] = True
             
             page.update()
-            self.show_login(page)
+            self.show_dashboard(page)
         else:
             page.snack_bar = ft.SnackBar(
                 ft.Text(f"❌ {result.get('message')}"),
@@ -3202,11 +3280,28 @@ class StoreApp:
             page.update()
 
     def show_login(self, page: ft.Page):
-        """Login screen with trial and activation - No Create Account"""
+        """Login screen with trial and activation - Auto-sync on load"""
         try:
             page.controls.clear()
             
             from activation_manager import ActivationManager
+            
+            # ===== AUTO-SYNC ON LOGIN SCREEN LOAD =====
+            print("\n☁️ Auto-syncing activation codes on login screen...")
+            try:
+                from cloud_sync_manager import CloudSyncManager
+                from firebase_client import firebase_api
+                company_id = 1
+                
+                if firebase_api.is_ready():
+                    print("   Firebase is ready, syncing activation codes...")
+                    CloudSyncManager.download_activation_codes_from_cloud(company_id)
+                    print("   ✅ Activation codes synced!")
+                else:
+                    print("   ⚠️ Firebase not ready, using local data")
+            except Exception as e:
+                print(f"   ⚠️ Auto-sync error: {e}")
+            # ========================================
             
             # Get device ID
             device_id = ActivationManager.get_device_id()
@@ -3308,7 +3403,7 @@ class StoreApp:
             status_text = ft.Text("", size=12)
             loading_indicator = ft.ProgressRing(visible=False, width=30, height=30)
             
-            # ===== ACTIVATION SECTION (Always visible) =====
+            # ===== ACTIVATION SECTION =====
             activation_code_field = ft.TextField(
                 label="Activation Code",
                 hint_text="ACT-XXXX-XXXX-XXXX",
@@ -3317,9 +3412,66 @@ class StoreApp:
                 border_color="#FF9800",
             )
             
+            # Sync button function
+            def manual_sync_codes(e):
+                """Manually sync activation codes from cloud"""
+                try:
+                    from cloud_sync_manager import CloudSyncManager
+                    from firebase_client import firebase_api
+                    company_id = 1
+                    
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text("☁️ Syncing activation codes..."),
+                        bgcolor=self.accent_color,
+                        duration=2000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+                    
+                    if firebase_api.is_ready():
+                        result = CloudSyncManager.download_activation_codes_from_cloud(company_id)
+                        if result:
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text("✅ Activation codes synced successfully!"),
+                                bgcolor=self.success_color,
+                                duration=3000
+                            )
+                        else:
+                            page.snack_bar = ft.SnackBar(
+                                ft.Text("ℹ️ No activation codes found in cloud"),
+                                bgcolor=self.warning_color,
+                                duration=3000
+                            )
+                    else:
+                        page.snack_bar = ft.SnackBar(
+                            ft.Text("⚠️ Firebase not available. Check your connection."),
+                            bgcolor=self.warning_color,
+                            duration=3000
+                        )
+                    page.snack_bar.open = True
+                    page.update()
+                    
+                except Exception as ex:
+                    print(f"Manual sync error: {ex}")
+                    page.snack_bar = ft.SnackBar(
+                        ft.Text(f"❌ Sync error: {str(ex)[:50]}"),
+                        bgcolor=self.danger_color,
+                        duration=3000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+            
             activation_section = ft.Column([
                 ft.Divider(height=15, color="#3C3C3C"),
-                ft.Text("🔑 Have an activation code?", size=14, weight=ft.FontWeight.BOLD),
+                ft.Row([
+                    ft.Text("🔑 Have an activation code?", size=14, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.ElevatedButton(
+                        "☁️ Sync",
+                        on_click=manual_sync_codes,
+                        style=ft.ButtonStyle(bgcolor=self.accent_color, color="white"),
+                        height=32,
+                    ),
+                ]),
                 ft.Text("Enter your code to unlock full access", size=11, color="#888888"),
                 ft.Container(height=5),
                 activation_code_field,
@@ -3459,6 +3611,8 @@ class StoreApp:
             
             # ===== ACTIVATE WITH CODE FUNCTION =====
             def activate_with_code(page, code):
+                from activation_manager import ActivationManager
+                
                 if not code or len(code.strip()) < 10:
                     page.snack_bar = ft.SnackBar(
                         ft.Text("❌ Please enter a valid activation code"),
@@ -3469,45 +3623,59 @@ class StoreApp:
                     page.update()
                     return
                 
+                # Clean and uppercase the code
                 code = code.strip().upper()
+                print(f"🔑 Activation code entered: {code}")
+                
+                # ===== FORCE CLOUD SYNC BEFORE VERIFICATION =====
+                print("\n☁️ Syncing activation codes from cloud...")
+                try:
+                    from cloud_sync_manager import CloudSyncManager
+                    from firebase_client import firebase_api
+                    company_id = 1
+                    
+                    if firebase_api.is_ready():
+                        print("   Firebase is ready, downloading latest codes...")
+                        CloudSyncManager.download_activation_codes_from_cloud(company_id)
+                        print("   ✅ Codes synced from cloud!")
+                    else:
+                        print("   ⚠️ Firebase not ready, using local data")
+                except Exception as ex:
+                    print(f"   ⚠️ Sync error: {ex}")
+                # ==============================================
                 
                 # Show loading
-                loading_indicator.visible = True
-                status_text.value = "🔄 Activating..."
-                status_text.color = self.accent_color
+                page.snack_bar = ft.SnackBar(
+                    ft.Text("🔄 Verifying code..."),
+                    bgcolor=self.accent_color,
+                    duration=2000
+                )
+                page.snack_bar.open = True
                 page.update()
                 
+                device_id = ActivationManager.get_device_id()
+                print(f"📱 Device ID: {device_id}")
+                
+                # Now activate with the code
                 result = ActivationManager.activate_app(device_id, code)
                 
-                loading_indicator.visible = False
-                
                 if result.get('success'):
-                    status_text.value = "✅ App activated successfully!"
-                    status_text.color = self.success_color
-                    page.update()
-                    
                     page.snack_bar = ft.SnackBar(
                         ft.Text(f"✅ {result.get('message')}"),
                         bgcolor=self.success_color,
                         duration=4000
                     )
                     page.snack_bar.open = True
-                    page.update()
                     
                     # Update current user
                     if self.current_user:
                         self.current_user['is_activated'] = True
                     
-                    # Refresh login screen
-                    self.show_login(page)
-                else:
-                    error_msg = result.get('message', 'Activation failed')
-                    status_text.value = f"❌ {error_msg}"
-                    status_text.color = self.danger_color
                     page.update()
-                    
+                    self.show_dashboard(page)
+                else:
                     page.snack_bar = ft.SnackBar(
-                        ft.Text(f"❌ {error_msg}"),
+                        ft.Text(f"❌ {result.get('message')}"),
                         bgcolor=self.danger_color,
                         duration=4000
                     )
