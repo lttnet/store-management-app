@@ -24,7 +24,10 @@ jobs:
           java-version: '17'
       
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # Explicitly only install platform-tools to avoid the removed 'tools' package
+          packages: 'platform-tools'
       
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
