@@ -467,10 +467,14 @@ class StoreApp:
         page.update()
 
     def show_dashboard(self, page: ft.Page):
-        """Dashboard - verified working version"""
+        """Dashboard - mobile friendly with top nav strip on mobile"""
         page.controls.clear()
-        is_mobile = page.width < 800 if page.width else False
 
+        screen_w = page.width or 800
+        is_mobile = screen_w < 800
+        is_narrow = screen_w < 500
+
+        # Load data safely
         try:
             materials = self.dict_list(MaterialManager.get_all())
         except Exception as e:
@@ -487,131 +491,209 @@ class StoreApp:
         total_stock = sum(m.get('quantity', 0) or 0 for m in materials) + \
                       sum(a.get('quantity', 0) or 0 for a in accessories)
 
-        # Build sidebar/nav
-        if is_mobile:
-            nav = self.create_bottom_nav(page)
-            sidebar = None
-        else:
-            sidebar = self.create_sidebar(page)
-            nav = None
-
-        main_column = ft.Column(spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
+        # ============ CONTENT COLUMN ============
+        main_column = ft.Column(
+            spacing=10,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
 
         # Header
         main_column.controls.append(ft.Row([
-            ft.Text("📊 Dashboard",
-                    size=24 if is_mobile else 28,
-                    weight=ft.FontWeight.BOLD, color=self.text_color),
+            ft.Text(
+                "📊 Dashboard",
+                size=20 if is_narrow else (24 if is_mobile else 28),
+                weight=ft.FontWeight.BOLD,
+                color=self.text_color,
+            ),
             ft.Container(expand=True),
-            ft.IconButton(icon=ft.icons.REFRESH, icon_size=24,
-                          icon_color="#888888",
-                          on_click=lambda e: self.show_dashboard(page)),
+            ft.IconButton(
+                icon=ft.icons.REFRESH,
+                icon_size=20 if is_mobile else 24,
+                icon_color="#888888",
+                on_click=lambda e: self.show_dashboard(page),
+            ),
         ]))
         main_column.controls.append(ft.Divider(height=1, color="#3C3C3C"))
 
-        # Stats
-        stats_row = ft.Row([
-            self._create_stat_card("📦", str(total_items), "Items"),
-            self._create_stat_card("📊", str(total_stock), "Stock"),
-            self._create_stat_card("📈", str(len(materials)), "Materials"),
-        ], spacing=10)
-        main_column.controls.append(stats_row)
+        # ============ STATS ============
+        if is_mobile:
+            main_column.controls.append(ft.Row([
+                self._create_stat_card("📦", str(total_items), "Items"),
+                self._create_stat_card("📊", str(total_stock), "Stock"),
+            ], spacing=8))
+            main_column.controls.append(ft.Row([
+                self._create_stat_card("📈", str(len(materials)), "Materials"),
+                self._create_stat_card("🔧", str(len(accessories)), "Accessories"),
+            ], spacing=8))
+        else:
+            main_column.controls.append(ft.Row([
+                self._create_stat_card("📦", str(total_items), "Items"),
+                self._create_stat_card("📊", str(total_stock), "Stock"),
+                self._create_stat_card("📈", str(len(materials)), "Materials"),
+            ], spacing=10))
 
-        # Quick Actions
+        main_column.controls.append(ft.Container(height=5))
+
+        # ============ QUICK ACTIONS ============
         main_column.controls.append(
-            ft.Text("⚡ Quick Actions", size=18, weight=ft.FontWeight.BOLD))
-        main_column.controls.append(ft.Row([
-            ft.ElevatedButton("📦 Add Material",
-                              on_click=lambda e: self.open_add_modal(page),
-                              expand=True),
-            ft.ElevatedButton("🔧 Add Part",
-                              on_click=lambda e: self.open_add_accessory_modal(page),
-                              expand=True),
-        ], spacing=10))
-        main_column.controls.append(ft.Row([
-            ft.ElevatedButton("📷 Scan",
-                              on_click=lambda e: self.show_barcode_scanner(page),
-                              expand=True),
-            ft.ElevatedButton("📊 Inventory",
-                              on_click=lambda e: self.show_inventory(page),
-                              expand=True),
-        ], spacing=10))
+            ft.Text("⚡ Quick Actions",
+                    size=16 if is_mobile else 18,
+                    weight=ft.FontWeight.BOLD))
 
-        main_column.controls.append(ft.Container(height=10))
+        main_column.controls.append(ft.Row([
+            ft.ElevatedButton(
+                "📦 Add",
+                on_click=lambda e: self.open_add_modal(page),
+                expand=True, height=44,
+                style=ft.ButtonStyle(padding=8),
+            ),
+            ft.ElevatedButton(
+                "🔧 Add",
+                on_click=lambda e: self.open_add_accessory_modal(page),
+                expand=True, height=44,
+                style=ft.ButtonStyle(padding=8),
+            ),
+        ], spacing=8))
 
-        # Recent Materials
+        main_column.controls.append(ft.Row([
+            ft.ElevatedButton(
+                "📷 Scan",
+                on_click=lambda e: self.show_barcode_scanner(page),
+                expand=True, height=44,
+                style=ft.ButtonStyle(padding=8),
+            ),
+            ft.ElevatedButton(
+                "📊 Inventory",
+                on_click=lambda e: self.show_inventory(page),
+                expand=True, height=44,
+                style=ft.ButtonStyle(padding=8),
+            ),
+        ], spacing=8))
+
+        main_column.controls.append(ft.Container(height=8))
+
+        # ============ RECENT MATERIALS ============
         main_column.controls.append(
-            ft.Text("📦 Recent Materials", size=16, weight=ft.FontWeight.BOLD))
+            ft.Text("📦 Recent Materials",
+                    size=14 if is_mobile else 16,
+                    weight=ft.FontWeight.BOLD))
+
         if materials:
             for m in materials[:5]:
                 main_column.controls.append(ft.Container(
                     content=ft.Row([
-                        ft.Text("📦", size=18),
-                        ft.Text(m.get('name', 'N/A'), size=14, expand=True),
-                        ft.Text(f"Qty: {m.get('quantity', 0) or 0}", size=14),
+                        ft.Text("📦", size=16),
+                        ft.Text((m.get('name') or 'N/A')[:24],
+                                size=13, expand=True),
+                        ft.Text(f"Qty: {m.get('quantity', 0) or 0}",
+                                size=13),
                     ]),
-                    padding=10, bgcolor="#2C2C2C", border_radius=8,
-                    margin=ft.margin.only(bottom=5),
+                    padding=10,
+                    bgcolor="#2C2C2C",
+                    border_radius=8,
                 ))
         else:
             main_column.controls.append(ft.Container(
-                content=ft.Text("No materials yet. Click 'Add Material'!",
-                                size=12, color="#888888"),
-                padding=10, bgcolor="#2C2C2C", border_radius=8,
+                content=ft.Text("No materials yet", size=12, color="#888888"),
+                padding=12, bgcolor="#2C2C2C", border_radius=8,
             ))
 
-        main_column.controls.append(ft.Container(height=10))
+        main_column.controls.append(ft.Container(height=8))
 
-        # Recent Accessories
+        # ============ RECENT ACCESSORIES ============
         main_column.controls.append(
-            ft.Text("🔧 Recent Accessories", size=16, weight=ft.FontWeight.BOLD))
+            ft.Text("🔧 Recent Accessories",
+                    size=14 if is_mobile else 16,
+                    weight=ft.FontWeight.BOLD))
+
         if accessories:
             for a in accessories[:5]:
                 price = a.get('price', 0) or 0
                 price_text = f"${price:.2f}" if price > 0 else ""
                 main_column.controls.append(ft.Container(
                     content=ft.Row([
-                        ft.Text("🔧", size=18),
-                        ft.Text(a.get('name', 'N/A'), size=14, expand=True),
-                        ft.Text(f"Qty: {a.get('quantity', 0) or 0}", size=14),
-                        ft.Text(price_text, size=12, color="#4CAF50"),
+                        ft.Text("🔧", size=16),
+                        ft.Text((a.get('name') or 'N/A')[:20],
+                                size=13, expand=True),
+                        ft.Text(f"Qty: {a.get('quantity', 0) or 0}",
+                                size=13),
+                        ft.Text(price_text, size=11, color="#4CAF50"),
                     ]),
-                    padding=10, bgcolor="#2C2C2C", border_radius=8,
-                    margin=ft.margin.only(bottom=5),
+                    padding=10,
+                    bgcolor="#2C2C2C",
+                    border_radius=8,
                 ))
         else:
             main_column.controls.append(ft.Container(
-                content=ft.Text("No accessories yet. Click 'Add Part'!",
-                                size=12, color="#888888"),
-                padding=10, bgcolor="#2C2C2C", border_radius=8,
+                content=ft.Text("No accessories yet", size=12, color="#888888"),
+                padding=12, bgcolor="#2C2C2C", border_radius=8,
             ))
 
         # Footer
         main_column.controls.append(ft.Divider())
         main_column.controls.append(ft.Row([
-            ft.Text("✅ Free Version", size=11, color="#4CAF50"),
+            ft.Text("✅ Free Version", size=10, color="#4CAF50"),
             ft.Container(expand=True),
-            ft.Text("v2.0.0", size=11, color="#888888"),
+            ft.Text("v2.0.0", size=10, color="#888888"),
         ]))
-        main_column.controls.append(ft.Container(height=70 if is_mobile else 20))
+        main_column.controls.append(ft.Container(height=20))
 
-        scroll_container = ft.Container(content=main_column, expand=True,
-                                        padding=15 if is_mobile else 20)
-        scrollable = ft.Container(
-            content=ft.Column([scroll_container], scroll=ft.ScrollMode.AUTO,
-                              expand=True),
-            expand=True)
-
-        # Final layout
-        if is_mobile and nav is not None:
-            page.add(ft.Column([scrollable, nav], spacing=0, expand=True))
-        elif sidebar is not None:
-            page.add(ft.Row([sidebar, scrollable], spacing=0, expand=True))
+        # ============ LAYOUT ============
+        if is_mobile:
+            # Mobile: top nav strip + content
+            mobile_nav = self._create_mobile_top_nav(page)
+            page.add(ft.Column([
+                mobile_nav,
+                ft.Container(content=main_column, expand=True, padding=12),
+            ], spacing=0, expand=True))
         else:
-            page.add(scrollable)
+            # Desktop: sidebar + content
+            sidebar = self.create_sidebar(page)
+            page.add(ft.Row([
+                sidebar,
+                ft.Container(content=main_column, expand=True, padding=20),
+            ], spacing=0, expand=True))
 
         self.current_view = "dashboard"
         page.update()
+
+    def _create_mobile_top_nav(self, page: ft.Page):
+        """Top navigation strip for mobile screens"""
+        def nav_btn(icon, view):
+            def on_click(e):
+                if view == "dashboard":
+                    self.show_dashboard(page)
+                elif view == "materials":
+                    self.show_materials_screen(page)
+                elif view == "accessories":
+                    self.show_accessories(page)
+                elif view == "barcode_scanner":
+                    self.show_barcode_scanner(page)
+                elif view == "inventory":
+                    self.show_inventory(page)
+                elif view == "settings":
+                    self.show_settings(page)
+            return ft.IconButton(
+                icon=icon,
+                icon_size=22,
+                icon_color=self.text_color,
+                on_click=on_click,
+            )
+
+        return ft.Container(
+            content=ft.Row([
+                nav_btn(ft.icons.DASHBOARD, "dashboard"),
+                nav_btn(ft.icons.INVENTORY, "materials"),
+                nav_btn(ft.icons.BUILD, "accessories"),
+                nav_btn(ft.icons.QR_CODE_SCANNER, "barcode_scanner"),
+                nav_btn(ft.icons.LIST_ALT, "inventory"),
+                nav_btn(ft.icons.SETTINGS, "settings"),
+            ], alignment=ft.MainAxisAlignment.SPACE_EVENLY, spacing=0),
+            height=52,
+            bgcolor=self.sidebar_color,
+            padding=ft.padding.symmetric(horizontal=4),
+        )
 
     def _create_stat_card(self, icon, value, label, custom_color=None):
         color = custom_color or self.accent_color
