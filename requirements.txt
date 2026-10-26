@@ -1,4 +1,4 @@
-flet>=0.27.0,<1.0.0
-flet-ads
+flet==0.28.3
+flet-ads==0.1.0
 pillow
 requests
