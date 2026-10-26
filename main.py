@@ -33,6 +33,13 @@ for module in problematic_modules:
         sys.modules[module] = DummyModule()
 
 import flet as ft
+try:
+    from ads_manager import AdsManager
+    ADS_AVAILABLE = True
+except ImportError as e:
+    ADS_AVAILABLE = False
+    print(f"⚠️ ads_manager.py not found: {e}")
+
 from database import init_database
 from managers.material_manager import MaterialManager
 from managers.accessory_manager import AccessoryManager
@@ -47,6 +54,7 @@ class StoreApp:
         self.current_user = None
         self.current_view = "dashboard"
         self.page_ref = None
+        self.ads = None
 
         # Free app - always activated
         self.is_activated = True
@@ -139,6 +147,14 @@ class StoreApp:
             page.title = "Store Management"
             page.theme_mode = ft.ThemeMode.DARK
             page.bgcolor = self.bg_color
+                    # ---- Initialize ads ----
+            if ADS_AVAILABLE:
+                try:
+                    self.ads = AdsManager(page)
+                except Exception as e:
+                    print(f"Ads init error: {e}")
+                    self.ads = None
+                    
             page.padding = 0
             page.spacing = 0
 
@@ -175,9 +191,9 @@ class StoreApp:
                         content=ft.Column([
                             ft.Text("❌ App Error", size=24, color="red"),
                             ft.Text(str(e), size=14, color="white"),
-                            ft.ElevatedButton("Retry", on_click=lambda e: self.main(page)),
+                            ft.Button("Retry", on_click=lambda e: self.main(page)),
                         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15),
-                        alignment=ft.alignment.center,
+                        alignment=ft.Alignment.CENTER,
                         expand=True,
                     )
                 )
@@ -241,7 +257,7 @@ class StoreApp:
             self.show_dashboard(page)
 
         logo_exists = os.path.exists(logo_path)
-        logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.ImageFit.CONTAIN) \
+        logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.BoxFit.CONTAIN) \
             if logo_exists else ft.Text("🏪", size=70)
 
         features = ft.Column([
@@ -271,7 +287,7 @@ class StoreApp:
             ft.Container(height=20),
             ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.icons.CHECK_CIRCLE, color="#4CAF50", size=16),
+                    ft.Icon(ft.Icons.CHECK_CIRCLE, color="#4CAF50", size=16),
                     ft.Text("100% Free", size=12, color="#4CAF50"),
                 ], spacing=6),
                 padding=10,
@@ -279,7 +295,7 @@ class StoreApp:
                 border_radius=8,
             ),
             ft.Container(height=20),
-            ft.ElevatedButton(
+            ft.Button(
                 "🚀 Get Started",
                 on_click=start_using,
                 width=250, height=50,
@@ -292,7 +308,7 @@ class StoreApp:
            spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
 
         page.add(ft.Container(content=content, padding=20, expand=True,
-                              alignment=ft.alignment.center))
+                              alignment=ft.Alignment.CENTER))
         self.current_view = "welcome"
         page.update()
 
@@ -311,6 +327,8 @@ class StoreApp:
         nav_buttons = []
 
         def navigate(e, view):
+            if self.ads:
+                self.ads.show_interstitial()
             if view == "dashboard":
                 self.show_dashboard(page)
             elif view == "materials":
@@ -330,7 +348,7 @@ class StoreApp:
                     ft.Text(emoji, size=22),
                     ft.Text(label, size=15, color=self.text_color)
                 ], spacing=12),
-                padding=ft.padding.symmetric(horizontal=18, vertical=14),
+                padding=ft.Padding.symmetric(horizontal=18, vertical=14),
                 border_radius=10, ink=True,
                 on_click=lambda e, v=view: navigate(e, v),
             ))
@@ -343,14 +361,14 @@ class StoreApp:
                 ft.Text("🚪", size=22),
                 ft.Text("Logout", size=15, color="#FF5252")
             ], spacing=12),
-            padding=ft.padding.symmetric(horizontal=18, vertical=14),
+            padding=ft.Padding.symmetric(horizontal=18, vertical=14),
             border_radius=10, ink=True,
             on_click=logout,
         )
 
         logo_exists = os.path.exists(logo_path)
         sidebar_logo = ft.Image(src=logo_path, width=35, height=35,
-                                fit=ft.ImageFit.CONTAIN) \
+                                fit=ft.BoxFit.CONTAIN) \
             if logo_exists else ft.Text("🏪", size=28)
 
         title = ft.Row(
@@ -363,11 +381,11 @@ class StoreApp:
         role = (self.current_user or {}).get('role', 'guest')
         free_badge = ft.Container(
             content=ft.Row([
-                ft.Icon(ft.icons.CHECK_CIRCLE, size=16, color="#4CAF50"),
+                ft.Icon(ft.Icons.CHECK_CIRCLE, size=16, color="#4CAF50"),
                 ft.Text("✅ Free Version", size=12, color="#4CAF50",
                         weight=ft.FontWeight.BOLD),
             ], spacing=6),
-            padding=ft.padding.symmetric(horizontal=12, vertical=6),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=6),
             bgcolor="#1A3A1A", border_radius=20,
         )
 
@@ -399,17 +417,19 @@ class StoreApp:
     # ---------- BOTTOM NAV ----------
 
     def create_bottom_nav(self, page: ft.Page):
+        """Bottom nav bar for mobile - no Users, no Logout"""
         nav_items = [
-            (ft.icons.DASHBOARD, "Home", "dashboard"),
-            (ft.icons.INVENTORY, "Materials", "materials"),
-            (ft.icons.BUILD, "Parts", "accessories"),
-            (ft.icons.QR_CODE_SCANNER, "Scan", "barcode_scanner"),
-            (ft.icons.LIST_ALT, "Inventory", "inventory"),
-            (ft.icons.SETTINGS, "Settings", "settings"),
-            (ft.icons.LOGOUT, "Logout", "logout"),
+            (ft.Icons.DASHBOARD, "Home", "dashboard"),
+            (ft.Icons.INVENTORY, "Materials", "materials"),
+            (ft.Icons.BUILD, "Parts", "accessories"),
+            (ft.Icons.QR_CODE_SCANNER, "Scan", "barcode_scanner"),
+            (ft.Icons.LIST_ALT, "Inventory", "inventory"),
+            (ft.Icons.SETTINGS, "Settings", "settings"),
         ]
 
         def navigate(e):
+            if self.ads:
+                self.ads.show_interstitial()
             idx = e.control.selected_index
             if idx < len(nav_items):
                 view = nav_items[idx][2]
@@ -425,15 +445,16 @@ class StoreApp:
                     self.show_inventory(page)
                 elif view == "settings":
                     self.show_settings(page)
-                elif view == "logout":
-                    self.confirm_logout(page)
 
         return ft.NavigationBar(
-            destinations=[ft.NavigationDestination(icon=i, label=l)
-                          for i, l, _ in nav_items],
-            on_change=navigate, height=65, bgcolor=self.sidebar_color,
+            destinations=[
+                ft.NavigationDestination(icon=icon, label=label)
+                for icon, label, _ in nav_items
+            ],
+            on_change=navigate,
+            height=62,
+            bgcolor=self.sidebar_color,
         )
-
     # ---------- LOGOUT ----------
 
     def confirm_logout(self, page: ft.Page):
@@ -508,7 +529,7 @@ class StoreApp:
             ),
             ft.Container(expand=True),
             ft.IconButton(
-                icon=ft.icons.REFRESH,
+                icon=ft.Icons.REFRESH,
                 icon_size=20 if is_mobile else 24,
                 icon_color="#888888",
                 on_click=lambda e: self.show_dashboard(page),
@@ -542,13 +563,13 @@ class StoreApp:
                     weight=ft.FontWeight.BOLD))
 
         main_column.controls.append(ft.Row([
-            ft.ElevatedButton(
+            ft.Button(
                 "📦 Add",
                 on_click=lambda e: self.open_add_modal(page),
                 expand=True, height=44,
                 style=ft.ButtonStyle(padding=8),
             ),
-            ft.ElevatedButton(
+            ft.Button(
                 "🔧 Add",
                 on_click=lambda e: self.open_add_accessory_modal(page),
                 expand=True, height=44,
@@ -557,13 +578,13 @@ class StoreApp:
         ], spacing=8))
 
         main_column.controls.append(ft.Row([
-            ft.ElevatedButton(
+            ft.Button(
                 "📷 Scan",
                 on_click=lambda e: self.show_barcode_scanner(page),
                 expand=True, height=44,
                 style=ft.ButtonStyle(padding=8),
             ),
-            ft.ElevatedButton(
+            ft.Button(
                 "📊 Inventory",
                 on_click=lambda e: self.show_inventory(page),
                 expand=True, height=44,
@@ -641,11 +662,12 @@ class StoreApp:
 
         # ============ LAYOUT ============
         if is_mobile:
-            # Mobile: top nav strip + content
-            mobile_nav = self._create_mobile_top_nav(page)
+            bottom_nav = self.create_bottom_nav(page)
+            banner = self.ads.banner_widget() if self.ads else ft.Container(height=0)
             page.add(ft.Column([
-                mobile_nav,
-                ft.Container(content=main_column, expand=True, padding=12),
+                ft.Container,
+                banner,          # ← NEW LINE
+                bottom_nav,
             ], spacing=0, expand=True))
         else:
             # Desktop: sidebar + content
@@ -657,43 +679,6 @@ class StoreApp:
 
         self.current_view = "dashboard"
         page.update()
-
-    def _create_mobile_top_nav(self, page: ft.Page):
-        """Top navigation strip for mobile screens"""
-        def nav_btn(icon, view):
-            def on_click(e):
-                if view == "dashboard":
-                    self.show_dashboard(page)
-                elif view == "materials":
-                    self.show_materials_screen(page)
-                elif view == "accessories":
-                    self.show_accessories(page)
-                elif view == "barcode_scanner":
-                    self.show_barcode_scanner(page)
-                elif view == "inventory":
-                    self.show_inventory(page)
-                elif view == "settings":
-                    self.show_settings(page)
-            return ft.IconButton(
-                icon=icon,
-                icon_size=22,
-                icon_color=self.text_color,
-                on_click=on_click,
-            )
-
-        return ft.Container(
-            content=ft.Row([
-                nav_btn(ft.icons.DASHBOARD, "dashboard"),
-                nav_btn(ft.icons.INVENTORY, "materials"),
-                nav_btn(ft.icons.BUILD, "accessories"),
-                nav_btn(ft.icons.QR_CODE_SCANNER, "barcode_scanner"),
-                nav_btn(ft.icons.LIST_ALT, "inventory"),
-                nav_btn(ft.icons.SETTINGS, "settings"),
-            ], alignment=ft.MainAxisAlignment.SPACE_EVENLY, spacing=0),
-            height=52,
-            bgcolor=self.sidebar_color,
-            padding=ft.padding.symmetric(horizontal=4),
-        )
 
     def _create_stat_card(self, icon, value, label, custom_color=None):
         color = custom_color or self.accent_color
@@ -791,7 +776,7 @@ class StoreApp:
                 ], spacing=8), width=300, padding=20),
                 actions=[
                     ft.TextButton("Cancel", on_click=cancel_delete),
-                    ft.ElevatedButton("Delete", on_click=do_delete,
+                    ft.Button("Delete", on_click=do_delete,
                                       style=ft.ButtonStyle(
                                           bgcolor=self.danger_color)),
                 ],
@@ -825,7 +810,7 @@ class StoreApp:
                                 ft.Text(icon, size=22),
                                 ft.Text(cat['name'], size=14, expand=True),
                                 ft.IconButton(
-                                    icon=ft.icons.DELETE_OUTLINE,
+                                    icon=ft.Icons.DELETE_OUTLINE,
                                     icon_size=18,
                                     icon_color=self.danger_color,
                                     tooltip="Delete Category",
@@ -923,14 +908,14 @@ class StoreApp:
             ft.Row([
                 ft.Text("Categories", size=18,
                         weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20,
+                ft.IconButton(icon=ft.Icons.CLOSE, icon_size=20,
                               on_click=lambda e: close_dlg()),
             ]),
             ft.Divider(),
             ft.Text("Add New Category", size=14, weight=ft.FontWeight.BOLD),
             name_input,
             icon_select,
-            ft.ElevatedButton("➕ Add", on_click=add_category,
+            ft.Button("➕ Add", on_click=add_category,
                               style=ft.ButtonStyle(bgcolor=self.success_color)),
             status_text,
             ft.Divider(),
@@ -949,20 +934,14 @@ class StoreApp:
         page.update()
         
     def show_settings(self, page: ft.Page):
+        """Settings screen + banner ad + mobile bottom nav"""
         page.controls.clear()
-        is_mobile = page.width < 800 if page.width else False
 
-        font_title = 24 if is_mobile else 28
-        font_normal = 16 if is_mobile else 18
-        font_small = 14
+        is_mobile = (page.width or 800) < 800
+        font_title = 22 if is_mobile else 28
+        font_normal = 15 if is_mobile else 18
+        font_small = 13 if is_mobile else 14
         padding_size = 12 if is_mobile else 20
-
-        if is_mobile:
-            nav = self.create_bottom_nav(page)
-            sidebar = None
-        else:
-            sidebar = self.create_sidebar(page)
-            nav = None
 
         current_user = self.current_user or {}
 
@@ -974,9 +953,9 @@ class StoreApp:
                     weight=ft.FontWeight.BOLD, color=self.text_color),
             ft.Container(expand=True),
         ]))
-        scroll_content.controls.append(ft.Container(height=15))
+        scroll_content.controls.append(ft.Container(height=12))
 
-        # Profile Card
+        # Profile card
         profile_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
@@ -987,23 +966,23 @@ class StoreApp:
                         ft.CircleAvatar(
                             content=ft.Text(
                                 (current_user.get('name') or 'G')[0].upper(),
-                                size=18),
-                            radius=35, bgcolor=self.accent_color,
+                                size=16),
+                            radius=30, bgcolor=self.accent_color,
                         ),
                         ft.Column([
-                            ft.Text(current_user.get('name', 'Guest'),
-                                    size=font_normal + 2, weight=ft.FontWeight.BOLD),
+                            ft.Text(current_user.get('name', 'Store Manager'),
+                                    size=font_normal, weight=ft.FontWeight.BOLD),
                             ft.Text(current_user.get('email', 'N/A'),
                                     size=font_small - 1, color="#888888"),
-                            ft.Text(f"Role: {current_user.get('role', 'user').upper()}",
+                            ft.Text(f"Role: {current_user.get('role', 'admin').upper()}",
                                     size=font_small - 2, color=self.success_color),
                         ], spacing=3, expand=True),
                     ], spacing=12),
-                    ft.ElevatedButton(
+                    ft.Button(
                         "✏️ Edit Profile",
                         on_click=lambda e: self.edit_profile_dialog(page),
                         style=ft.ButtonStyle(bgcolor=self.accent_color),
-                        icon=ft.icons.EDIT,
+                        icon=ft.Icons.EDIT,
                     ),
                 ], spacing=12),
                 padding=15,
@@ -1012,27 +991,7 @@ class StoreApp:
         )
         scroll_content.controls.append(profile_card)
 
-        # Security
-        security_card = ft.Card(
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Text("🔐 Security", size=font_normal,
-                            weight=ft.FontWeight.BOLD, color=self.accent_color),
-                    ft.Divider(),
-                    ft.ListTile(
-                        leading=ft.Icon(ft.icons.LOCK, color=self.accent_color),
-                        title=ft.Text("Change Password"),
-                        trailing=ft.Icon(ft.icons.CHEVRON_RIGHT),
-                        on_click=lambda e: self.change_password_dialog(page),
-                    ),
-                ], spacing=8),
-                padding=15,
-            ),
-            elevation=2, margin=ft.margin.only(bottom=12),
-        )
-        scroll_content.controls.append(security_card)
-
-        # Data Management
+        # Data management
         data_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
@@ -1040,22 +999,25 @@ class StoreApp:
                             weight=ft.FontWeight.BOLD, color=self.accent_color),
                     ft.Divider(),
                     ft.ListTile(
-                        leading=ft.Icon(ft.icons.BACKUP, color=self.accent_color),
+                        leading=ft.Icon(ft.Icons.BACKUP, color=self.accent_color),
                         title=ft.Text("Backup Database"),
-                        trailing=ft.Icon(ft.icons.CHEVRON_RIGHT),
+                        trailing=ft.Icon(ft.Icons.CHEVRON_RIGHT),
                         on_click=lambda e: self.backup_database(page),
                     ),
                     ft.ListTile(
-                        leading=ft.Icon(ft.icons.RESTORE, color=self.accent_color),
+                        leading=ft.Icon(ft.Icons.RESTORE, color=self.accent_color),
                         title=ft.Text("Restore Database"),
-                        trailing=ft.Icon(ft.icons.CHEVRON_RIGHT),
+                        trailing=ft.Icon(ft.Icons.CHEVRON_RIGHT),
                         on_click=lambda e: self.restore_database(page),
                     ),
                     ft.Divider(),
                     ft.ListTile(
-                        leading=ft.Icon(ft.icons.DELETE_FOREVER, color=self.danger_color),
-                        title=ft.Text("Reset All Data", color=self.danger_color),
-                        trailing=ft.Icon(ft.icons.CHEVRON_RIGHT, color=self.danger_color),
+                        leading=ft.Icon(ft.Icons.DELETE_FOREVER,
+                                        color=self.danger_color),
+                        title=ft.Text("Reset All Data",
+                                      color=self.danger_color),
+                        trailing=ft.Icon(ft.Icons.CHEVRON_RIGHT,
+                                         color=self.danger_color),
                         on_click=lambda e: self.reset_database_confirm(page),
                     ),
                 ], spacing=8),
@@ -1074,36 +1036,53 @@ class StoreApp:
                     ft.Divider(),
                     ft.Container(
                         content=ft.Column([
-                            ft.Text("🏪", size=60),
-                            ft.Text("Store Management System",
-                                    size=font_normal + 4, weight=ft.FontWeight.BOLD),
-                            ft.Text("Version 2.0.0", size=font_small - 1, color="#888888"),
+                            ft.Text("🏪", size=50),
+                            ft.Text("Store Management",
+                                    size=font_normal + 2,
+                                    weight=ft.FontWeight.BOLD),
+                            ft.Text("Version 2.0.0", size=font_small - 1,
+                                    color="#888888"),
                             ft.Container(height=5),
-                            ft.Text("© 2024 Store Management", size=font_small - 2,
-                                    color="#888888"),
-                            ft.Text("Made with ❤️ using Flet", size=font_small - 2,
-                                    color="#888888"),
+                            ft.Text("© 2024 Store Management",
+                                    size=font_small - 2, color="#888888"),
+                            ft.Text("Made with ❤️ using Flet",
+                                    size=font_small - 2, color="#888888"),
                             ft.Container(height=5),
                             ft.Text("Status: ✅ Free Version",
                                     size=font_small - 1, color="#4CAF50"),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                           spacing=5),
                         margin=ft.margin.only(bottom=10),
                     ),
-                ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                ], spacing=10,
+                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=15,
             ),
             elevation=2,
         )
         scroll_content.controls.append(about_card)
-        scroll_content.controls.append(ft.Container(height=80))
+        scroll_content.controls.append(ft.Container(height=20))
 
-        main_container = ft.Container(content=scroll_content, expand=True,
-                                      padding=padding_size)
+        main_container = ft.Container(
+            content=scroll_content, expand=True, padding=padding_size,
+        )
 
-        if is_mobile and nav:
-            page.add(ft.Column([main_container, nav], spacing=0, expand=True))
+        # ===== BANNER AD =====
+        banner = self.ads.banner_widget() if self.ads else ft.Container(height=0)
+
+        if is_mobile:
+            bottom_nav = self.create_bottom_nav(page)
+            page.add(ft.Column([
+                main_container,
+                banner,
+                bottom_nav,
+            ], spacing=0, expand=True))
         else:
-            page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
+            sidebar = self.create_sidebar(page)
+            page.add(ft.Column([
+                ft.Row([sidebar, main_container], spacing=0, expand=True),
+                banner,
+            ], spacing=0, expand=True))
 
         self.current_view = "settings"
         page.update()
@@ -1315,7 +1294,7 @@ class StoreApp:
                 ], spacing=8), width=320, padding=20),
                 actions=[
                     ft.TextButton("Cancel", on_click=cancel),
-                    ft.ElevatedButton("Restore", on_click=do_restore,
+                    ft.Button("Restore", on_click=do_restore,
                                       style=ft.ButtonStyle(bgcolor=self.danger_color)),
                 ],
             )
@@ -1329,12 +1308,12 @@ class StoreApp:
             size_str = f"{size/1024:.1f} KB" if size < 1024*1024 else f"{size/(1024*1024):.1f} MB"
             items.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.icons.STORAGE, size=20, color=self.accent_color),
+                    ft.Icon(ft.Icons.STORAGE, size=20, color=self.accent_color),
                     ft.Column([
                         ft.Text(b, size=12, weight=ft.FontWeight.BOLD),
                         ft.Text(size_str, size=10, color="#888888"),
                     ], spacing=2, expand=True),
-                    ft.ElevatedButton("Restore",
+                    ft.Button("Restore",
                                       on_click=lambda e, bf=b: confirm_restore(bf),
                                       style=ft.ButtonStyle(bgcolor=self.success_color,
                                                            color="white")),
@@ -1346,7 +1325,7 @@ class StoreApp:
         dialog = ft.AlertDialog(
             title=ft.Row([
                 ft.Text("Restore Database", weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20,
+                ft.IconButton(icon=ft.Icons.CLOSE, icon_size=20,
                               on_click=lambda e: close(e)),
             ]),
             content=ft.Container(content=ft.Column([
@@ -1468,7 +1447,7 @@ class StoreApp:
             ft.Row([
                 ft.Text("Barcode Scanner", size=18,
                         weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20,
+                ft.IconButton(icon=ft.Icons.CLOSE, icon_size=20,
                               on_click=close_dialog),
             ]),
             ft.Divider(),
@@ -1478,11 +1457,11 @@ class StoreApp:
             status_text,
             ft.Container(height=10),
             ft.Row([
-                ft.ElevatedButton("📋 Paste", on_click=paste_barcode,
-                                  icon=ft.icons.CONTENT_PASTE, expand=True,
+                ft.Button("📋 Paste", on_click=paste_barcode,
+                                  icon=ft.Icons.CONTENT_PASTE, expand=True,
                                   style=ft.ButtonStyle(bgcolor=self.accent_color)),
-                ft.ElevatedButton("🔍 Search", on_click=search_barcode,
-                                  icon=ft.icons.SEARCH, expand=True,
+                ft.Button("🔍 Search", on_click=search_barcode,
+                                  icon=ft.Icons.SEARCH, expand=True,
                                   style=ft.ButtonStyle(bgcolor=self.success_color)),
             ], spacing=10),
         ], spacing=12)
@@ -1531,18 +1510,18 @@ class StoreApp:
 
         # ============ INVENTORY SCREEN ============
     def show_inventory(self, page: ft.Page):
-        """Show advanced inventory management screen"""
+        """Inventory screen + banner ad + mobile bottom nav"""
         page.controls.clear()
-        
-        is_mobile = page.width < 800 if page.width else False
-        font_title = 24 if is_mobile else 28
-        font_normal = 16 if is_mobile else 18
-        font_small = 14
+
+        is_mobile = (page.width or 800) < 800
+        font_title = 22 if is_mobile else 28
+        font_normal = 15 if is_mobile else 18
+        font_small = 13 if is_mobile else 14
         padding_size = 12 if is_mobile else 20
-        
+
         materials = self.dict_list(MaterialManager.get_all())
         accessories = self.dict_list(AccessoryManager.get_all())
-        
+
         inventory_items = []
         for m in materials:
             inventory_items.append({
@@ -1557,7 +1536,7 @@ class StoreApp:
                 'location': m.get('location_ids', 'N/A'),
                 'last_updated': m.get('updated_at', m.get('created_at', '')),
             })
-        
+
         for a in accessories:
             location = a.get('location') or a.get('location_ids') or 'N/A'
             inventory_items.append({
@@ -1573,107 +1552,87 @@ class StoreApp:
                 'price': a.get('price', 0),
                 'last_updated': a.get('updated_at', a.get('created_at', '')),
             })
-        
+
         inventory_items.sort(key=lambda x: x['name'])
-        
+
         total_items = len(inventory_items)
         total_stock = sum(i.get('quantity', 0) for i in inventory_items)
         low_stock_items = [i for i in inventory_items if i.get('quantity', 0) < 10]
         critical_stock = [i for i in inventory_items if i.get('quantity', 0) < 5]
-        total_value = sum(i.get('quantity', 0) * (i.get('price', 0) if i.get('price') else 10)
+        total_value = sum(i.get('quantity', 0) *
+                          (i.get('price', 0) if i.get('price') else 10)
                           for i in inventory_items)
-        
+
         self.current_filtered_items = inventory_items.copy()
-        
-        if is_mobile:
-            nav = self.create_bottom_nav(page)
-            sidebar = None
-        else:
-            sidebar = self.create_sidebar(page)
-            nav = None
-        
+
         scroll_content = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
-        
+
         # Header
         scroll_content.controls.append(ft.Row([
-            ft.Text("Inventory Management", size=font_title,
+            ft.Text("Inventory", size=font_title,
                     weight=ft.FontWeight.BOLD, color=self.text_color),
             ft.Container(expand=True),
-            ft.IconButton(icon=ft.icons.REFRESH, icon_size=24,
+            ft.IconButton(icon=ft.Icons.REFRESH, icon_size=22,
                           icon_color=self.accent_color,
                           on_click=lambda e: self.show_inventory(page)),
         ]))
-        scroll_content.controls.append(ft.Container(height=15))
-        
+        scroll_content.controls.append(ft.Container(height=12))
+
         # Stats row 1
         scroll_content.controls.append(ft.Row([
             ft.Container(
                 content=ft.Column([
                     ft.Text("📦 Items", size=font_small, color="#CCCCCC"),
-                    ft.Text(str(total_items), size=font_title + 4,
+                    ft.Text(str(total_items), size=font_title + 2,
                             weight=ft.FontWeight.BOLD),
-                    ft.Text(f"{len(materials)} Mat, {len(accessories)} Acc",
-                            size=font_small - 2, color="#888888"),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=12, bgcolor=self.accent_color, border_radius=10, expand=True,
+                padding=10, bgcolor=self.accent_color, border_radius=10, expand=True,
             ),
             ft.Container(
                 content=ft.Column([
                     ft.Text("📊 Stock", size=font_small, color="#CCCCCC"),
-                    ft.Text(str(total_stock), size=font_title + 4,
+                    ft.Text(str(total_stock), size=font_title + 2,
                             weight=ft.FontWeight.BOLD),
-                    ft.Text("Units", size=font_small - 2, color="#888888"),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=12, bgcolor=self.success_color, border_radius=10, expand=True,
+                padding=10, bgcolor=self.success_color, border_radius=10, expand=True,
             ),
             ft.Container(
                 content=ft.Column([
                     ft.Text("💰 Value", size=font_small, color="#CCCCCC"),
-                    ft.Text(f"${total_value:,.0f}", size=font_title + 2,
+                    ft.Text(f"${total_value:,.0f}", size=font_title,
                             weight=ft.FontWeight.BOLD),
-                    ft.Text("Total Worth", size=font_small - 2, color="#888888"),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=12, bgcolor="#9C27B0", border_radius=10, expand=True,
+                padding=10, bgcolor="#9C27B0", border_radius=10, expand=True,
             ),
-        ], spacing=12))
-        scroll_content.controls.append(ft.Container(height=10))
-        
+        ], spacing=8))
+        scroll_content.controls.append(ft.Container(height=8))
+
         # Stats row 2
         scroll_content.controls.append(ft.Row([
             ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.icons.WARNING, size=20, color=self.warning_color),
-                    ft.Text(str(len(low_stock_items)), size=font_title + 2,
+                    ft.Icon(ft.Icons.WARNING, size=18, color=self.warning_color),
+                    ft.Text(str(len(low_stock_items)), size=font_title,
                             weight=ft.FontWeight.BOLD, color=self.warning_color),
                     ft.Text("Low", size=font_small - 2, color="#888888"),
-                ], spacing=8),
-                padding=10, bgcolor=self.card_color, border_radius=10, expand=True,
+                ], spacing=6),
+                padding=8, bgcolor=self.card_color, border_radius=10, expand=True,
             ),
             ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.icons.ERROR, size=20, color=self.danger_color),
-                    ft.Text(str(len(critical_stock)), size=font_title + 2,
+                    ft.Icon(ft.Icons.ERROR, size=18, color=self.danger_color),
+                    ft.Text(str(len(critical_stock)), size=font_title,
                             weight=ft.FontWeight.BOLD, color=self.danger_color),
                     ft.Text("Critical", size=font_small - 2, color="#888888"),
-                ], spacing=8),
-                padding=10, bgcolor=self.card_color, border_radius=10, expand=True,
+                ], spacing=6),
+                padding=8, bgcolor=self.card_color, border_radius=10, expand=True,
             ),
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon(ft.icons.BAR_CHART, size=20, color=self.accent_color),
-                    ft.Text(f"{len(set(i['type_name'] for i in inventory_items))}",
-                            size=font_title + 2, weight=ft.FontWeight.BOLD,
-                            color=self.accent_color),
-                    ft.Text("Categories", size=font_small - 2, color="#888888"),
-                ], spacing=8),
-                padding=10, bgcolor=self.card_color, border_radius=10, expand=True,
-            ),
-        ], spacing=12))
-        scroll_content.controls.append(ft.Container(height=15))
-        
+        ], spacing=8))
+        scroll_content.controls.append(ft.Container(height=10))
+
         # Filters
         type_filter = ft.Dropdown(
-            label="Type", width=120,
+            label="Type", width=110,
             options=[
                 ft.dropdown.Option("All", "All"),
                 ft.dropdown.Option("material", "📦 Materials"),
@@ -1682,7 +1641,7 @@ class StoreApp:
             value="All", bgcolor=self.card_color,
         )
         quality_filter = ft.Dropdown(
-            label="Quality", width=120,
+            label="Quality", width=110,
             options=[
                 ft.dropdown.Option("All", "All"),
                 ft.dropdown.Option("New", "🟢 New"),
@@ -1693,33 +1652,34 @@ class StoreApp:
             value="All", bgcolor=self.card_color,
         )
         stock_filter = ft.Dropdown(
-            label="Stock Status", width=130,
+            label="Stock", width=120,
             options=[
-                ft.dropdown.Option("All", "All Stock"),
-                ft.dropdown.Option("Low", "⚠️ Low (<10)"),
-                ft.dropdown.Option("Critical", "🔥 Critical (<5)"),
-                ft.dropdown.Option("Normal", "✅ Normal (≥10)"),
+                ft.dropdown.Option("All", "All"),
+                ft.dropdown.Option("Low", "⚠️ Low"),
+                ft.dropdown.Option("Critical", "🔥 Critical"),
+                ft.dropdown.Option("Normal", "✅ Normal"),
             ],
             value="All", bgcolor=self.card_color,
         )
         search_input = ft.TextField(
-            hint_text="Search by name or code...", expand=True,
-            bgcolor=self.card_color, prefix_icon=ft.icons.SEARCH,
+            hint_text="Search...", expand=True,
+            bgcolor=self.card_color, prefix_icon=ft.Icons.SEARCH,
+            dense=True,
         )
-        
+
         scroll_content.controls.append(
             ft.Row([type_filter, quality_filter, stock_filter],
-                   spacing=10, wrap=True))
-        scroll_content.controls.append(ft.Container(height=8))
+                   spacing=6, wrap=True))
+        scroll_content.controls.append(ft.Container(height=6))
         scroll_content.controls.append(
             ft.Row([search_input,
                     ft.OutlinedButton("Reset",
                                       on_click=lambda e: self.show_inventory(page))],
-                   spacing=10))
-        scroll_content.controls.append(ft.Container(height=15))
-        
-        inventory_container = ft.Column(spacing=8)
-        
+                   spacing=8))
+        scroll_content.controls.append(ft.Container(height=10))
+
+        inventory_container = ft.Column(spacing=6)
+
         def update_display():
             inventory_container.controls.clear()
             filtered = inventory_items.copy()
@@ -1737,12 +1697,12 @@ class StoreApp:
                 q = search_input.value.lower()
                 filtered = [i for i in filtered
                             if q in i['name'].lower() or q in i['code'].lower()]
-            
+
             self.current_filtered_items = filtered
             inventory_container.controls.append(
-                ft.Text(f"Showing {len(filtered)} of {len(inventory_items)} items",
+                ft.Text(f"{len(filtered)} of {len(inventory_items)} items",
                         size=font_small - 1, color="#888888"))
-            
+
             for item in filtered[:100]:
                 if item['quantity'] < 5:
                     stock_color = self.danger_color
@@ -1753,14 +1713,14 @@ class StoreApp:
                 else:
                     stock_color = self.success_color
                     status_text = "✅ OK"
-                
+
                 pct = min(item['quantity'] / 50 * 100, 100)
-                
-                card = ft.Card(
+
+                inventory_container.controls.append(ft.Card(
                     content=ft.Container(
                         content=ft.Column([
                             ft.Row([
-                                ft.Text(item['type_icon'], size=font_normal + 4),
+                                ft.Text(item['type_icon'], size=font_normal + 2),
                                 ft.Column([
                                     ft.Text(item['name'], size=font_normal,
                                             weight=ft.FontWeight.BOLD),
@@ -1768,14 +1728,16 @@ class StoreApp:
                                             color="#888888"),
                                 ], spacing=2, expand=True),
                                 ft.Column([
-                                    ft.Text(f"{item['quantity']}", size=font_normal,
-                                            weight=ft.FontWeight.BOLD, color=stock_color),
+                                    ft.Text(f"{item['quantity']}",
+                                            size=font_normal,
+                                            weight=ft.FontWeight.BOLD,
+                                            color=stock_color),
                                     ft.Text(status_text, size=font_small - 3,
                                             color=stock_color),
                                 ], horizontal_alignment=ft.CrossAxisAlignment.END),
                             ]),
                             ft.ProgressBar(value=pct / 100, color=stock_color,
-                                           bgcolor="#3C3C3C", height=6),
+                                           bgcolor="#3C3C3C", height=5),
                             ft.Row([
                                 ft.Text(f"📍 {item['location']}",
                                         size=font_small - 1, expand=True),
@@ -1784,47 +1746,58 @@ class StoreApp:
                                                     size=font_small - 2, color="white"),
                                     bgcolor=self.get_quality_color(item['quality']),
                                     border_radius=8,
-                                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                                    padding=ft.Padding.symmetric(horizontal=8, vertical=2),
                                 ),
                             ]),
                             ft.Row([
-                                ft.IconButton(icon=ft.icons.ADD_CIRCLE, icon_size=20,
+                                ft.IconButton(icon=ft.Icons.ADD_CIRCLE, icon_size=18,
                                               on_click=lambda e, it=item: self.quick_stock_change(page, it, '+')),
-                                ft.IconButton(icon=ft.icons.REMOVE_CIRCLE, icon_size=20,
+                                ft.IconButton(icon=ft.Icons.REMOVE_CIRCLE, icon_size=18,
                                               on_click=lambda e, it=item: self.quick_stock_change(page, it, '-')),
-                                ft.IconButton(icon=ft.icons.EDIT, icon_size=20,
+                                ft.IconButton(icon=ft.Icons.EDIT, icon_size=18,
                                               on_click=lambda e, it=item: self.edit_inventory_item(page, it)),
-                                ft.IconButton(icon=ft.icons.QR_CODE, icon_size=20,
+                                ft.IconButton(icon=ft.Icons.QR_CODE, icon_size=18,
                                               on_click=lambda e, it=item: self.show_barcode_dialog(page, it)),
-                                ft.IconButton(icon=ft.icons.DELETE, icon_size=20,
+                                ft.IconButton(icon=ft.Icons.DELETE, icon_size=18,
                                               on_click=lambda e, it=item: self.delete_inventory_item(page, it)),
                             ], spacing=0),
-                        ], spacing=6),
-                        padding=12,
+                        ], spacing=4),
+                        padding=10,
                     ),
                     elevation=1,
-                    margin=ft.margin.only(bottom=4),
-                )
-                inventory_container.controls.append(card)
+                ))
             page.update()
-        
+
         type_filter.on_change = lambda e: update_display()
         quality_filter.on_change = lambda e: update_display()
         stock_filter.on_change = lambda e: update_display()
         search_input.on_change = lambda e: update_display()
         update_display()
-        
+
         scroll_content.controls.append(inventory_container)
-        scroll_content.controls.append(ft.Container(height=80))
-        
-        main_container = ft.Container(content=scroll_content, expand=True,
-                                      padding=padding_size)
-        
-        if is_mobile and nav:
-            page.add(ft.Column([main_container, nav], spacing=0, expand=True))
+        scroll_content.controls.append(ft.Container(height=20))
+
+        main_container = ft.Container(
+            content=scroll_content, expand=True, padding=padding_size,
+        )
+
+        # ===== BANNER AD =====
+        banner = self.ads.banner_widget() if self.ads else ft.Container(height=0)
+
+        if is_mobile:
+            bottom_nav = self.create_bottom_nav(page)
+            page.add(ft.Column([
+                main_container,
+                banner,
+                bottom_nav,
+            ], spacing=0, expand=True))
         else:
-            page.add(ft.Row([sidebar, main_container], spacing=0, expand=True))
-        
+            sidebar = self.create_sidebar(page)
+            page.add(ft.Column([
+                ft.Row([sidebar, main_container], spacing=0, expand=True),
+                banner,
+            ], spacing=0, expand=True))
+
         self.current_view = "inventory"
         page.update()
 
@@ -2018,13 +1991,13 @@ class StoreApp:
                 content=ft.Column([
                     ft.Row([
                         ft.Container(expand=True),
-                        ft.IconButton(icon=ft.icons.CLOSE, icon_size=30,
+                        ft.IconButton(icon=ft.Icons.CLOSE, icon_size=30,
                                       on_click=lambda e: close_fs()),
                     ]),
                     ft.Container(
-                        content=ft.Image(src=full_image_path, fit=ft.ImageFit.CONTAIN,
+                        content=ft.Image(src=full_image_path, fit=ft.BoxFit.CONTAIN,
                                          width=sw - 40, height=sh - 100),
-                        expand=True, alignment=ft.alignment.center,
+                        expand=True, alignment=ft.Alignment.CENTER,
                     ),
                 ], spacing=10),
                 expand=True, bgcolor="#000000CC",
@@ -2038,26 +2011,26 @@ class StoreApp:
             items.append(ft.Container(
                 content=ft.Stack([
                     ft.Container(
-                        content=ft.Image(src=full_image_path, fit=ft.ImageFit.CONTAIN,
+                        content=ft.Image(src=full_image_path, fit=ft.BoxFit.CONTAIN,
                                          width=200, height=150),
-                        alignment=ft.alignment.center,
+                        alignment=ft.Alignment.CENTER,
                     ),
                     ft.Container(
-                        content=ft.Icon(ft.icons.ZOOM_IN, size=20, color="white"),
+                        content=ft.Icon(ft.Icons.ZOOM_IN, size=20, color="white"),
                         bgcolor="#00000099", border_radius=20, padding=5,
                         right=5, top=5, on_click=show_fullscreen, ink=True,
                     ),
                 ]),
-                alignment=ft.alignment.center,
+                alignment=ft.Alignment.CENTER,
                 margin=ft.margin.only(bottom=10),
             ))
         else:
             items.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.icons.IMAGE_NOT_SUPPORTED, size=50, color="#888888"),
+                    ft.Icon(ft.Icons.IMAGE_NOT_SUPPORTED, size=50, color="#888888"),
                     ft.Text("No Image", size=12, color="#888888"),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                alignment=ft.alignment.center,
+                alignment=ft.Alignment.CENTER,
                 margin=ft.margin.only(bottom=10),
             ))
 
@@ -2072,7 +2045,7 @@ class StoreApp:
             ft.Text(barcode, size=12, color="#888888"),
         ], spacing=8))
         items.append(ft.Row([
-            ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
+            ft.Button("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.warning_color,
                                                    color=self.text_color)),
         ], spacing=10))
@@ -2082,7 +2055,7 @@ class StoreApp:
             ft.Container(
                 content=ft.Text(quality, size=12, color="white"),
                 bgcolor=self.get_quality_color(quality), border_radius=8,
-                padding=ft.padding.symmetric(horizontal=12, vertical=4),
+                padding=ft.Padding.symmetric(horizontal=12, vertical=4),
             ),
         ], spacing=8))
         qty_color = self.danger_color if quantity < 10 else self.text_color
@@ -2140,10 +2113,10 @@ class StoreApp:
 
         items.append(ft.Divider())
         items.append(ft.Row([
-            ft.ElevatedButton("✏️ EDIT", on_click=edit_material, expand=True,
+            ft.Button("✏️ EDIT", on_click=edit_material, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.accent_color,
                                                    color=self.text_color)),
-            ft.ElevatedButton("🗑️ DELETE", on_click=delete_material, expand=True,
+            ft.Button("🗑️ DELETE", on_click=delete_material, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.danger_color,
                                                    color=self.text_color)),
         ], spacing=10))
@@ -2153,7 +2126,7 @@ class StoreApp:
         dialog = ft.AlertDialog(
             title=ft.Row([
                 ft.Text(name, size=18, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+                ft.IconButton(icon=ft.Icons.CLOSE, icon_size=20, on_click=close_dialog),
             ], spacing=0),
             content=ft.Container(content=scrollable, width=dialog_width, padding=15),
         )
@@ -2162,7 +2135,7 @@ class StoreApp:
         page.update()
 
     def show_materials_screen(self, page: ft.Page):
-        """Materials screen with full CRUD - verified working"""
+        """Materials screen with full CRUD + banner ad + mobile bottom nav"""
         page.controls.clear()
 
         conn = sqlite3.connect(DB_PATH)
@@ -2175,40 +2148,27 @@ class StoreApp:
             ORDER BY m.id DESC
         """)
         materials = cursor.fetchall()
-
         cursor.execute("SELECT id, name, icon FROM categories ORDER BY name")
         categories = cursor.fetchall()
         conn.close()
 
-        is_mobile = page.width < 800 if page.width else False
-
-        if is_mobile:
-            nav = self.create_bottom_nav(page)
-            sidebar = None
-        else:
-            sidebar = self.create_sidebar(page)
-            nav = None
+        is_mobile = (page.width or 800) < 800
 
         main_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
 
-        # Title
         main_column.controls.append(
-            ft.Text("Materials", size=24 if is_mobile else 28,
-                    weight=ft.FontWeight.BOLD, color=self.text_color)
-        )
+            ft.Text("Materials", size=22 if is_mobile else 28,
+                    weight=ft.FontWeight.BOLD, color=self.text_color))
 
-        # Search
         search_field = ft.TextField(
             hint_text="Search materials...",
             bgcolor=self.card_color,
             border_color=self.accent_color,
-            prefix_icon=ft.icons.SEARCH,
+            prefix_icon=ft.Icons.SEARCH,
             dense=True,
         )
         main_column.controls.append(search_field)
-        main_column.controls.append(ft.Container(height=5))
 
-        # Category dropdown
         cat_options = [ft.dropdown.Option("All", "📁 All Categories")]
         for c in categories:
             icon = c['icon'] if c['icon'] else "📁"
@@ -2216,7 +2176,7 @@ class StoreApp:
 
         category_filter = ft.Dropdown(
             label="Category",
-            width=170 if not is_mobile else 150,
+            width=150 if is_mobile else 170,
             options=cat_options,
             value="All",
             bgcolor=self.card_color,
@@ -2225,7 +2185,7 @@ class StoreApp:
 
         quality_filter = ft.Dropdown(
             label="Quality",
-            width=150 if not is_mobile else 130,
+            width=130 if is_mobile else 150,
             value="All",
             bgcolor=self.card_color,
             dense=True,
@@ -2239,7 +2199,7 @@ class StoreApp:
         )
 
         add_category_btn = ft.IconButton(
-            icon=ft.icons.ADD_CIRCLE_OUTLINE,
+            icon=ft.Icons.ADD_CIRCLE_OUTLINE,
             icon_size=24,
             icon_color=self.success_color,
             tooltip="Manage Categories",
@@ -2249,11 +2209,9 @@ class StoreApp:
 
         main_column.controls.append(
             ft.Row([category_filter, quality_filter, add_category_btn],
-                   spacing=8, wrap=True)
-        )
+                   spacing=8, wrap=True))
         main_column.controls.append(ft.Container(height=5))
 
-        # Cards container
         cards_container = ft.Column(spacing=8)
         main_column.controls.append(cards_container)
 
@@ -2288,7 +2246,7 @@ class StoreApp:
                     "Damaged": "[D] Damaged", "Repaired": "[R] Repaired"
                 }.get(q, q)
 
-                card = ft.Card(
+                cards_container.controls.append(ft.Card(
                     content=ft.Container(
                         content=ft.Column([
                             ft.Row([
@@ -2303,9 +2261,8 @@ class StoreApp:
                                         color=self.accent_color, expand=True),
                                 ft.Container(
                                     content=ft.Text(q_display, size=9, color="white"),
-                                    bgcolor=q_color,
-                                    border_radius=6,
-                                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                                    bgcolor=q_color, border_radius=6,
+                                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                                 ),
                             ]),
                             ft.Row([
@@ -2319,19 +2276,15 @@ class StoreApp:
                         on_click=lambda e, mat=dict(m): self.show_material_detail_dialog(page, mat),
                     ),
                     elevation=1,
-                )
-                cards_container.controls.append(card)
+                ))
 
             if count == 0:
-                cards_container.controls.append(
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Icon(ft.icons.INBOX, size=50, color="#888888"),
-                            ft.Text("No materials found", size=13, color="#888888"),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                        padding=30,
-                    )
-                )
+                cards_container.controls.append(ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.INBOX, size=50, color="#888888"),
+                        ft.Text("No materials found", size=13, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=30))
             else:
                 cards_container.controls.insert(
                     0, ft.Text(f"{count} of {len(materials)}",
@@ -2343,29 +2296,43 @@ class StoreApp:
         quality_filter.on_change = lambda e: update_cards()
         update_cards()
 
-        # FAB
         add_button = ft.FloatingActionButton(
-            icon=ft.icons.ADD, bgcolor=self.success_color,
+            icon=ft.Icons.ADD,
+            bgcolor=self.success_color,
             on_click=lambda e: self.open_add_modal(page),
             mini=is_mobile,
         )
 
-        main_container = ft.Container(content=main_column, expand=True,
-                                      padding=12 if is_mobile else 20)
+        main_container = ft.Container(
+            content=main_column, expand=True,
+            padding=12 if is_mobile else 20,
+        )
+
+        # ===== BANNER AD =====
+        banner = self.ads.banner_widget() if self.ads else ft.Container(height=0)
 
         if is_mobile:
+            bottom_nav = self.create_bottom_nav(page)
             page.add(
-                ft.Stack([
-                    ft.Column([main_container, nav], spacing=0, expand=True),
-                    ft.Container(content=add_button, right=16, bottom=70),
-                ], expand=True)
+                ft.Column([
+                    ft.Stack([
+                        ft.Container(content=main_container, expand=True),
+                        ft.Container(content=add_button, right=16, bottom=16),
+                    ], expand=True),
+                    banner,
+                    bottom_nav,
+                ], spacing=0, expand=True)
             )
         else:
+            sidebar = self.create_sidebar(page)
             page.add(
-                ft.Stack([
-                    ft.Row([sidebar, main_container], spacing=0, expand=True),
-                    ft.Container(content=add_button, right=16, bottom=70),
-                ], expand=True)
+                ft.Column([
+                    ft.Stack([
+                        ft.Row([sidebar, main_container], spacing=0, expand=True),
+                        ft.Container(content=add_button, right=16, bottom=70),
+                    ], expand=True),
+                    banner,
+                ], spacing=0, expand=True)
             )
 
         self.current_view = "materials"
@@ -2462,8 +2429,8 @@ class StoreApp:
             picker.pick_files(allow_multiple=False,
                               allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
 
-        upload_btn = ft.ElevatedButton(
-            "📁 Upload Image", on_click=upload_img, icon=ft.icons.UPLOAD_FILE,
+        upload_btn = ft.Button(
+            "📁 Upload Image", on_click=upload_img, icon=ft.Icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
         img_row = ft.Row([upload_btn, img_status], spacing=8,
                          vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True)
@@ -2537,7 +2504,7 @@ class StoreApp:
             ft.Row([
                 ft.Text("Add New Accessory", size=16,
                         weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=18,
+                ft.IconButton(icon=ft.Icons.CLOSE, icon_size=18,
                               on_click=lambda e: close_dialog()),
             ]),
             ft.Divider(height=1),
@@ -2655,8 +2622,8 @@ class StoreApp:
             picker.pick_files(allow_multiple=False,
                               allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
 
-        upload_btn = ft.ElevatedButton(
-            "📁 Upload Image", on_click=upload_img, icon=ft.icons.UPLOAD_FILE,
+        upload_btn = ft.Button(
+            "📁 Upload Image", on_click=upload_img, icon=ft.Icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
         img_row = ft.Row([upload_btn, img_status], spacing=8,
                          vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True)
@@ -2768,7 +2735,7 @@ class StoreApp:
             ft.Row([
                 ft.Text("Add New Material", size=18,
                         weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20,
+                ft.IconButton(icon=ft.Icons.CLOSE, icon_size=20,
                               on_click=lambda e: close_dialog()),
             ]),
             ft.Divider(height=1),
@@ -2855,13 +2822,13 @@ class StoreApp:
                 content=ft.Column([
                     ft.Row([
                         ft.Container(expand=True),
-                        ft.IconButton(icon=ft.icons.CLOSE, icon_size=30,
+                        ft.IconButton(icon=ft.Icons.CLOSE, icon_size=30,
                                       on_click=lambda e: close_fs()),
                     ]),
                     ft.Container(
-                        content=ft.Image(src=full_image_path, fit=ft.ImageFit.CONTAIN,
+                        content=ft.Image(src=full_image_path, fit=ft.BoxFit.CONTAIN,
                                          width=sw - 40, height=sh - 100),
-                        expand=True, alignment=ft.alignment.center,
+                        expand=True, alignment=ft.Alignment.CENTER,
                     ),
                 ], spacing=10),
                 expand=True, bgcolor="#000000CC",
@@ -2875,26 +2842,26 @@ class StoreApp:
             items.append(ft.Container(
                 content=ft.Stack([
                     ft.Container(
-                        content=ft.Image(src=full_image_path, fit=ft.ImageFit.CONTAIN,
+                        content=ft.Image(src=full_image_path, fit=ft.BoxFit.CONTAIN,
                                          width=200, height=150),
-                        alignment=ft.alignment.center,
+                        alignment=ft.Alignment.CENTER,
                     ),
                     ft.Container(
-                        content=ft.Icon(ft.icons.ZOOM_IN, size=20, color="white"),
+                        content=ft.Icon(ft.Icons.ZOOM_IN, size=20, color="white"),
                         bgcolor="#00000099", border_radius=20, padding=5,
                         right=5, top=5, on_click=show_fullscreen, ink=True,
                     ),
                 ]),
-                alignment=ft.alignment.center,
+                alignment=ft.Alignment.CENTER,
                 margin=ft.margin.only(bottom=10),
             ))
         else:
             items.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.icons.IMAGE_NOT_SUPPORTED, size=50, color="#888888"),
+                    ft.Icon(ft.Icons.IMAGE_NOT_SUPPORTED, size=50, color="#888888"),
                     ft.Text("No Image", size=12, color="#888888"),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                alignment=ft.alignment.center,
+                alignment=ft.Alignment.CENTER,
                 margin=ft.margin.only(bottom=10),
             ))
 
@@ -2909,7 +2876,7 @@ class StoreApp:
             ft.Text(barcode, size=12, color="#888888"),
         ], spacing=8))
         items.append(ft.Row([
-            ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
+            ft.Button("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.warning_color,
                                                    color=self.text_color)),
         ], spacing=10))
@@ -2919,7 +2886,7 @@ class StoreApp:
             ft.Container(
                 content=ft.Text(quality, size=12, color="white"),
                 bgcolor=self.get_quality_color(quality), border_radius=8,
-                padding=ft.padding.symmetric(horizontal=12, vertical=4),
+                padding=ft.Padding.symmetric(horizontal=12, vertical=4),
             ),
         ], spacing=8))
         qty_color = self.danger_color if quantity < 10 else self.text_color
@@ -2959,10 +2926,10 @@ class StoreApp:
 
         items.append(ft.Divider())
         items.append(ft.Row([
-            ft.ElevatedButton("✏️ EDIT", on_click=edit_accessory, expand=True,
+            ft.Button("✏️ EDIT", on_click=edit_accessory, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.accent_color,
                                                    color=self.text_color)),
-            ft.ElevatedButton("🗑️ DELETE", on_click=delete_accessory, expand=True,
+            ft.Button("🗑️ DELETE", on_click=delete_accessory, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.danger_color,
                                                    color=self.text_color)),
         ], spacing=10))
@@ -2972,7 +2939,7 @@ class StoreApp:
         dialog = ft.AlertDialog(
             title=ft.Row([
                 ft.Text(name, size=18, weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=20, on_click=close_dialog),
+                ft.IconButton(icon=ft.Icons.CLOSE, icon_size=20, on_click=close_dialog),
             ], spacing=0),
             content=ft.Container(content=scrollable, width=dialog_width, padding=15),
         )
@@ -2981,7 +2948,7 @@ class StoreApp:
         page.update()
 
     def show_accessories(self, page: ft.Page):
-        """Accessories screen with full CRUD - verified working"""
+        """Accessories screen with full CRUD + banner ad + mobile bottom nav"""
         page.controls.clear()
 
         conn = sqlite3.connect(DB_PATH)
@@ -2994,36 +2961,26 @@ class StoreApp:
             ORDER BY a.id DESC
         """)
         accessories = cursor.fetchall()
-
         cursor.execute("SELECT id, name, icon FROM categories ORDER BY name")
         categories = cursor.fetchall()
         conn.close()
 
-        is_mobile = page.width < 800 if page.width else False
-
-        if is_mobile:
-            nav = self.create_bottom_nav(page)
-            sidebar = None
-        else:
-            sidebar = self.create_sidebar(page)
-            nav = None
+        is_mobile = (page.width or 800) < 800
 
         main_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
 
         main_column.controls.append(
-            ft.Text("Accessories", size=24 if is_mobile else 28,
-                    weight=ft.FontWeight.BOLD, color=self.text_color)
-        )
+            ft.Text("Accessories", size=22 if is_mobile else 28,
+                    weight=ft.FontWeight.BOLD, color=self.text_color))
 
         search_field = ft.TextField(
             hint_text="Search accessories...",
             bgcolor=self.card_color,
             border_color=self.accent_color,
-            prefix_icon=ft.icons.SEARCH,
+            prefix_icon=ft.Icons.SEARCH,
             dense=True,
         )
         main_column.controls.append(search_field)
-        main_column.controls.append(ft.Container(height=5))
 
         cat_options = [ft.dropdown.Option("All", "📁 All Categories")]
         for c in categories:
@@ -3032,7 +2989,7 @@ class StoreApp:
 
         category_filter = ft.Dropdown(
             label="Category",
-            width=170 if not is_mobile else 150,
+            width=150 if is_mobile else 170,
             options=cat_options,
             value="All",
             bgcolor=self.card_color,
@@ -3041,7 +2998,7 @@ class StoreApp:
 
         quality_filter = ft.Dropdown(
             label="Quality",
-            width=150 if not is_mobile else 130,
+            width=130 if is_mobile else 150,
             value="All",
             bgcolor=self.card_color,
             dense=True,
@@ -3055,7 +3012,7 @@ class StoreApp:
         )
 
         add_category_btn = ft.IconButton(
-            icon=ft.icons.ADD_CIRCLE_OUTLINE,
+            icon=ft.Icons.ADD_CIRCLE_OUTLINE,
             icon_size=24,
             icon_color=self.success_color,
             tooltip="Manage Categories",
@@ -3065,8 +3022,7 @@ class StoreApp:
 
         main_column.controls.append(
             ft.Row([category_filter, quality_filter, add_category_btn],
-                   spacing=8, wrap=True)
-        )
+                   spacing=8, wrap=True))
         main_column.controls.append(ft.Container(height=5))
 
         cards_container = ft.Column(spacing=8)
@@ -3105,7 +3061,7 @@ class StoreApp:
                     "Damaged": "[D] Damaged", "Repaired": "[R] Repaired"
                 }.get(q, q)
 
-                card = ft.Card(
+                cards_container.controls.append(ft.Card(
                     content=ft.Container(
                         content=ft.Column([
                             ft.Row([
@@ -3120,9 +3076,8 @@ class StoreApp:
                                         color=self.accent_color, expand=True),
                                 ft.Container(
                                     content=ft.Text(q_display, size=9, color="white"),
-                                    bgcolor=q_color,
-                                    border_radius=6,
-                                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                                    bgcolor=q_color, border_radius=6,
+                                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                                 ),
                             ]),
                             ft.Row([
@@ -3135,19 +3090,15 @@ class StoreApp:
                         on_click=lambda e, acc=dict(a): self.show_accessory_detail_dialog(page, acc),
                     ),
                     elevation=1,
-                )
-                cards_container.controls.append(card)
+                ))
 
             if count == 0:
-                cards_container.controls.append(
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Icon(ft.icons.INBOX, size=50, color="#888888"),
-                            ft.Text("No accessories found", size=13, color="#888888"),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                        padding=30,
-                    )
-                )
+                cards_container.controls.append(ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.INBOX, size=50, color="#888888"),
+                        ft.Text("No accessories found", size=13, color="#888888"),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=30))
             else:
                 cards_container.controls.insert(
                     0, ft.Text(f"{count} of {len(accessories)}",
@@ -3160,31 +3111,47 @@ class StoreApp:
         update_cards()
 
         add_button = ft.FloatingActionButton(
-            icon=ft.icons.ADD, bgcolor=self.success_color,
+            icon=ft.Icons.ADD,
+            bgcolor=self.success_color,
             on_click=lambda e: self.open_add_accessory_modal(page),
             mini=is_mobile,
         )
 
-        main_container = ft.Container(content=main_column, expand=True,
-                                      padding=12 if is_mobile else 20)
+        main_container = ft.Container(
+            content=main_column, expand=True,
+            padding=12 if is_mobile else 20,
+        )
+
+        # ===== BANNER AD =====
+        banner = self.ads.banner_widget() if self.ads else ft.Container(height=0)
 
         if is_mobile:
+            bottom_nav = self.create_bottom_nav(page)
             page.add(
-                ft.Stack([
-                    ft.Column([main_container, nav], spacing=0, expand=True),
-                    ft.Container(content=add_button, right=16, bottom=70),
-                ], expand=True)
+                ft.Column([
+                    ft.Stack([
+                        ft.Container(content=main_container, expand=True),
+                        ft.Container(content=add_button, right=16, bottom=16),
+                    ], expand=True),
+                    banner,
+                    bottom_nav,
+                ], spacing=0, expand=True)
             )
         else:
+            sidebar = self.create_sidebar(page)
             page.add(
-                ft.Stack([
-                    ft.Row([sidebar, main_container], spacing=0, expand=True),
-                    ft.Container(content=add_button, right=16, bottom=70),
-                ], expand=True)
+                ft.Column([
+                    ft.Stack([
+                        ft.Row([sidebar, main_container], spacing=0, expand=True),
+                        ft.Container(content=add_button, right=16, bottom=70),
+                    ], expand=True),
+                    banner,
+                ], spacing=0, expand=True)
             )
 
         self.current_view = "accessories"
         page.update()
+
     def open_edit_accessory_modal(self, page: ft.Page, accessory_id):
         """Edit accessory with image upload"""
         import os
@@ -3285,8 +3252,8 @@ class StoreApp:
                 allow_multiple=False,
                 allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
 
-        upload_btn = ft.ElevatedButton(
-            "📁 Upload New", on_click=upload_image, icon=ft.icons.UPLOAD_FILE,
+        upload_btn = ft.Button(
+            "📁 Upload New", on_click=upload_image, icon=ft.Icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
         image_row = ft.Row([upload_btn, image_status_text], spacing=8,
                            vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True)
@@ -3368,7 +3335,7 @@ class StoreApp:
             ft.Row([
                 ft.Text("Edit Accessory", size=16,
                         weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=18,
+                ft.IconButton(icon=ft.Icons.CLOSE, icon_size=18,
                               on_click=lambda e: close_dialog()),
             ]),
             ft.Divider(height=1),
@@ -3520,8 +3487,8 @@ class StoreApp:
                 allow_multiple=False,
                 allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
 
-        upload_btn = ft.ElevatedButton(
-            "📁 Upload New", on_click=upload_image, icon=ft.icons.UPLOAD_FILE,
+        upload_btn = ft.Button(
+            "📁 Upload New", on_click=upload_image, icon=ft.Icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
         image_row = ft.Row([upload_btn, image_status_text], spacing=8,
                            vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True)
@@ -3620,7 +3587,7 @@ class StoreApp:
             ft.Row([
                 ft.Text("Edit Material", size=16,
                         weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.icons.CLOSE, icon_size=18,
+                ft.IconButton(icon=ft.Icons.CLOSE, icon_size=18,
                               on_click=lambda e: close_dialog()),
             ]),
             ft.Divider(height=1),
@@ -3710,7 +3677,7 @@ class StoreApp:
             ft.Text(item_type, size=12, color="#888888"),
             ft.Container(height=10),
             ft.Image(src=barcode_url, width=300, height=100,
-                     fit=ft.ImageFit.CONTAIN),
+                     fit=ft.BoxFit.CONTAIN),
             ft.Text(barcode_text, size=16, weight=ft.FontWeight.BOLD,
                     color=self.accent_color),
             ft.Text("Scan this barcode with your camera", size=10, color="#888888"),
@@ -3734,4 +3701,4 @@ class StoreApp:
 
 if __name__ == "__main__":
     app = StoreApp()
-    ft.app(target=app.main)
+    ft.run(app.main)
