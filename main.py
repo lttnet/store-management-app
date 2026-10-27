@@ -191,9 +191,9 @@ class StoreApp:
                         content=ft.Column([
                             ft.Text("❌ App Error", size=24, color="red"),
                             ft.Text(str(e), size=14, color="white"),
-                            ft.Button("Retry", on_click=lambda e: self.main(page)),
-                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15),
-                        alignment=ft.Alignment.CENTER,
+                            ft.ElevatedButton("Retry", on_click=lambda e: self.main(page)),
+                        ], horizontal_alignment=ft.CrossAxisalignment.CENTER, spacing=15),
+                        alignment=ft.alignment.center,
                         expand=True,
                     )
                 )
@@ -257,7 +257,7 @@ class StoreApp:
             self.show_dashboard(page)
 
         logo_exists = os.path.exists(logo_path)
-        logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.BoxFit.CONTAIN) \
+        logo = ft.Image(src=logo_path, width=100, height=100, fit=ft.ImageFit.CONTAIN) \
             if logo_exists else ft.Text("🏪", size=70)
 
         features = ft.Column([
@@ -295,7 +295,7 @@ class StoreApp:
                 border_radius=8,
             ),
             ft.Container(height=20),
-            ft.Button(
+            ft.ElevatedButton(
                 "🚀 Get Started",
                 on_click=start_using,
                 width=250, height=50,
@@ -304,11 +304,11 @@ class StoreApp:
             ft.Container(height=10),
             ft.Text("Your data stays on your device", size=10, color="#888888"),
             ft.Container(height=30),
-        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        ], horizontal_alignment=ft.CrossAxisalignment.CENTER,
            spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
 
         page.add(ft.Container(content=content, padding=20, expand=True,
-                              alignment=ft.Alignment.CENTER))
+                              alignment=ft.alignment.center))
         self.current_view = "welcome"
         page.update()
 
@@ -348,7 +348,7 @@ class StoreApp:
                     ft.Text(emoji, size=22),
                     ft.Text(label, size=15, color=self.text_color)
                 ], spacing=12),
-                padding=ft.Padding.symmetric(horizontal=18, vertical=14),
+                padding=ft.padding.symmetric(horizontal=18, vertical=14),
                 border_radius=10, ink=True,
                 on_click=lambda e, v=view: navigate(e, v),
             ))
@@ -361,14 +361,14 @@ class StoreApp:
                 ft.Text("🚪", size=22),
                 ft.Text("Logout", size=15, color="#FF5252")
             ], spacing=12),
-            padding=ft.Padding.symmetric(horizontal=18, vertical=14),
+            padding=ft.padding.symmetric(horizontal=18, vertical=14),
             border_radius=10, ink=True,
             on_click=logout,
         )
 
         logo_exists = os.path.exists(logo_path)
         sidebar_logo = ft.Image(src=logo_path, width=35, height=35,
-                                fit=ft.BoxFit.CONTAIN) \
+                                fit=ft.ImageFit.CONTAIN) \
             if logo_exists else ft.Text("🏪", size=28)
 
         title = ft.Row(
@@ -385,7 +385,7 @@ class StoreApp:
                 ft.Text("✅ Free Version", size=12, color="#4CAF50",
                         weight=ft.FontWeight.BOLD),
             ], spacing=6),
-            padding=ft.Padding.symmetric(horizontal=12, vertical=6),
+            padding=ft.padding.symmetric(horizontal=12, vertical=6),
             bgcolor="#1A3A1A", border_radius=20,
         )
 
@@ -480,7 +480,7 @@ class StoreApp:
                     ft.TextButton("Cancel", on_click=cancel),
                     ft.FilledButton("Logout", on_click=do_logout,
                                     style=ft.ButtonStyle(bgcolor=self.danger_color)),
-                ], alignment=ft.MainAxisAlignment.CENTER, spacing=15),
+                ], alignment=ft.MainAxisalignment.CENTER, spacing=15),
             ], spacing=12), width=350, padding=20),
         )
         page.dialog = dialog
@@ -563,13 +563,13 @@ class StoreApp:
                     weight=ft.FontWeight.BOLD))
 
         main_column.controls.append(ft.Row([
-            ft.Button(
+            ft.ElevatedButton(
                 "📦 Add",
                 on_click=lambda e: self.open_add_modal(page),
                 expand=True, height=44,
                 style=ft.ButtonStyle(padding=8),
             ),
-            ft.Button(
+            ft.ElevatedButton(
                 "🔧 Add",
                 on_click=lambda e: self.open_add_accessory_modal(page),
                 expand=True, height=44,
@@ -578,13 +578,13 @@ class StoreApp:
         ], spacing=8))
 
         main_column.controls.append(ft.Row([
-            ft.Button(
+            ft.ElevatedButton(
                 "📷 Scan",
                 on_click=lambda e: self.show_barcode_scanner(page),
                 expand=True, height=44,
                 style=ft.ButtonStyle(padding=8),
             ),
-            ft.Button(
+            ft.ElevatedButton(
                 "📊 Inventory",
                 on_click=lambda e: self.show_inventory(page),
                 expand=True, height=44,
@@ -776,7 +776,7 @@ class StoreApp:
                 ], spacing=8), width=300, padding=20),
                 actions=[
                     ft.TextButton("Cancel", on_click=cancel_delete),
-                    ft.Button("Delete", on_click=do_delete,
+                    ft.ElevatedButton("Delete", on_click=do_delete,
                                       style=ft.ButtonStyle(
                                           bgcolor=self.danger_color)),
                 ],
@@ -915,7 +915,7 @@ class StoreApp:
             ft.Text("Add New Category", size=14, weight=ft.FontWeight.BOLD),
             name_input,
             icon_select,
-            ft.Button("➕ Add", on_click=add_category,
+            ft.ElevatedButton("➕ Add", on_click=add_category,
                               style=ft.ButtonStyle(bgcolor=self.success_color)),
             status_text,
             ft.Divider(),
@@ -978,7 +978,7 @@ class StoreApp:
                                     size=font_small - 2, color=self.success_color),
                         ], spacing=3, expand=True),
                     ], spacing=12),
-                    ft.Button(
+                    ft.ElevatedButton(
                         "✏️ Edit Profile",
                         on_click=lambda e: self.edit_profile_dialog(page),
                         style=ft.ButtonStyle(bgcolor=self.accent_color),
@@ -1067,9 +1067,13 @@ class StoreApp:
             content=scroll_content, expand=True, padding=padding_size,
         )
 
-        # ===== BANNER AD =====
-        banner = self.ads.banner_widget() if self.ads else ft.Container(height=0)
+        # ===== BANNER AD (safe for desktop) =====
+        try:
+            banner = self.ads.banner_widget() if self.ads else ft.Container(height=0)
+        except Exception:
+            banner = ft.Container(height=0)
 
+        # Layout
         if is_mobile:
             bottom_nav = self.create_bottom_nav(page)
             page.add(ft.Column([
@@ -1132,7 +1136,7 @@ class StoreApp:
                     ft.TextButton("Cancel", on_click=close),
                     ft.FilledButton("Save", on_click=save,
                                     style=ft.ButtonStyle(bgcolor=self.success_color)),
-                ], alignment=ft.MainAxisAlignment.END, spacing=10),
+                ], alignment=ft.MainAxisalignment.END, spacing=10),
             ], spacing=12), width=400, height=300, padding=15),
         )
         page.dialog = dialog
@@ -1207,7 +1211,7 @@ class StoreApp:
                     ft.TextButton("Cancel", on_click=close),
                     ft.FilledButton("Update Password", on_click=update,
                                     style=ft.ButtonStyle(bgcolor=self.warning_color)),
-                ], alignment=ft.MainAxisAlignment.END, spacing=10),
+                ], alignment=ft.MainAxisalignment.END, spacing=10),
             ], spacing=12), width=400, height=420, padding=15),
         )
         page.dialog = dialog
@@ -1294,7 +1298,7 @@ class StoreApp:
                 ], spacing=8), width=320, padding=20),
                 actions=[
                     ft.TextButton("Cancel", on_click=cancel),
-                    ft.Button("Restore", on_click=do_restore,
+                    ft.ElevatedButton("Restore", on_click=do_restore,
                                       style=ft.ButtonStyle(bgcolor=self.danger_color)),
                 ],
             )
@@ -1313,7 +1317,7 @@ class StoreApp:
                         ft.Text(b, size=12, weight=ft.FontWeight.BOLD),
                         ft.Text(size_str, size=10, color="#888888"),
                     ], spacing=2, expand=True),
-                    ft.Button("Restore",
+                    ft.ElevatedButton("Restore",
                                       on_click=lambda e, bf=b: confirm_restore(bf),
                                       style=ft.ButtonStyle(bgcolor=self.success_color,
                                                            color="white")),
@@ -1377,7 +1381,7 @@ class StoreApp:
                     ft.TextButton("Cancel", on_click=close),
                     ft.FilledButton("Reset", on_click=do_reset,
                                     style=ft.ButtonStyle(bgcolor=self.danger_color)),
-                ], alignment=ft.MainAxisAlignment.END, spacing=10),
+                ], alignment=ft.MainAxisalignment.END, spacing=10),
             ], spacing=10), width=400, height=380, padding=15),
         )
         page.dialog = dialog
@@ -1385,19 +1389,132 @@ class StoreApp:
         page.update()
 
         # ============ BARCODE SCANNER ============
-    def show_barcode_scanner(self, page: ft.Page, target_field=None):
-        """Barcode scanner dialog"""
-        
-        def close_dialog(e):
-            page.dialog.open = False
+    def show_barcode_scanner(self, page: ft.Page):
+        """Barcode scanner - manual input + clipboard paste"""
+        page.controls.clear()
+
+        is_mobile = (page.width or 800) < 800
+        font_title = 22 if is_mobile else 28
+        font_normal = 15 if is_mobile else 18
+        font_small = 13 if is_mobile else 14
+        padding_size = 12 if is_mobile else 20
+
+        barcode_input = ft.TextField(
+            label="Barcode Number",
+            hint_text="Enter or paste barcode here",
+            bgcolor=self.card_color,
+            border_color=self.accent_color,
+            prefix_icon=ft.Icons.QR_CODE,
+            autofocus=True,
+        )
+
+        status_text = ft.Text("", size=12, color="#888888")
+
+        result_container = ft.Column(spacing=8)
+
+        def do_search(barcode):
+            if not barcode:
+                status_text.value = "❌ Please enter a barcode"
+                status_text.color = self.danger_color
+                page.update()
+                return
+
+            status_text.value = f"🔍 Searching: {barcode}"
+            status_text.color = self.accent_color
             page.update()
-        
-        def paste_barcode(e):
+
+            # Search materials first
+            item = MaterialManager.get_by_barcode(barcode)
+            item_type = "Material"
+
+            if not item:
+                item = AccessoryManager.get_by_barcode(barcode)
+                item_type = "Accessory"
+
+            result_container.controls.clear()
+
+            if item:
+                item_dict = dict(item)
+                status_text.value = f"✅ Found: {item_dict.get('name')}"
+                status_text.color = self.success_color
+
+                result_container.controls.append(
+                    ft.Card(
+                        content=ft.Container(
+                            content=ft.Column([
+                                ft.Row([
+                                    ft.Text("📦" if item_type == "Material" else "🔧",
+                                            size=24),
+                                    ft.Column([
+                                        ft.Text(item_dict.get('name', 'N/A'),
+                                                size=16, weight=ft.FontWeight.BOLD),
+                                        ft.Text(item_type, size=11,
+                                                color="#888888"),
+                                    ], spacing=2, expand=True),
+                                ]),
+                                ft.Divider(),
+                                ft.Row([
+                                    ft.Text("Qty:", size=13, color="#CCCCCC",
+                                            width=60),
+                                    ft.Text(str(item_dict.get('quantity', 0)),
+                                            size=14, weight=ft.FontWeight.BOLD),
+                                ]),
+                                ft.Row([
+                                    ft.Text("Quality:", size=13, color="#CCCCCC",
+                                            width=60),
+                                    ft.Text(item_dict.get('quality', 'Used'),
+                                            size=13),
+                                ]),
+                                ft.Row([
+                                    ft.Text("Location:", size=13, color="#CCCCCC",
+                                            width=60),
+                                    ft.Text(item_dict.get('location_ids') or
+                                            item_dict.get('location') or 'N/A',
+                                            size=13),
+                                ]),
+                                ft.Container(height=8),
+                                ft.ElevatedButton(
+                                    "👁️ View Details",
+                                    on_click=lambda e, d=item_dict, t=item_type:
+                                        self.show_material_detail_dialog(page, d)
+                                        if t == "Material"
+                                        else self.show_accessory_detail_dialog(page, d),
+                                    style=ft.ButtonStyle(bgcolor=self.accent_color),
+                                    icon=ft.Icons.VISIBILITY,
+                                ),
+                            ], spacing=8),
+                            padding=15,
+                        ),
+                        elevation=2,
+                    )
+                )
+            else:
+                status_text.value = f"❌ No item found with barcode: {barcode}"
+                status_text.color = self.danger_color
+
+                result_container.controls.append(
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Icon(ft.Icons.SEARCH_OFF, size=50,
+                                    color="#888888"),
+                            ft.Text("Barcode not found", size=14,
+                                    color="#888888"),
+                            ft.Text(f"Barcode: {barcode}", size=11,
+                                    color="#555555"),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                           spacing=6),
+                        padding=30,
+                    )
+                )
+
+            page.update()
+
+        def paste_from_clipboard(e):
             try:
-                clipboard = page.get_clipboard()
-                if clipboard:
-                    barcode_input.value = clipboard
-                    status_text.value = "✓ Barcode pasted!"
+                clip = page.get_clipboard()
+                if clip:
+                    barcode_input.value = clip
+                    status_text.value = "✓ Pasted from clipboard"
                     status_text.color = self.success_color
                     page.update()
                 else:
@@ -1405,74 +1522,98 @@ class StoreApp:
                     status_text.color = self.danger_color
                     page.update()
             except Exception as ex:
-                status_text.value = f"❌ Error: {str(ex)}"
+                status_text.value = f"❌ Error: {ex}"
                 status_text.color = self.danger_color
                 page.update()
-        
-        def search_barcode(e):
-            barcode = barcode_input.value.strip()
-            if barcode:
-                if target_field:
-                    target_field.value = barcode
-                page.dialog.open = False
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"🔍 Searching: {barcode}"),
-                    bgcolor=self.accent_color, duration=1500)
-                page.snack_bar.open = True
-                page.update()
-                self.search_barcode_by_value(barcode, page)
-            else:
-                status_text.value = "❌ Please enter or paste a barcode first"
-                status_text.color = self.danger_color
-                page.update()
-        
-        barcode_input = ft.TextField(
-            label="Barcode Number",
-            hint_text="Enter barcode or paste here",
-            width=300, bgcolor=self.card_color,
+
+        def search_click(e):
+            do_search(barcode_input.value.strip())
+
+        barcode_input.on_submit = lambda e: do_search(barcode_input.value.strip())
+
+        # Main content
+        main_column = ft.Column(spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
+
+        main_column.controls.append(ft.Row([
+            ft.Text("📷 Barcode Scanner", size=font_title,
+                    weight=ft.FontWeight.BOLD, color=self.text_color),
+            ft.Container(expand=True),
+        ]))
+
+        # Info banner
+        main_column.controls.append(
+            ft.Container(
+                content=ft.Column([
+                    ft.Text("💡 How to use", size=14,
+                            weight=ft.FontWeight.BOLD, color=self.accent_color),
+                    ft.Text("1. Open your Camera app or Google Lens",
+                            size=12, color="#CCCCCC"),
+                    ft.Text("2. Point at the barcode and copy the number",
+                            size=12, color="#CCCCCC"),
+                    ft.Text("3. Come back and tap '📋 Paste' below",
+                            size=12, color="#CCCCCC"),
+                    ft.Text("4. Tap '🔍 Search' to find the item",
+                            size=12, color="#CCCCCC"),
+                ], spacing=4),
+                padding=15,
+                bgcolor=self.card_color,
+                border_radius=10,
+            )
         )
-        status_text = ft.Text("", size=12)
-        
-        instruction = ft.Column([
-            ft.Text("📷 How to scan:", size=14, weight=ft.FontWeight.BOLD),
-            ft.Text("1. Open Camera app or Barcode Scanner", size=12),
-            ft.Text("2. Scan and copy the barcode number", size=12),
-            ft.Text("3. Tap 'Paste' button below", size=12),
-            ft.Text("4. Tap 'Search' to find item", size=12),
-            ft.Container(height=5),
-            ft.Text("💡 Or type the barcode number manually", size=11, color="#888888"),
-        ], spacing=5)
-        
-        dialog_content = ft.Column([
-            ft.Row([
-                ft.Text("Barcode Scanner", size=18,
-                        weight=ft.FontWeight.BOLD, expand=True),
-                ft.IconButton(icon=ft.Icons.CLOSE, icon_size=20,
-                              on_click=close_dialog),
-            ]),
-            ft.Divider(),
-            instruction,
-            ft.Container(height=10),
-            barcode_input,
-            status_text,
-            ft.Container(height=10),
-            ft.Row([
-                ft.Button("📋 Paste", on_click=paste_barcode,
-                                  icon=ft.Icons.CONTENT_PASTE, expand=True,
-                                  style=ft.ButtonStyle(bgcolor=self.accent_color)),
-                ft.Button("🔍 Search", on_click=search_barcode,
-                                  icon=ft.Icons.SEARCH, expand=True,
-                                  style=ft.ButtonStyle(bgcolor=self.success_color)),
-            ], spacing=10),
-        ], spacing=12)
-        
-        dialog = ft.AlertDialog(
-            title=ft.Text(""),
-            content=ft.Container(content=dialog_content,
-                                 width=350, height=480, padding=15),
+
+        main_column.controls.append(barcode_input)
+
+        main_column.controls.append(ft.Row([
+            ft.ElevatedButton(
+                "📋 Paste",
+                on_click=paste_from_clipboard,
+                icon=ft.Icons.CONTENT_PASTE,
+                expand=True,
+                style=ft.ButtonStyle(bgcolor=self.accent_color),
+            ),
+            ft.ElevatedButton(
+                "🔍 Search",
+                on_click=search_click,
+                icon=ft.Icons.SEARCH,
+                expand=True,
+                style=ft.ButtonStyle(bgcolor=self.success_color),
+            ),
+        ], spacing=10))
+
+        main_column.controls.append(status_text)
+
+        main_column.controls.append(ft.Divider())
+
+        main_column.controls.append(result_container)
+
+        main_column.controls.append(ft.Container(height=20))
+
+        main_container = ft.Container(
+            content=main_column, expand=True, padding=padding_size,
         )
-        page.dialog = dialog
-        dialog.open = True
+
+        # Banner (mobile-safe)
+        try:
+            banner = self.ads.banner_widget() if self.ads else ft.Container(height=0)
+        except Exception:
+            banner = ft.Container(height=0)
+
+        # Layout
+        if is_mobile:
+            bottom_nav = self.create_bottom_nav(page)
+            page.add(ft.Column([
+                main_container,
+                banner,
+                bottom_nav,
+            ], spacing=0, expand=True))
+        else:
+            sidebar = self.create_sidebar(page)
+            page.add(ft.Column([
+                ft.Row([sidebar, main_container], spacing=0, expand=True),
+                banner,
+            ], spacing=0, expand=True))
+
+        self.current_view = "barcode_scanner"
         page.update()
 
     def search_barcode_by_value(self, barcode_value, page):
@@ -1746,7 +1887,7 @@ class StoreApp:
                                                     size=font_small - 2, color="white"),
                                     bgcolor=self.get_quality_color(item['quality']),
                                     border_radius=8,
-                                    padding=ft.Padding.symmetric(horizontal=8, vertical=2),
+                                    padding=ft.padding.symmetric(horizontal=8, vertical=2),
                                 ),
                             ]),
                             ft.Row([
@@ -1995,9 +2136,9 @@ class StoreApp:
                                       on_click=lambda e: close_fs()),
                     ]),
                     ft.Container(
-                        content=ft.Image(src=full_image_path, fit=ft.BoxFit.CONTAIN,
+                        content=ft.Image(src=full_image_path, fit=ft.ImageFit.CONTAIN,
                                          width=sw - 40, height=sh - 100),
-                        expand=True, alignment=ft.Alignment.CENTER,
+                        expand=True, alignment=ft.alignment.center,
                     ),
                 ], spacing=10),
                 expand=True, bgcolor="#000000CC",
@@ -2011,9 +2152,9 @@ class StoreApp:
             items.append(ft.Container(
                 content=ft.Stack([
                     ft.Container(
-                        content=ft.Image(src=full_image_path, fit=ft.BoxFit.CONTAIN,
+                        content=ft.Image(src=full_image_path, fit=ft.ImageFit.CONTAIN,
                                          width=200, height=150),
-                        alignment=ft.Alignment.CENTER,
+                        alignment=ft.alignment.center,
                     ),
                     ft.Container(
                         content=ft.Icon(ft.Icons.ZOOM_IN, size=20, color="white"),
@@ -2021,7 +2162,7 @@ class StoreApp:
                         right=5, top=5, on_click=show_fullscreen, ink=True,
                     ),
                 ]),
-                alignment=ft.Alignment.CENTER,
+                alignment=ft.alignment.center,
                 margin=ft.margin.only(bottom=10),
             ))
         else:
@@ -2030,7 +2171,7 @@ class StoreApp:
                     ft.Icon(ft.Icons.IMAGE_NOT_SUPPORTED, size=50, color="#888888"),
                     ft.Text("No Image", size=12, color="#888888"),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                alignment=ft.Alignment.CENTER,
+                alignment=ft.alignment.center,
                 margin=ft.margin.only(bottom=10),
             ))
 
@@ -2045,7 +2186,7 @@ class StoreApp:
             ft.Text(barcode, size=12, color="#888888"),
         ], spacing=8))
         items.append(ft.Row([
-            ft.Button("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
+            ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.warning_color,
                                                    color=self.text_color)),
         ], spacing=10))
@@ -2055,7 +2196,7 @@ class StoreApp:
             ft.Container(
                 content=ft.Text(quality, size=12, color="white"),
                 bgcolor=self.get_quality_color(quality), border_radius=8,
-                padding=ft.Padding.symmetric(horizontal=12, vertical=4),
+                padding=ft.padding.symmetric(horizontal=12, vertical=4),
             ),
         ], spacing=8))
         qty_color = self.danger_color if quantity < 10 else self.text_color
@@ -2113,10 +2254,10 @@ class StoreApp:
 
         items.append(ft.Divider())
         items.append(ft.Row([
-            ft.Button("✏️ EDIT", on_click=edit_material, expand=True,
+            ft.ElevatedButton("✏️ EDIT", on_click=edit_material, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.accent_color,
                                                    color=self.text_color)),
-            ft.Button("🗑️ DELETE", on_click=delete_material, expand=True,
+            ft.ElevatedButton("🗑️ DELETE", on_click=delete_material, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.danger_color,
                                                    color=self.text_color)),
         ], spacing=10))
@@ -2262,7 +2403,7 @@ class StoreApp:
                                 ft.Container(
                                     content=ft.Text(q_display, size=9, color="white"),
                                     bgcolor=q_color, border_radius=6,
-                                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+                                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
                                 ),
                             ]),
                             ft.Row([
@@ -2429,7 +2570,7 @@ class StoreApp:
             picker.pick_files(allow_multiple=False,
                               allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
 
-        upload_btn = ft.Button(
+        upload_btn = ft.ElevatedButton(
             "📁 Upload Image", on_click=upload_img, icon=ft.Icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
         img_row = ft.Row([upload_btn, img_status], spacing=8,
@@ -2622,7 +2763,7 @@ class StoreApp:
             picker.pick_files(allow_multiple=False,
                               allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
 
-        upload_btn = ft.Button(
+        upload_btn = ft.ElevatedButton(
             "📁 Upload Image", on_click=upload_img, icon=ft.Icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
         img_row = ft.Row([upload_btn, img_status], spacing=8,
@@ -2826,9 +2967,9 @@ class StoreApp:
                                       on_click=lambda e: close_fs()),
                     ]),
                     ft.Container(
-                        content=ft.Image(src=full_image_path, fit=ft.BoxFit.CONTAIN,
+                        content=ft.Image(src=full_image_path, fit=ft.ImageFit.CONTAIN,
                                          width=sw - 40, height=sh - 100),
-                        expand=True, alignment=ft.Alignment.CENTER,
+                        expand=True, alignment=ft.alignment.center,
                     ),
                 ], spacing=10),
                 expand=True, bgcolor="#000000CC",
@@ -2842,9 +2983,9 @@ class StoreApp:
             items.append(ft.Container(
                 content=ft.Stack([
                     ft.Container(
-                        content=ft.Image(src=full_image_path, fit=ft.BoxFit.CONTAIN,
+                        content=ft.Image(src=full_image_path, fit=ft.ImageFit.CONTAIN,
                                          width=200, height=150),
-                        alignment=ft.Alignment.CENTER,
+                        alignment=ft.alignment.center,
                     ),
                     ft.Container(
                         content=ft.Icon(ft.Icons.ZOOM_IN, size=20, color="white"),
@@ -2852,7 +2993,7 @@ class StoreApp:
                         right=5, top=5, on_click=show_fullscreen, ink=True,
                     ),
                 ]),
-                alignment=ft.Alignment.CENTER,
+                alignment=ft.alignment.center,
                 margin=ft.margin.only(bottom=10),
             ))
         else:
@@ -2861,7 +3002,7 @@ class StoreApp:
                     ft.Icon(ft.Icons.IMAGE_NOT_SUPPORTED, size=50, color="#888888"),
                     ft.Text("No Image", size=12, color="#888888"),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                alignment=ft.Alignment.CENTER,
+                alignment=ft.alignment.center,
                 margin=ft.margin.only(bottom=10),
             ))
 
@@ -2876,7 +3017,7 @@ class StoreApp:
             ft.Text(barcode, size=12, color="#888888"),
         ], spacing=8))
         items.append(ft.Row([
-            ft.Button("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
+            ft.ElevatedButton("📱 SHOW BARCODE", on_click=show_barcode, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.warning_color,
                                                    color=self.text_color)),
         ], spacing=10))
@@ -2886,7 +3027,7 @@ class StoreApp:
             ft.Container(
                 content=ft.Text(quality, size=12, color="white"),
                 bgcolor=self.get_quality_color(quality), border_radius=8,
-                padding=ft.Padding.symmetric(horizontal=12, vertical=4),
+                padding=ft.padding.symmetric(horizontal=12, vertical=4),
             ),
         ], spacing=8))
         qty_color = self.danger_color if quantity < 10 else self.text_color
@@ -2926,10 +3067,10 @@ class StoreApp:
 
         items.append(ft.Divider())
         items.append(ft.Row([
-            ft.Button("✏️ EDIT", on_click=edit_accessory, expand=True,
+            ft.ElevatedButton("✏️ EDIT", on_click=edit_accessory, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.accent_color,
                                                    color=self.text_color)),
-            ft.Button("🗑️ DELETE", on_click=delete_accessory, expand=True,
+            ft.ElevatedButton("🗑️ DELETE", on_click=delete_accessory, expand=True,
                               style=ft.ButtonStyle(bgcolor=self.danger_color,
                                                    color=self.text_color)),
         ], spacing=10))
@@ -3077,7 +3218,7 @@ class StoreApp:
                                 ft.Container(
                                     content=ft.Text(q_display, size=9, color="white"),
                                     bgcolor=q_color, border_radius=6,
-                                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+                                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
                                 ),
                             ]),
                             ft.Row([
@@ -3252,7 +3393,7 @@ class StoreApp:
                 allow_multiple=False,
                 allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
 
-        upload_btn = ft.Button(
+        upload_btn = ft.ElevatedButton(
             "📁 Upload New", on_click=upload_image, icon=ft.Icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
         image_row = ft.Row([upload_btn, image_status_text], spacing=8,
@@ -3487,7 +3628,7 @@ class StoreApp:
                 allow_multiple=False,
                 allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "webp"])
 
-        upload_btn = ft.Button(
+        upload_btn = ft.ElevatedButton(
             "📁 Upload New", on_click=upload_image, icon=ft.Icons.UPLOAD_FILE,
             style=ft.ButtonStyle(bgcolor=self.accent_color, color=self.text_color))
         image_row = ft.Row([upload_btn, image_status_text], spacing=8,
@@ -3677,11 +3818,11 @@ class StoreApp:
             ft.Text(item_type, size=12, color="#888888"),
             ft.Container(height=10),
             ft.Image(src=barcode_url, width=300, height=100,
-                     fit=ft.BoxFit.CONTAIN),
+                     fit=ft.ImageFit.CONTAIN),
             ft.Text(barcode_text, size=16, weight=ft.FontWeight.BOLD,
                     color=self.accent_color),
             ft.Text("Scan this barcode with your camera", size=10, color="#888888"),
-        ], spacing=8, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+        ], spacing=8, horizontal_alignment=ft.CrossAxisalignment.CENTER)
 
         dialog = ft.AlertDialog(
             title=ft.Text("Barcode", size=18, weight=ft.FontWeight.BOLD),
@@ -3701,4 +3842,4 @@ class StoreApp:
 
 if __name__ == "__main__":
     app = StoreApp()
-    ft.run(app.main)
+    ft.app(target=app.main)
