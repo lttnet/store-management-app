@@ -1,231 +1,208 @@
-# managers/accessory_manager.py
+"""
+Accessory Manager - CRUD operations for accessories
+Works with SQLite local database
+"""
+
 import sqlite3
-import sys
-import os
 from datetime import datetime
-
-# Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from database import DB_PATH
 
-# Lazy imports to avoid circular references
-def get_firebase_api():
-    from firebase_client import firebase_api
-    return firebase_api
-
-def get_cloud_sync_manager():
-    from cloud_sync_manager import CloudSyncManager
-    return CloudSyncManager
 
 class AccessoryManager:
-    
+
+    # ---------- READ ----------
+
     @staticmethod
     def get_all():
-        """Get all accessories"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM accessories ORDER BY id DESC")
-            accessories = cursor.fetchall()
-            conn.close()
-            
-            result = []
-            for a in accessories:
-                result.append(dict(a))
-            return result
-        except Exception as e:
-            print(f"Get all accessories error: {e}")
-            return []
-    
+        """Return all accessories ordered by newest first"""
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM accessories ORDER BY id DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+
     @staticmethod
     def get_by_id(accessory_id):
-        """Get accessory by ID"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM accessories WHERE id = ?", (accessory_id,))
-            accessory = cursor.fetchone()
-            conn.close()
-            
-            if accessory:
-                return dict(accessory)
-            return None
-        except Exception as e:
-            print(f"Get accessory by ID error: {e}")
-            return None
-    
+        """Return one accessory by id"""
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM accessories WHERE id = ?", (accessory_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row
+
     @staticmethod
     def get_by_barcode(barcode_value):
-        """Get accessory by barcode"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM accessories WHERE barcode_value = ?", (barcode_value,))
-            accessory = cursor.fetchone()
-            conn.close()
-            
-            if accessory:
-                return dict(accessory)
+        """Return one accessory by barcode"""
+        if not barcode_value:
             return None
-        except Exception as e:
-            print(f"Get accessory by barcode error: {e}")
-            return None
-    
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM accessories WHERE barcode_value = ?",
+            (barcode_value,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return row
+
+    @staticmethod
+    def search(query):
+        """Search accessories by name or barcode"""
+        if not query:
+            return AccessoryManager.get_all()
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        like = f"%{query}%"
+        cursor.execute(
+            "SELECT * FROM accessories "
+            "WHERE name LIKE ? OR barcode_value LIKE ? "
+            "ORDER BY id DESC",
+            (like, like),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+
+    # ---------- CREATE ----------
+
     @staticmethod
     def create(data):
-        """Create accessory and auto-sync to cloud"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            company_id = data.get('company_id', 1)
-            
-            cursor.execute('''
-                INSERT INTO accessories (name, category_id, quantity, price, quality, location,
-                    notes, barcode_value, image_path, company_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                data.get('name'),
-                data.get('category_id', 1),
-                data.get('quantity', 0),
-                data.get('price', 0),
-                data.get('quality', 'New'),
-                data.get('location', ''),
-                data.get('notes', ''),
-                data.get('barcode_value', ''),
-                data.get('image_path', ''),
-                company_id,
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            ))
-            
-            accessory_id = cursor.lastrowid
-            conn.commit()
-            conn.close()
-            
-            # AUTO-SYNC: Sync immediately in background
-            try:
-                firebase_api = get_firebase_api()
-                if firebase_api.is_ready():
-                    import threading
-                    def sync():
-                        try:
-                            import time
-                            time.sleep(0.3)
-                            CloudSyncManager = get_cloud_sync_manager()
-                            CloudSyncManager.sync_single_accessory_to_cloud(company_id, accessory_id)
-                        except Exception as e:
-                            print(f"[AUTO-SYNC] Error: {e}")
-                    threading.Thread(target=sync, daemon=True).start()
-            except Exception as e:
-                print(f"Auto-sync setup error: {e}")
-            
-            return accessory_id
-            
-        except Exception as e:
-            print(f"Create accessory error: {e}")
-            return None
-    
+        """
+        Insert a new accessory.
+        Returns the new row id.
+        """
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO accessories
+            (name, category_id, quantity, price, quality, location,
+             notes, barcode_value, image_path, company_id,
+             created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data.get('name', ''),
+            data.get('category_id', 1),
+            data.get('quantity', 0),
+            data.get('price', 0),
+            data.get('quality', 'New'),
+            data.get('location', ''),
+            data.get('notes', ''),
+            data.get('barcode_value', ''),
+            data.get('image_path', ''),
+            data.get('company_id', 1),
+            now,
+            now,
+        ))
+        new_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return new_id
+
+    # ---------- UPDATE ----------
+
     @staticmethod
     def update(accessory_id, data):
-        """Update accessory and auto-sync to cloud"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT company_id FROM accessories WHERE id = ?", (accessory_id,))
-            result = cursor.fetchone()
-            if not result:
-                conn.close()
-                return False
-            company_id = result[0]
-            
-            # Build update query
-            set_clause = []
-            values = []
-            
-            for key, value in data.items():
-                if key != 'id' and key != 'company_id':
-                    set_clause.append(f"{key} = ?")
-                    values.append(value)
-            
-            values.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-            values.append(accessory_id)
-            
-            query = f"UPDATE accessories SET {', '.join(set_clause)}, updated_at = ? WHERE id = ?"
-            cursor.execute(query, values)
-            
-            conn.commit()
-            
-            # Get the updated accessory data
-            cursor.execute("SELECT * FROM accessories WHERE id = ?", (accessory_id,))
-            updated_accessory = cursor.fetchone()
-            conn.close()
-            
-            if updated_accessory:
-                # AUTO-SYNC: Sync immediately in background
-                try:
-                    firebase_api = get_firebase_api()
-                    if firebase_api.is_ready():
-                        import threading
-                        def sync():
-                            try:
-                                accessory_dict = dict(updated_accessory)
-                                CloudSyncManager = get_cloud_sync_manager()
-                                CloudSyncManager.sync_single_accessory_to_cloud(company_id, accessory_id)
-                            except Exception as e:
-                                print(f"[AUTO-SYNC] Error: {e}")
-                        threading.Thread(target=sync, daemon=True).start()
-                except Exception as e:
-                    print(f"Auto-sync setup error: {e}")
-                
-                return True
-            
+        """
+        Update an accessory.
+        Only fields present in `data` dict will be updated.
+        """
+        if not data:
             return False
-            
-        except Exception as e:
-            print(f"Update accessory error: {e}")
+
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        # Build SET clause dynamically
+        allowed = [
+            'name', 'category_id', 'quantity', 'price', 'quality',
+            'location', 'notes', 'barcode_value', 'image_path',
+        ]
+
+        set_parts = []
+        values = []
+        for field in allowed:
+            if field in data:
+                set_parts.append(f"{field} = ?")
+                values.append(data[field])
+
+        if not set_parts:
             return False
-    
+
+        set_parts.append("updated_at = ?")
+        values.append(now)
+        values.append(accessory_id)
+
+        sql = f"UPDATE accessories SET {', '.join(set_parts)} WHERE id = ?"
+
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(sql, values)
+        conn.commit()
+        conn.close()
+        return True
+
+    # ---------- DELETE ----------
+
     @staticmethod
     def delete(accessory_id):
-        """Delete accessory and auto-sync to cloud"""
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT company_id, name FROM accessories WHERE id = ?", (accessory_id,))
-            result = cursor.fetchone()
-            if not result:
-                conn.close()
-                return False
-            company_id = result[0]
-            accessory_name = result[1]
-            
-            cursor.execute("DELETE FROM accessories WHERE id = ?", (accessory_id,))
-            conn.commit()
-            conn.close()
-            
-            # AUTO-SYNC: Delete from cloud
-            try:
-                firebase_api = get_firebase_api()
-                if firebase_api.is_ready():
-                    import threading
-                    def sync():
-                        try:
-                            firebase_api.delete_accessory(company_id, accessory_id)
-                        except Exception as e:
-                            print(f"[AUTO-SYNC] Error: {e}")
-                    threading.Thread(target=sync, daemon=True).start()
-            except Exception as e:
-                print(f"Auto-sync setup error: {e}")
-            
-            return True
-            
-        except Exception as e:
-            print(f"Delete accessory error: {e}")
-            return False
+        """Delete an accessory by id"""
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM accessories WHERE id = ?", (accessory_id,))
+        conn.commit()
+        conn.close()
+        return True
+
+    # ---------- COUNT / STATS ----------
+
+    @staticmethod
+    def count():
+        """Return total number of accessories"""
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM accessories")
+        total = cursor.fetchone()[0]
+        conn.close()
+        return total
+
+    @staticmethod
+    def get_low_stock(threshold=10):
+        """Return accessories with quantity below threshold"""
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM accessories WHERE quantity < ? ORDER BY quantity ASC",
+            (threshold,),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+
+
+# ============================================================
+# Standalone test
+# ============================================================
+if __name__ == "__main__":
+    print("AccessoryManager self-test")
+    try:
+        all_acc = AccessoryManager.get_all()
+        print(f"✅ get_all → {len(all_acc)} accessories")
+        print(f"✅ count    → {AccessoryManager.count()}")
+
+        if all_acc:
+            first = all_acc[0]
+            print(f"✅ first    → id={first['id']}, name={first['name']}")
+            print(f"✅ by_barcode test → "
+                  f"{AccessoryManager.get_by_barcode(first['barcode_value'])}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
