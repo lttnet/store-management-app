@@ -3,8 +3,7 @@ name = "store-management"
 version = "1.0.0"
 description = "Store Management System"
 dependencies = [
-        "flet==1.0.5",
-    "flet-ads==0.1.0",
+    "flet>=0.21.0",
 ]
 
 [tool.flet]
