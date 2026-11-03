@@ -1,22 +1,16 @@
 [project]
 name = "store-management"
 version = "1.0.0"
-description = "Store Management System"
+description = "Free store management app for small businesses"
 dependencies = [
-    "flet>=0.21.0",
+    "flet==0.28.3",
+    "pillow",
+    "requests",
 ]
 
 [tool.flet]
-app_name = "Store Management"
-app_description = "Store Management System"
-app_version = "1.0.0"
+org = "com.stickyfy"
+product = "Store Management"
 
-[tool.flet.android]
-permissions = [
-    "android.permission.READ_EXTERNAL_STORAGE",
-    "android.permission.WRITE_EXTERNAL_STORAGE",
-    "android.permission.MANAGE_EXTERNAL_STORAGE",
-]
-
-[tool.flet.android.meta_data]
-"com.google.android.gms.ads.APPLICATION_ID" = "ca-app-pub-8607260102675855~7094505811"
+[tool.flet.app]
+path = "src"
