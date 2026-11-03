@@ -9,7 +9,5 @@ dependencies = [
 ]
 
 [tool.flet]
-org = "com.stickyfy"
-product = "Store Management"
 app.path = "src"
 app.module = "main"
