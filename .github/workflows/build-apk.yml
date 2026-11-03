@@ -20,7 +20,7 @@ jobs:
 
       - name: Build APK
         run: |
-          flet build apk --build-version 1.0.0 --build-number 1
+          flet build apk --module-name src.main --build-version 1.0.0 --build-number 1
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
