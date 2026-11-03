@@ -1,86 +1,30 @@
-name: Build Store Management APK
-
-on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
+name: Build APK
+on: workflow_dispatch
 
 jobs:
-  build-android:
+  build:
     runs-on: ubuntu-latest
-    
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-      
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          # Explicitly only install platform-tools to avoid the removed 'tools' package
-          packages: 'platform-tools'
-      
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.19.6'
-          channel: 'stable'
-      
-      - name: Decode Firebase Service Account Key
+          python-version: "3.11"
+
+      - name: Install Flet
         run: |
-          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}" | base64 -d > serviceAccountKey.json
-          echo "✅ Firebase key created"
-      
-      - name: Create firestore_sync.py
-        run: |
-          cat > firestore_sync.py << 'EOF'
-          # firestore_sync.py content here
-          # (paste your firestore_sync.py content)
-          EOF
-          echo "✅ firestore_sync.py created"
-      
-      - name: Create cloud_sync_manager.py
-        run: |
-          cat > cloud_sync_manager.py << 'EOF'
-          # cloud_sync_manager.py content here
-          # (paste your cloud_sync_manager.py content)
-          EOF
-          echo "✅ cloud_sync_manager.py created"
-      
-      - name: Install dependencies
-        run: |
-          pip install flet==0.21.2
-          pip install firebase-admin
-          pip install requests
-      
+          pip install flet==0.28.3
+          pip install -r requirements.txt
+
       - name: Build APK
-        id: build
         run: |
-          flet build apk --verbose
-          
-          echo "=== Searching for APK ==="
-          find . -name "*.apk" -type f
-          
-          APK_FILE=$(find . -name "*.apk" -type f | head -1)
-          if [ -n "$APK_FILE" ]; then
-            echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
-            echo "✅ APK found: $APK_FILE"
-          else
-            echo "⚠️ No APK found"
-          fi
-      
+          flet build apk --build-version 1.0.0 --build-number 1
+
       - name: Upload APK
-        if: steps.build.outputs.apk_path != ''
         uses: actions/upload-artifact@v4
         with:
-          name: Store-Management-APK
-          path: ${{ steps.build.outputs.apk_path }}
+          name: StoreManagement-APK
+          path: build/apk/*.apk
+          if-no-files-found: error
