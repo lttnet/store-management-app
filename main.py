@@ -33,12 +33,7 @@ for module in problematic_modules:
         sys.modules[module] = DummyModule()
 
 import flet as ft
-try:
-    from ads_manager import AdsManager
-    ADS_AVAILABLE = True
-except ImportError as e:
-    ADS_AVAILABLE = False
-    print(f"⚠️ ads_manager.py not found: {e}")
+ADS_AVAILABLE = False
 
 from database import init_database
 from managers.material_manager import MaterialManager
@@ -148,12 +143,13 @@ class StoreApp:
             page.theme_mode = ft.ThemeMode.DARK
             page.bgcolor = self.bg_color
                     # ---- Initialize ads ----
+            self.ads = None
             if ADS_AVAILABLE:
                 try:
+                    from ads_manager import AdsManager
                     self.ads = AdsManager(page)
                 except Exception as e:
-                    print(f"Ads init error: {e}")
-                    self.ads = None
+                    print(f"Ads init skipped: {e}")
                     
             page.padding = 0
             page.spacing = 0
