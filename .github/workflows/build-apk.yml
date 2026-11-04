@@ -1,30 +1,66 @@
-name: Build APK
-on: workflow_dispatch
+name: Build Store Management APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-android:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
+      
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Install Flet
+          python-version: '3.11'
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          # Explicitly only install platform-tools to avoid the removed 'tools' package
+          packages: 'platform-tools'
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.6'
+          channel: 'stable'
+      
+      
+      - name: Install dependencies
         run: |
-          pip install flet==0.28.3
-          pip install -r requirements.txt
-
+          pip install flet==0.21.2
+          pip install firebase-admin
+          pip install requests
+      
       - name: Build APK
+        id: build
         run: |
-          flet build apk --module-name src.main --build-version 1.0.0 --build-number 1
-
+          flet build apk --verbose
+          
+          echo "=== Searching for APK ==="
+          find . -name "*.apk" -type f
+          
+          APK_FILE=$(find . -name "*.apk" -type f | head -1)
+          if [ -n "$APK_FILE" ]; then
+            echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
+            echo "✅ APK found: $APK_FILE"
+          else
+            echo "⚠️ No APK found"
+          fi
+      
       - name: Upload APK
+        if: steps.build.outputs.apk_path != ''
         uses: actions/upload-artifact@v4
         with:
-          name: StoreManagement-APK
-          path: build/apk/*.apk
-          if-no-files-found: error
+          name: Store-Management-APK
+          path: ${{ steps.build.outputs.apk_path }}
